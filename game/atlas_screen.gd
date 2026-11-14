@@ -20,28 +20,40 @@ var _header: HBoxContainer
 
 
 func _ready() -> void:
-	var backdrop := ColorRect.new()
-	backdrop.color = Color("#0e1a21")
-	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(backdrop)
-	var margin := MarginContainer.new()
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	for side in ["left", "right", "top", "bottom"]:
-		margin.add_theme_constant_override("margin_" + side, 10)
-	add_child(margin)
-	var layout := VBoxContainer.new()
-	layout.add_theme_constant_override("separation", 7)
-	margin.add_child(layout)
+	theme = UI.field_theme()
+	var frame := PanelContainer.new()
+	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var timber := StyleBoxTexture.new()
+	timber.texture = preload("res://game/art/wood049/Wood049_1K-JPG_Color.jpg")
+	for side in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
+		timber.set_texture_margin(side, 14)
+		timber.set_content_margin(side, 9)
+	frame.add_theme_stylebox_override("panel", timber)
+	add_child(frame)
+	_map = Atlas.new()
+	frame.add_child(_map)
+	_map.selected.connect(_select)
+	var strip := ColorRect.new()
+	strip.color = Color(0.12, 0.115, 0.085, 0.91)
+	strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	strip.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	strip.offset_bottom = 39
+	add_child(strip)
 	var bar := HBoxContainer.new()
 	_header = bar
+	bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	bar.offset_left = 9
+	bar.offset_right = -9
+	bar.offset_top = 7
+	bar.offset_bottom = 35
 	bar.add_theme_constant_override("separation", 8)
-	layout.add_child(bar)
-	UI.button(bar, "‹ Back", _close).custom_minimum_size = Vector2(90, 44)
-	var title := UI.heading(bar, "World Map · 1940", 29)
+	add_child(bar)
+	UI.button(bar, "‹ Back", _close).custom_minimum_size = Vector2(61, 28)
+	var title := UI.heading(bar, "GLOBAL 1940", 15)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	var jump := OptionButton.new()
-	jump.custom_minimum_size = Vector2(127, 44)
+	jump.custom_minimum_size = Vector2(107, 28)
 	bar.add_child(jump)
 	jump.add_item("Jump to…")
 	var theaters := [["Europe", "France"], ["North America", "Eastern United States"], ["Africa", "Egypt"],
@@ -53,38 +65,35 @@ func _ready() -> void:
 			_map.inspect_theater(theaters[index - 1][1])
 		jump.select(0)
 	)
-	var board_frame := PanelContainer.new()
-	board_frame.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	board_frame.add_theme_stylebox_override("panel", UI.box(Color("#132832"), Color("#a79774"), 3, 3, 3))
-	layout.add_child(board_frame)
-	_map = Atlas.new()
-	board_frame.add_child(_map)
-	_map.selected.connect(_select)
 	_build_inspector()
 	var footer := HBoxContainer.new()
 	_footer = footer
-	footer.add_theme_constant_override("separation", 6)
-	layout.add_child(footer)
-	_region = UI.label(footer, "Opening positions · Tap a territory", 17, UI.TEXT)
+	footer.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	footer.offset_left = 9
+	footer.offset_right = -9
+	footer.offset_top = -38
+	footer.offset_bottom = -8
+	footer.add_theme_constant_override("separation", 5)
+	add_child(footer)
+	_region = UI.label(footer, "Opening positions · Select a territory", 13, UI.TEXT)
 	_region.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_region.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_region.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_inspect = UI.button(footer, "Details", func(): _details.visible = not _details.visible)
-	_inspect.custom_minimum_size = Vector2(91, 44)
+	_inspect.custom_minimum_size = Vector2(65, 30)
 	_inspect.disabled = true
 	_sector = UI.button(footer, "View on board", func():
 		var zone: String = _map.region_info(_zone).zone
 		_close()
 		sector_requested.emit(zone)
 	)
-	_sector.custom_minimum_size.y = 44
 	_sector.hide()
-	UI.button(footer, "−", func(): _map.zoom_by(0.72)).custom_minimum_size = Vector2(46, 44)
+	UI.button(footer, "−", func(): _map.zoom_by(0.72)).custom_minimum_size = Vector2(30, 30)
 	var fit := UI.button(footer, "100%", _map.reset_camera)
-	fit.custom_minimum_size = Vector2(70, 44)
+	fit.custom_minimum_size = Vector2(54, 30)
 	fit.tooltip_text = "Whole world"
 	_map.camera_changed.connect(func(percent: int): fit.text = "%d%%" % percent)
-	UI.button(footer, "+", func(): _map.zoom_by(1.38)).custom_minimum_size = Vector2(46, 44)
+	UI.button(footer, "+", func(): _map.zoom_by(1.38)).custom_minimum_size = Vector2(30, 30)
 	hide()
 
 
@@ -112,7 +121,7 @@ func _build_inspector() -> void:
 	_details.offset_right = 320
 	_details.offset_top = -214
 	_details.offset_bottom = -10
-	_details.add_theme_stylebox_override("panel", UI.box(Color("#16272d"), Color("#a79774"), 13, 10, 5))
+	_details.add_theme_stylebox_override("panel", UI.field_box())
 	_map.add_child(_details)
 	var layout := VBoxContainer.new()
 	_details.add_child(layout)
@@ -121,7 +130,7 @@ func _build_inspector() -> void:
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	layout.add_child(scroll)
-	_info = UI.label(scroll, "", 16, UI.TEXT, true)
+	_info = UI.label(scroll, "", 14, Color("#303327"), true)
 	_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_details.hide()
 

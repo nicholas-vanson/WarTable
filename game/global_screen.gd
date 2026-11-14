@@ -1,6 +1,7 @@
 extends "res://game/atlas_screen.gd"
 ## Orders drawer shared by touch and desktop on the live world board.
 
+const Folder = preload("res://game/orders_folder.gd")
 const Campaign = preload("res://game/global_turn.gd")
 const Rules = preload("res://game/global_rules.gd")
 const Dice = preload("res://game/board_dice.gd")
@@ -36,6 +37,8 @@ var _losses := {}
 var _factory := ""
 var _panel_anim: Tween
 var _panel_open := true
+var _panel_maximized := false
+var _quick_primary: Button
 var _dice_phase := false
 var _save_error := ""
 var save_path := SAVE
@@ -43,39 +46,41 @@ var save_path := SAVE
 
 func _ready() -> void:
 	super._ready()
-	(_header.get_child(1) as Label).text = "Global 1940"
-	_phase = UI.label(_header, "", 16, UI.GOLD)
+	(_header.get_child(1) as Label).text = ""
+	(_header.get_child(1) as Label).custom_minimum_size.x = 0
+	_phase = UI.label(_header, "", 13, Color("#f0e2c4"))
 	_phase.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_header.move_child(_phase, 2)
-	_turn_badge = UI.label(_header, "", 17, UI.TEXT)
+	_turn_badge = UI.label(_header, "", 13, Color("#f0e2c4"))
 	_turn_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_header.move_child(_turn_badge, 3)
-	if OS.has_feature("mobile") or "--touch-layout" in OS.get_cmdline_user_args():
-		(_header.get_child(1) as Label).custom_minimum_size.x = 90
-		(_header.get_child(1) as Label).text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_inspect.text = "Inspect"
-	_order_toggle = UI.button(_footer, "Orders", func(): _show_panel(not _panel_open, true))
-	_order_toggle.custom_minimum_size = Vector2(91, 45)
+	_order_toggle = UI.button(_map, "ORDERS ‹", func(): _show_panel(not _panel_open, true))
+	_order_toggle.custom_minimum_size = Vector2(91, 30)
 	_action = UI.button(_footer, "", _primary)
-	_action.custom_minimum_size = Vector2(116, 45)
-	UI.primary(_action)
+	_action.custom_minimum_size = Vector2(110, 30)
+	UI.field_primary(_action)
 	_dice = Dice.new()
 	_dice.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_map.add_child(_dice)
 	_dice.settled.connect(_refresh)
 	_dice.firing_group_changed.connect(_refresh)
-	_panel = PanelContainer.new()
-	_panel.add_theme_stylebox_override("panel", UI.box(Color("#14242c"), Color("#948667"), 10, 9, 8))
+	_panel = Folder.new()
+	_panel.add_theme_stylebox_override("panel", UI.field_box(Color("#e9d9b6"), 12, 10))
+	var paper := ShaderMaterial.new()
+	paper.shader = preload("res://game/field_paper.gdshader")
+	_panel.material = paper
 	_map.add_child(_panel)
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 5)
 	_panel.add_child(content)
 	var header := HBoxContainer.new()
 	content.add_child(header)
-	_summary = UI.heading(header, "", 22)
+	_summary = UI.heading(header, "", 19, Color("#303327"))
 	_summary.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_summary.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	UI.button(header, "×", func(): _show_panel(false, true)).custom_minimum_size = Vector2(42, 38)
+	UI.button(header, "□", _maximize_panel).custom_minimum_size = Vector2(28, 26)
+	UI.button(header, "›", func(): _show_panel(false, true)).custom_minimum_size = Vector2(28, 26)
 	_scroll = ScrollContainer.new()
 	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -87,8 +92,13 @@ func _ready() -> void:
 	_controls = VBoxContainer.new()
 	_controls.add_theme_constant_override("separation", 4)
 	content.add_child(_controls)
-	_status = UI.label(content, "", 14, UI.GOLD, true)
+	_status = UI.label(content, "", 14, Color("#626047"), true)
 	_status.hide()
+	_action.get_parent().remove_child(_action)
+	content.add_child(_action)
+	_quick_primary = UI.button(_footer, "", _primary)
+	UI.field_primary(_quick_primary)
+	_quick_primary.hide()
 	_map.resized.connect(_layout_panel)
 	_map.selected.connect(_on_board_selected)
 
@@ -125,7 +135,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _show_panel(open: bool, animate := false) -> void:
 	_panel_open = open
-	_order_toggle.text = "Hide orders" if open else "Orders"
+	_order_toggle.visible = not open
+	_quick_primary.visible = not open
+	_order_toggle.text = "ORDERS ‹"
 	if is_instance_valid(_panel_anim):
 		_panel_anim.kill()
 	_layout_panel()
@@ -142,13 +154,24 @@ func _show_panel(open: bool, animate := false) -> void:
 		_panel_anim.tween_callback(_panel.hide)
 
 
+func _maximize_panel() -> void:
+	_panel_maximized = not _panel_maximized
+	_layout_panel()
+
+
 func _layout_panel() -> void:
-	var width := clampf(_map.size.x * 0.39, 316, 392)
-	_panel.size = Vector2(width, maxf(1.0, _map.size.y - 16.0))
-	_panel.position = Vector2(_map.size.x - width - 8.0, 8.0)
+	if _panel == null:
+		return
+	var compact := OS.has_feature("mobile") or "--touch-layout" in OS.get_cmdline_user_args()
+	var width := clampf(_map.size.x * (0.48 if _panel_maximized else 0.25), 300 if compact else 285, 640 if _panel_maximized else 345)
+	width = minf(width, _map.size.x - 20)
+	var height := _map.size.y - 92 if _panel_maximized else _map.size.y * 0.70
+	_panel.size = Vector2(width, maxf(120, height))
+	_panel.position = Vector2(_map.size.x - width - 12, 64)
+	_order_toggle.position = Vector2(_map.size.x - 94, 52)
 	var right := _panel.position.x if _panel_open else _map.size.x
-	var height := minf(245.0, _map.size.y * 0.49)
-	_dice.set_table(Rect2(Vector2(14, _map.size.y - height - 12.0), Vector2(maxf(1.0, right - 27.0), height)))
+	var dice_height := minf(245.0, _map.size.y * 0.49)
+	_dice.set_table(Rect2(Vector2(14, _map.size.y - dice_height - 44), Vector2(maxf(1.0, right - 27.0), dice_height)))
 
 
 func _refresh() -> void:
@@ -157,7 +180,7 @@ func _refresh() -> void:
 	var nation := game.power()
 	_phase.text = "R%d · %s" % [game.round, SHORT[game.phase]]
 	_turn_badge.text = "%s · %d IPC" % [_map.owner_name(nation), game.treasury[nation]]
-	_turn_badge.add_theme_color_override("font_color", _map.SIDE_COLORS.get(nation, UI.GOLD).lightened(0.23))
+	_turn_badge.add_theme_color_override("font_color", _map.SIDE_COLORS.get(nation, Color("#626047")).lightened(0.23))
 	_summary.text = PHASES[game.phase]
 	var paths := _moves.duplicate()
 	if not _route.is_empty():
@@ -185,6 +208,8 @@ func _refresh() -> void:
 		var stage: String = game.fight.stage
 		_action.text = {"attack": "Roll attack", "defense": "Roll defense", "press": "Next volley"}.get(stage, "Confirm losses")
 	_action.disabled = _dice.rolling
+	_quick_primary.text = _action.text
+	_quick_primary.disabled = _action.disabled
 
 
 func _purchase_ui() -> void:
@@ -195,18 +220,18 @@ func _purchase_ui() -> void:
 			var label := "Europe" if owner == "British" else "Pacific"
 			var button := UI.button(wallets, "%s · %d" % [label, game.treasury[owner]], _choose_wallet.bind(owner))
 			if owner == _wallet:
-				UI.primary(button)
+				UI.field_primary(button)
 	var units: Dictionary = _draft.get(_wallet, {})
 	var spent := 0
 	for unit in units:
 		spent += Rules.PROFILES[unit][0] * units[unit]
-	UI.label(_content, "%d IPC left · %d in draft" % [game.treasury[_wallet] - spent, spent], 16, UI.GOLD)
+	UI.label(_content, "Treasury %d · Draft %d IPC" % [game.treasury[_wallet] - spent, spent], 14, Color("#626047"))
 	var filters := HBoxContainer.new()
 	_content.add_child(filters)
 	for index in TABS.size():
 		var item := UI.button(filters, TABS[index], _choose_filter.bind(index))
 		if index == _filter:
-			UI.primary(item)
+			UI.field_primary(item)
 	for unit in Rules.PROFILES:
 		if _filter > 0 and Rules.domain(unit) != TABS[_filter].to_lower():
 			continue
@@ -265,7 +290,7 @@ func _movement_ui() -> void:
 			var pick := UI.button(_content, "Land %d %s · %s" % [flight.count, Rules.title(flight.unit), flight.zone], _choose_flight.bind(index))
 			pick.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	if not _origin.is_empty() and _flight < 0:
-		UI.label(_content, _origin, 17, UI.GOLD, true)
+		UI.label(_content, _origin, 17, Color("#626047"), true)
 		var units := game.available(_origin, _moves)
 		for unit in units:
 			if units[unit] > 0:
@@ -274,20 +299,20 @@ func _movement_ui() -> void:
 		if not _selected_units.is_empty() and Rules.domain(_selected_units.keys()[0]) == "land":
 			var cross := UI.button(_content, "Sea crossing" if not _transport_mode else "Use land routes", _toggle_transport)
 			if _transport_mode:
-				UI.primary(cross)
+				UI.field_primary(cross)
 	elif _flight >= 0:
-		UI.label(_content, "Choose a highlighted landing site", 16, UI.GOLD, true)
+		UI.label(_content, "Choose a highlighted landing site", 16, Color("#626047"), true)
 	else:
-		UI.label(_content, "Tap a territory or fleet to select units.", 16, UI.MUTED, true)
+		UI.label(_content, "Tap a territory or fleet to select units.", 16, Color("#70664f"), true)
 	for index in _moves.size():
 		var order: Dictionary = _moves[index]
 		var row := HBoxContainer.new()
 		_content.add_child(row)
-		var caption := UI.label(row, "%s → %s · %d" % [order.path[0], order.path[-1], Campaign._count(order.units)], 15, UI.TEXT, true)
+		var caption := UI.label(row, "%s → %s · %d" % [order.path[0], order.path[-1], Campaign._count(order.units)], 15, Color("#303327"), true)
 		caption.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		UI.button(row, "×", _remove_move.bind(index))
 	if not _route.is_empty():
-		UI.label(_controls, "%s → %s" % [_origin, _route.path[-1]], 15, UI.GOLD, true)
+		UI.label(_controls, "%s → %s" % [_origin, _route.path[-1]], 15, Color("#626047"), true)
 
 
 func _choose_flight(index: int) -> void:
@@ -363,7 +388,7 @@ func _combat_ui() -> void:
 				if owner not in owners and piece[2] > 0:
 					owners.append(owner)
 			heading += " · " + "/".join(owners)
-		UI.label(_content, heading, 16, UI.GOLD if side == 0 else UI.TEAL)
+		UI.label(_content, heading, 16, Color("#626047") if side == 0 else UI.TEAL)
 		var groups := _battle_groups(counts, side == 0)
 		for entry in groups:
 			var piece: Array = counts[entry.index]
@@ -382,10 +407,10 @@ func _combat_ui() -> void:
 				_quantity_row("%d %s" % [piece[2], Rules.title(piece[1])], caption, chosen, mini(max_hits - chosen, battle.hits - Campaign._count(_losses)), _change_loss.bind(entry.index), true)
 			else:
 				var firing := matching and _dice.rolling and _dice.group_is_firing(target, piece[1])
-				var color := UI.GOLD if firing or "✓" in caption else UI.TEXT
+				var color := Color("#626047") if firing or "✓" in caption else Color("#303327")
 				UI.label(_content, "%d %s  ·  %s" % [entry.count, Rules.title(piece[1]), caption], 15, color, true)
 	if not _dice.rolling and stage in ["attacker_losses", "defender_losses"]:
-		UI.label(_controls, "%d / %d hits assigned" % [Campaign._count(_losses), battle.hits], 15, UI.GOLD)
+		UI.label(_controls, "%d / %d hits assigned" % [Campaign._count(_losses), battle.hits], 15, Color("#626047"))
 	if not _dice.rolling and stage == "press":
 		for zone in game.retreat_sites():
 			UI.button(_content, "Retreat to " + zone, _retreat.bind(zone))
@@ -441,9 +466,9 @@ func _mobilize_ui() -> void:
 		if placement.factory == _factory:
 			staged += placement.count
 	if not _factory.is_empty():
-		UI.label(_content, "%s · %d/%d slots" % [_factory, staged, game.capacity(owner, _factory)], 16, UI.GOLD, true)
+		UI.label(_content, "%s · %d/%d slots" % [_factory, staged, game.capacity(owner, _factory)], 16, Color("#626047"), true)
 	else:
-		UI.label(_content, "Select a factory or Chinese territory.", 16, UI.MUTED, true)
+		UI.label(_content, "Select a factory or Chinese territory.", 16, Color("#70664f"), true)
 	for wallet in game.wallets():
 		var available: Dictionary = game.pool.get(wallet, {}).duplicate()
 		for order in _reinforcements:
@@ -454,7 +479,7 @@ func _mobilize_ui() -> void:
 				continue
 			var label := "%d %s left" % [available[unit], Rules.title(unit)]
 			if owner != wallet or _factory.is_empty() or staged >= game.capacity(owner, _factory):
-				UI.label(_content, label, 15, UI.MUTED)
+				UI.label(_content, label, 15, Color("#70664f"))
 			elif unit in Rules.SEA:
 				for zone in game.board[_factory].links:
 					if game.board[zone].water and not Rules.enemy_fleet(game.board[zone], game.diplomacy, game.power(), true):
@@ -485,9 +510,9 @@ func _remove_placement(index: int) -> void:
 
 func _income_ui() -> void:
 	for owner in game.wallets():
-		UI.label(_content, "%s · +%d IPC" % [_map.owner_name(owner), game.income(owner)], 19, UI.GOLD, true)
+		UI.label(_content, "%s · +%d IPC" % [_map.owner_name(owner), game.income(owner)], 19, Color("#626047"), true)
 	var next: String = Rules.ORDER[(game.turn + 1) % Rules.ORDER.size()]
-	UI.label(_content, "Next · " + _map.owner_name(next), 17, UI.TEXT)
+	UI.label(_content, "Next · " + _map.owner_name(next), 17, Color("#303327"))
 
 
 func _on_board_selected(zone: String) -> void:
@@ -648,21 +673,21 @@ func _quantity_row(title: String, detail: String, count: int, extra: int, change
 	column.add_theme_constant_override("separation", 0)
 	row.add_child(column)
 	if compact:
-		var label := UI.label(column, "%s  %s" % [title, detail], 15, UI.TEXT, true)
+		var label := UI.label(column, "%s  %s" % [title, detail], 15, Color("#303327"), true)
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		label.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	else:
-		UI.label(column, title, 16, UI.TEXT, true)
-		UI.label(column, detail, 13, UI.MUTED)
+		UI.label(column, title, 14, Color("#303327"), true)
+		UI.label(column, detail, 13, Color("#70664f"))
 	var less := UI.button(row, "−", change.bind(-1))
-	less.custom_minimum_size = Vector2(42, 37 if compact else 42)
+	less.custom_minimum_size = Vector2(32, 32 if compact else 34)
 	less.disabled = count == 0
-	var quantity := UI.label(row, str(count), 17, UI.TEXT)
+	var quantity := UI.label(row, str(count), 14, Color("#303327"))
 	quantity.custom_minimum_size.x = 21
 	quantity.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	quantity.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	var more := UI.button(row, "+", change.bind(1))
-	more.custom_minimum_size = Vector2(42, 37 if compact else 42)
+	more.custom_minimum_size = Vector2(32, 32 if compact else 34)
 	more.disabled = extra <= 0
 
 

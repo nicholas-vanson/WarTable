@@ -6,20 +6,12 @@ signal camera_changed(percent: int)
 
 const UI = preload("res://game/ui_style.gd")
 const MapTouch = preload("res://game/map_touch.gd")
-const Landmarks = preload("res://game/atlas_landmarks.gd")
-const LAMP = preload("res://game/map_lamp.gdshader")
-const RELIEF = preload("res://game/art/western-relief.png")
-const WOOD = preload("res://game/art/wood049/Wood049_1K-JPG_Color.jpg")
-const WOOD_NORMAL = preload("res://game/art/wood049/Wood049_1K-JPG_NormalGL.jpg")
-const WOOD_ROUGHNESS = preload("res://game/art/wood049/Wood049_1K-JPG_Roughness.jpg")
-const TABLE = preload("res://game/table_surface.gdshader")
+const Terrain = preload("res://game/global_terrain.gd")
 const SOURCE := "res://game/global_1940.json"
-const SEA := Color("#294d5b")
-const RIM := Color("#9f9271")
 const CHALK := Color("#f2e4c9")
 const SIDE_COLORS := {
-	"Germans": Color("#aa8e62"), "French": Color("#6a99a8"), "British": Color("#bd936c"),
-	"UK_Pacific": Color("#bd936c"), "Americans": Color("#879b68"), "Russians": Color("#ab705f"),
+	"Germans": Color("#718076"), "French": Color("#668da8"), "British": Color("#b7a066"),
+	"UK_Pacific": Color("#b7a066"), "Americans": Color("#879b68"), "Russians": Color("#ab705f"),
 	"Japanese": Color("#c7a163"), "Italians": Color("#af815d"), "Chinese": Color("#8a9e7b"),
 	"ANZAC": Color("#79998f"), "Dutch": Color("#b98360"), "Neutral_Axis": Color("#93836c"),
 	"Neutral_Allies": Color("#939d8b"), "Mongolians": Color("#938f87"),
@@ -36,17 +28,12 @@ const THEATERS := [
 	["SOUTH AMERICA", Vector2(1190, 2380)], ["INDIAN OCEAN", Vector2(3930, 2600)],
 	["AUSTRALIA", Vector2(5610, 2740)], ["ATLANTIC OCEAN", Vector2(1550, 1270)],
 ]
-const MOUNTAINS := ["Himalayas", "Switzerland", "Caucasus", "Afghanistan", "Szechwan", "Western United States", "Peru", "New Guinea"]
 const WESTERN_ZONES := {"west_germany": "Western Germany", "central_europe": "Germany", "north_france": "France",
 	"south_france": "Southern France", "low_countries": "Holland Belgium", "normandy_bordeaux": "Normandy Bordeaux",
 	"greater_south_germany": "Greater Southern Germany"}
 const Battle = preload("res://game/battle.gd")
 const Rules = preload("res://game/global_rules.gd")
-const STACK_ICONS := {
-	"land": preload("res://game/units/tank.svg"),
-	"air": preload("res://game/units/air.svg"),
-	"sea": preload("res://game/units/fleet.svg"),
-}
+
 
 var regions := {}
 var extent := Vector2(7705, 3213)
@@ -59,8 +46,8 @@ var _drag_button := MOUSE_BUTTON_NONE
 var _press := Vector2.ZERO
 var _dragged := false
 var _touch := MapTouch.new()
-var _lighting: ColorRect
-var _models: SubViewport
+var _terrain: SubViewport
+var _stacks: Array = []
 var _live := {}
 var _campaign := false
 var _orders: Array = []
@@ -70,27 +57,17 @@ var _battle_zones: Array = []
 
 func _ready() -> void:
 	clip_contents = true
-	mouse_filter = MOUSE_FILTER_STOP
-	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
-	var surface := ColorRect.new()
-	surface.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	surface.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var wood := ShaderMaterial.new()
-	wood.shader = TABLE
-	wood.set_shader_parameter("wood_color", WOOD)
-	wood.set_shader_parameter("wood_normal", WOOD_NORMAL)
-	wood.set_shader_parameter("wood_roughness", WOOD_ROUGHNESS)
-	surface.material = wood
-	surface.show_behind_parent = true
-	add_child(surface)
-	_lighting = ColorRect.new()
-	_lighting.mouse_filter = MOUSE_FILTER_IGNORE
-	var paint := ShaderMaterial.new()
-	paint.shader = LAMP
-	_lighting.material = paint
-	_lighting.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(_lighting)
+	mouse_filter = Control.MOUSE_FILTER_STOP
+	_terrain = Terrain.new()
+	add_child(_terrain)
+	var picture := TextureRect.new()
+	picture.texture = _terrain.get_texture()
+	picture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	picture.stretch_mode = TextureRect.STRETCH_SCALE
+	picture.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	picture.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	picture.show_behind_parent = true
+	add_child(picture)
 	resized.connect(_update_camera)
 	visibility_changed.connect(func(): _touch.reset())
 	set_process_input(true)
@@ -100,8 +77,6 @@ func _ready() -> void:
 func load_atlas() -> void:
 	if not regions.is_empty():
 		return
-	_models = Landmarks.new()
-	add_child(_models)
 	var data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(SOURCE))
 	extent = Vector2(data.size[0], data.size[1])
 	regions = data.regions
@@ -140,17 +115,10 @@ func _polygon(coords: Array) -> PackedVector2Array:
 	return polygon
 
 
-func _surface(polygon: PackedVector2Array, color: Color) -> Dictionary:
+func _surface(polygon: PackedVector2Array, _color: Color) -> Dictionary:
 	var contour := polygon.duplicate()
 	contour.append(polygon[0])
-	var indices := Geometry2D.triangulate_polygon(polygon)
-	var colors := PackedColorArray()
-	var uv := PackedVector2Array()
-	for point in polygon:
-		var lighting := 0.12 * sin(point.x / 670.0) - 0.09 * sin(point.y / 280.0)
-		colors.append(color.lerp(CHALK, maxf(0.0, lighting)).darkened(maxf(0.0, -lighting)))
-		uv.append(point / 1150.0)
-	return {"outline": contour, "points": polygon, "indices": indices, "colors": colors, "uv": uv}
+	return {"outline": contour, "points": polygon, "indices": Geometry2D.triangulate_polygon(polygon)}
 
 
 func owner_name(owner: String) -> String:
@@ -178,7 +146,7 @@ func set_sector(view: Dictionary) -> void:
 		if region.factory > 0:
 			positions.append([owner, "factory_minor", 1])
 		_live[WESTERN_ZONES[zone]] = {"owner": owner, "units": positions, "ipc": region.ipc, "zone": zone}
-	queue_redraw()
+	_refresh_visuals()
 
 
 func set_campaign(board: Dictionary, paths: Array, legal: Dictionary, battles: Array) -> void:
@@ -188,7 +156,7 @@ func set_campaign(board: Dictionary, paths: Array, legal: Dictionary, battles: A
 	_legal = legal.duplicate()
 	_battle_zones = battles.duplicate()
 	_linked = []
-	queue_redraw()
+	_refresh_visuals()
 
 
 func region_info(zone: String) -> Dictionary:
@@ -240,16 +208,17 @@ func _scale() -> float:
 
 
 func _world(screen: Vector2) -> Vector2:
-	return _center + (screen - size * 0.5) / _scale()
+	return _terrain.world_point(screen) if is_instance_valid(_terrain) and _terrain.camera.position.y > 0 else _center + (screen - size * 0.5) / _scale()
 
 
 func _screen(point: Vector2) -> Vector2:
-	return size * 0.5 + (point - _center) * _scale()
+	return _terrain.screen_point(point) if is_instance_valid(_terrain) and _terrain.camera.position.y > 0 else size * 0.5 + (point - _center) * _scale()
 
 
 func _zoom_at(cursor: Vector2, factor: float) -> void:
 	var point := _world(cursor)
 	_zoom = clampf(_zoom * factor, 1.0, 30.0)
+	_terrain.configure(_center, _scale(), size)
 	_center += point - _world(cursor)
 	_update_camera()
 
@@ -263,8 +232,10 @@ func _update_camera() -> void:
 	_center.x = fposmod(_center.x, extent.x)
 	var half_height := minf(size.y / (_scale() * 2.0), extent.y * 0.5)
 	_center.y = clampf(_center.y, half_height, extent.y - half_height)
+	if is_instance_valid(_terrain):
+		_terrain.configure(_center, _scale(), size)
 	camera_changed.emit(roundi(_zoom * 100.0))
-	queue_redraw()
+	_refresh_visuals()
 
 
 func _input(event: InputEvent) -> void:
@@ -312,6 +283,11 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _tap(screen: Vector2) -> void:
+	for i in range(_stacks.size() - 1, -1, -1):
+		var stack: Dictionary = _stacks[i]
+		if Rect2(_screen(stack.point) - Vector2(15, 20), Vector2(42, 44)).has_point(screen):
+			_select(stack.zone)
+			return
 	_select(region_at(_world(screen)))
 
 
@@ -328,80 +304,87 @@ func _select(zone: String) -> void:
 	_selection = zone
 	_linked = regions[zone].links if not _campaign and regions.has(zone) else []
 	selected.emit(zone)
+	_refresh_visuals()
+
+
+func _refresh_visuals() -> void:
+	if not is_instance_valid(_terrain) or regions.is_empty():
+		return
+	_terrain.update_control(regions.keys(), regions, _live, SIDE_COLORS, _selection, _legal, _battle_zones)
+	_stacks.clear()
+	if _zoom >= 2.8:
+		for zone in regions:
+			var region: Dictionary = region_info(zone)
+			var center: Vector2 = region.center
+			center.x = _center.x + wrapf(center.x - _center.x, -extent.x * 0.5, extent.x * 0.5)
+			var screen := _screen(center)
+			if not Rect2(Vector2(-100, -100), size + Vector2(200, 200)).has_point(screen):
+				continue
+			var groups := {}
+			for unit in region.units:
+				if unit[1] in Rules.FACILITIES:
+					continue
+				var kind: String = str(unit[1])
+				if _zoom < 6.0:
+					kind = {"land": "armour", "air": "fighter", "sea": "cruiser"}[Rules.domain(kind)]
+				var key: String = str(unit[0]) + ":" + kind
+				groups[key] = int(groups.get(key, 0)) + int(unit[2])
+			var index := 0
+			var columns := mini(4, maxi(1, groups.size()))
+			for key in groups:
+				var row := floori(float(index) / columns)
+				var column := index % columns
+				var offset := Vector2((column - (columns - 1) * 0.5) * 35.0, 29 + row * 35.0)
+				var point: Vector2 = _terrain.world_point(screen + offset)
+				_stacks.append({"key": zone + ":" + key, "zone": zone, "owner": key.get_slice(":", 0), "unit": key.get_slice(":", 1), "count": groups[key], "point": point})
+				index += 1
+	_terrain.sync_units(_stacks, _scale(), SIDE_COLORS)
 	queue_redraw()
 
 
 func _draw() -> void:
 	if regions.is_empty():
 		return
-	var view := Rect2(_world(Vector2.ZERO), size / _scale())
-	var close := _zoom >= 4.4
+	var view := Rect2(_world(Vector2.ZERO), size / _scale()).grow(160.0 / _scale())
 	for copy in range(floori(view.position.x / extent.x), floori(view.end.x / extent.x) + 1):
 		var offset := Vector2(copy * extent.x, 0)
 		var bounds := Rect2(view.position - offset, view.size)
-		draw_set_transform(_screen(offset), 0, Vector2.ONE * _scale())
-		draw_rect(Rect2(Vector2(0, 5.0 / _scale()), extent).grow(4.0 / _scale()), Color(0.05, 0.03, 0.02, 0.65))
-		_draw_tile(bounds, close)
-		draw_set_transform(Vector2.ZERO)
-		_draw_labels(offset, bounds, close)
-
-
-func _draw_tile(bounds: Rect2, close: bool) -> void:
-	var line := 1.0 / _scale()
-	draw_rect(Rect2(Vector2.ZERO, extent), SEA)
-	draw_line(Vector2.ZERO, Vector2(extent.x, 0), Color("#d1b58c"), line * 1.6)
-	draw_line(Vector2(0, extent.y), extent, Color("#8a7457"), line * 1.6)
-	for x in range(0, int(extent.x), 260):
-		if x >= bounds.position.x and x <= bounds.end.x:
-			draw_line(Vector2(x, 0), Vector2(x, extent.y), Color(0.86, 0.84, 0.70, 0.09), line)
-	for y in range(0, int(extent.y), 260):
-		if y >= bounds.position.y and y <= bounds.end.y:
-			draw_line(Vector2(0, y), Vector2(extent.x, y), Color(0.86, 0.84, 0.70, 0.09), line)
-	for shape in _geometry:
-		if not shape.bounds.intersects(bounds):
-			continue
-		var surface: Dictionary = shape.detail if close else shape.overview
-		var selected_zone: bool = _selection == shape.id
-		if shape.water:
-			if selected_zone and not surface.indices.is_empty():
-				draw_colored_polygon(surface.points, Color("#4d727b"))
-			draw_polyline(surface.outline, Color(0.75, 0.79, 0.72, 0.29), line)
-		else:
-			if not surface.indices.is_empty():
-				var colors: PackedColorArray = surface.colors
-				if _live.has(shape.id) and _live[shape.id].owner != regions[shape.id].owner:
-					colors = PackedColorArray([SIDE_COLORS.get(_live[shape.id].owner, Color("#a89b7f"))])
-				draw_polygon(surface.points, colors)
-				if close:
-					draw_polygon(surface.points, PackedColorArray([Color(1, 1, 1, 0.37)]), surface.uv, RELIEF)
-			draw_polyline(surface.outline, Color("#485650"), line * 1.25, close)
-		if shape.id in _battle_zones:
-			draw_polyline(surface.outline, Color("#ef9b74"), line * 2.1, true)
-		if selected_zone or shape.id in _linked or _legal.has(shape.id):
-			draw_polyline(surface.outline, CHALK if selected_zone else Color(0.88, 0.77, 0.51, 0.68), line * (2.6 if selected_zone else 1.3), true)
-	if regions.has(_selection):
-		var start: Vector2 = regions[_selection].center
-		for neighbor in _linked:
-			var point: Vector2 = regions[neighbor].center
-			point.x = start.x + wrapf(point.x - start.x, -extent.x * 0.5, extent.x * 0.5)
-			draw_line(start, point, Color(0.98, 0.80, 0.46, 0.60), line * 1.5, true)
+		_draw_boundaries(offset, bounds)
+		_draw_labels(offset, bounds, _zoom >= 4.4)
+	for stack in _stacks:
+		var at := _screen(stack.point) + Vector2(11, 9)
+		var text := str(stack.count)
+		var width := maxf(15, UI.BODY.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + 6)
+		var badge := Rect2(at, Vector2(width, 15))
+		draw_style_box(UI.box(Color("#f0e0bf"), Color("#716344"), 2, 1, 2), badge)
+		draw_string(UI.BODY, at + Vector2(3, 12), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#24291e"))
 	for order in _orders:
 		for i in range(1, order.path.size()):
 			var start: Vector2 = regions[order.path[i - 1]].center
 			var end: Vector2 = regions[order.path[i]].center
+			start.x = _center.x + wrapf(start.x - _center.x, -extent.x * 0.5, extent.x * 0.5)
 			end.x = start.x + wrapf(end.x - start.x, -extent.x * 0.5, extent.x * 0.5)
-			for shift in [-extent.x, 0.0, extent.x]:
-				var offset := Vector2(shift, 0)
-				var a := start + offset
-				var b := end + offset
-				if not bounds.intersects(Rect2(a, Vector2.ZERO).expand(b).grow(18)):
-					continue
-				draw_line(a, b, Color("#201e19"), line * 5.0, true)
-				draw_line(a, b, Color("#efc677"), line * 2.7, true)
-				var direction := a.direction_to(b)
-				var base := b - direction * line * 10.0
-				var edge := direction.orthogonal() * line * 5.0
-				draw_colored_polygon(PackedVector2Array([b, base + edge, base - edge]), Color("#efc677"))
+			var a := _screen(start)
+			var b := _screen(end)
+			draw_line(a, b, Color("#342d20"), 4, true)
+			draw_line(a, b, Color("#e2ba72"), 2, true)
+			var direction := a.direction_to(b)
+			var edge := direction.orthogonal() * 4
+			draw_colored_polygon(PackedVector2Array([b, b - direction * 9 + edge, b - direction * 9 - edge]), Color("#e2ba72"))
+
+
+func _draw_boundaries(offset: Vector2, bounds: Rect2) -> void:
+	for shape in _geometry:
+		if not shape.bounds.intersects(bounds):
+			continue
+		var surface: Dictionary = shape.detail
+		var outline := PackedVector2Array()
+		for point in surface.outline:
+			outline.append(_screen(point + offset))
+		var color := Color(0.15, 0.17, 0.13, 0.78) if not shape.water else Color(0.75, 0.79, 0.71, 0.25)
+		draw_polyline(outline, color, 1.2 if not shape.water else 0.8, true)
+		if _selection == shape.id:
+			draw_polyline(outline, Color("#e9d397"), 2.0, true)
 
 
 func _draw_labels(offset: Vector2, bounds: Rect2, close: bool) -> void:
@@ -425,50 +408,19 @@ func _draw_labels(offset: Vector2, bounds: Rect2, close: bool) -> void:
 		if region.city:
 			title = "★ " + title
 		if close or region.city or region.bounds.size.x * _scale() > 95.0 or _selection == zone:
-			_caption(center, title, 18 if close else 15, CHALK)
+			_caption(center, title, 14 if close else 12, Color("#30362b"))
 		if close:
 			_draw_region_badges(center, region_info(zone) if _live.has(zone) else region, zone)
 
 
-func _draw_region_badges(center: Vector2, region: Dictionary, zone: String) -> void:
-	var models := _zoom >= 8.0
-	var is_mountain := zone in MOUNTAINS
-	var point := center + Vector2(0, 22)
-	if models and not region.water and (is_mountain or region.city or region.bounds.size.x * _scale() >= 160.0):
-		var model := 2 if is_mountain else (0 if region.city else 1)
-		var region_rect := Rect2(model * 192, 0, 192, 192)
-		draw_texture_rect_region(_models.get_texture(), Rect2(center + Vector2(-47, -80), Vector2(94, 94)), region_rect)
-	var groups := {}
-	for unit in region.units:
-		if unit[1] not in Rules.FACILITIES:
-			var kind := Rules.domain(String(unit[1]).to_lower())
-			var key := Vector2i(["land", "air", "sea"].find(kind), NAMES.keys().find(unit[0]))
-			groups[key] = int(groups.get(key, 0)) + int(unit[2])
-	if not _campaign:
-		var armies := 0
-		for count in groups.values():
-			armies += count
-		if region.ipc > 0 or armies > 0:
-			_caption(point, "%d IPC · %d units" % [region.ipc, armies], 13, CHALK)
-		return
-	if region.ipc > 0:
-		_caption(point, "%d IPC" % region.ipc, 14, CHALK)
-		point.y += 18
-	var stacks: Array = groups.keys().slice(0, 5)
-	for i in stacks.size():
-		var key: Vector2i = stacks[i]
-		var chip := Rect2(point + Vector2((i - (stacks.size() - 1) * 0.5) * 38.0 - 18.0, -10), Vector2(36, 21))
-		var side: String = NAMES.keys()[key.y] if key.y >= 0 else "Neutral_True"
-		var paint: Color = SIDE_COLORS.get(side, Color("#a69779"))
-		draw_rect(chip, Color("#1c2729"))
-		draw_rect(chip, paint, false, 1.4)
-		var icon: Texture2D = STACK_ICONS[["land", "air", "sea"][key.x]]
-		draw_texture_rect(icon, Rect2(chip.position + Vector2(2, 3), Vector2(15, 15)), false, paint.lightened(0.28))
-		_caption(chip.position + Vector2(26, 15), str(groups[key]), 15, CHALK)
+func _draw_region_badges(center: Vector2, region: Dictionary, _zone: String) -> void:
+	if not region.water and region.ipc > 0 and _zoom >= 4.4:
+		_caption(center + Vector2(0, 14), "%d IPC" % region.ipc, 11, Color("#3e4434"))
 
 
 func _caption(point: Vector2, value: String, font_size: int, color: Color) -> void:
 	var font: Font = UI.DISPLAY
 	var start := point - Vector2(font.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x * 0.5, 0)
-	draw_string_outline(font, start, value, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, 5, Color("#202d2c"))
+	var halo := Color(0.93, 0.88, 0.73, 0.7) if color.get_luminance() < 0.35 else Color("#263b3d")
+	draw_string_outline(font, start, value, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, 2, halo)
 	draw_string(font, start, value, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)

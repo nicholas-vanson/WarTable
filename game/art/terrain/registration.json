@@ -1,0 +1,1159 @@
+{
+  "source_sha256": "4a70590d40dd7b9c69b9ab359d1dc4475ce97c1d2d13625223b248364112c699",
+  "size": [
+    2048,
+    854
+  ],
+  "region_names": [
+    "Caroline Islands",
+    "Iwo Jima",
+    "Paulau Island",
+    "Marshall Islands",
+    "Shantung",
+    "Formosa",
+    "Kwangsi",
+    "Korea",
+    "Kiangsu",
+    "Kiangsi",
+    "Japan",
+    "Jehol",
+    "Okinawa",
+    "Marianas",
+    "Siam",
+    "Manchuria",
+    "Hainan",
+    "Shensi",
+    "Yunnan",
+    "Suiyuyan",
+    "Kweichow",
+    "Hunan",
+    "Kansu",
+    "Hopei",
+    "Tsinghai",
+    "Szechwan",
+    "Chahar",
+    "Sikang",
+    "Anhwe",
+    "Gilbert Islands",
+    "Fiji",
+    "Ceylon",
+    "Samoa",
+    "Shan State",
+    "Burma",
+    "British Columbia",
+    "India",
+    "Malaya",
+    "Borneo",
+    "Kwangtung",
+    "Queensland",
+    "Victoria",
+    "New Britain",
+    "Northern Territory",
+    "New Zealand",
+    "New South Wales",
+    "South Australia",
+    "Western Australia",
+    "Solomon Islands",
+    "New Guinea",
+    "Philippines",
+    "Line Islands",
+    "Mexico",
+    "Guam",
+    "Wake Island",
+    "Western United States",
+    "Alaska",
+    "Aleutian Islands",
+    "Johnston Island",
+    "Hawaiian Islands",
+    "Midway",
+    "Sakha",
+    "Evenkiyskiy",
+    "Yenisey",
+    "Soviet Far East",
+    "Amur",
+    "Yakut S.S.R.",
+    "Timguska",
+    "Siberia",
+    "Kazakhstan",
+    "Buryatia",
+    "French Indo China",
+    "New Hebrides",
+    "Celebes",
+    "Java",
+    "Dutch New Guinea",
+    "Sumatra",
+    "42 Sea Zone",
+    "41 Sea Zone",
+    "44 Sea Zone",
+    "43 Sea Zone",
+    "46 Sea Zone",
+    "45 Sea Zone",
+    "48 Sea Zone",
+    "47 Sea Zone",
+    "Olgiy",
+    "49 Sea Zone",
+    "50 Sea Zone",
+    "51 Sea Zone",
+    "33 Sea Zone",
+    "32 Sea Zone",
+    "31 Sea Zone",
+    "30 Sea Zone",
+    "37 Sea Zone",
+    "36 Sea Zone",
+    "35 Sea Zone",
+    "34 Sea Zone",
+    "Dzavhan",
+    "39 Sea Zone",
+    "38 Sea Zone",
+    "40 Sea Zone",
+    "24 Sea Zone",
+    "23 Sea Zone",
+    "26 Sea Zone",
+    "25 Sea Zone",
+    "20 Sea Zone",
+    "22 Sea Zone",
+    "21 Sea Zone",
+    "28 Sea Zone",
+    "27 Sea Zone",
+    "29 Sea Zone",
+    "15 Sea Zone",
+    "14 Sea Zone",
+    "13 Sea Zone",
+    "12 Sea Zone",
+    "11 Sea Zone",
+    "10 Sea Zone",
+    "19 Sea Zone",
+    "Central Mongolia",
+    "18 Sea Zone",
+    "17 Sea Zone",
+    "16 Sea Zone",
+    "2 Sea Zone",
+    "1 Sea Zone",
+    "7 Sea Zone",
+    "Himalayas",
+    "8 Sea Zone",
+    "9 Sea Zone",
+    "3 Sea Zone",
+    "4 Sea Zone",
+    "5 Sea Zone",
+    "6 Sea Zone",
+    "Buyant-Uhaa",
+    "Ulaanbaatar",
+    "Tsagaan Olom",
+    "63 Sea Zone",
+    "58 Sea Zone",
+    "59 Sea Zone",
+    "56 Sea Zone",
+    "57 Sea Zone",
+    "54 Sea Zone",
+    "55 Sea Zone",
+    "52 Sea Zone",
+    "53 Sea Zone",
+    "62 Sea Zone",
+    "61 Sea Zone",
+    "60 Sea Zone",
+    "West Indies",
+    "Central United States",
+    "Central America",
+    "Greenland",
+    "Southeast Mexico",
+    "Eastern United States",
+    "West India",
+    "Belgian Congo",
+    "Iceland",
+    "Quebec",
+    "Alberta Saskatchewan Manitoba",
+    "Trans-Jordan",
+    "British Somaliland",
+    "Alexandria",
+    "Gibraltar",
+    "New Brunswick Nova Scotia",
+    "Egypt",
+    "Union of South Africa",
+    "Cyprus",
+    "British Guiana",
+    "Gold Coast",
+    "Rio de Oro",
+    "Ontario",
+    "Scotland",
+    "South West Africa",
+    "Nigeria",
+    "Kenya",
+    "Malta",
+    "United Kingdom",
+    "Anglo Egyptian Sudan",
+    "Rhodesia",
+    "Tanganyika Territory",
+    "Newfoundland Labrador",
+    "Morocco",
+    "French Equatorial Africa",
+    "Normandy Bordeaux",
+    "French Central Africa",
+    "French Madagascar",
+    "French Guiana",
+    "Algeria",
+    "Southern France",
+    "Syria",
+    "French West Africa",
+    "France",
+    "Tunisia",
+    "Greater Southern Germany",
+    "Slovakia Hungary",
+    "Western Germany",
+    "Romania",
+    "Poland",
+    "Germany",
+    "Norway",
+    "Denmark",
+    "Holland Belgium",
+    "Tobruk",
+    "Albania",
+    "Northern Italy",
+    "Libya",
+    "Sicily",
+    "Italian Somaliland",
+    "Southern Italy",
+    "Ethiopia",
+    "Sardinia",
+    "Belarus",
+    "Karelia",
+    "Baltic States",
+    "Bryansk",
+    "Rostov",
+    "Nenetsia",
+    "Urals",
+    "Vyborg",
+    "Archangel",
+    "Eastern Poland",
+    "Bessarabia",
+    "Russia",
+    "Tambov",
+    "Ukraine",
+    "Western Ukraine",
+    "Novosibirsk",
+    "Vologda",
+    "Volgograd",
+    "Turkmenistan",
+    "Novgorod",
+    "Caucasus",
+    "Smolensk",
+    "Samara",
+    "Portugal",
+    "Portuguese Guinea",
+    "120 Sea Zone",
+    "Ecuador",
+    "112 Sea Zone",
+    "100 Sea Zone",
+    "119 Sea Zone",
+    "124 Sea Zone",
+    "125 Sea Zone",
+    "Chile",
+    "Afghanistan",
+    "80 Sea Zone",
+    "113 Sea Zone",
+    "96 Sea Zone",
+    "123 Sea Zone",
+    "116 Sea Zone",
+    "65 Sea Zone",
+    "Sierra Leone",
+    "108 Sea Zone",
+    "84 Sea Zone",
+    "122 Sea Zone",
+    "73 Sea Zone",
+    "Turkey",
+    "70 Sea Zone",
+    "76 Sea Zone",
+    "Mozambique",
+    "118 Sea Zone",
+    "104 Sea Zone",
+    "95 Sea Zone",
+    "Saudi Arabia",
+    "Paraguay",
+    "75 Sea Zone",
+    "87 Sea Zone",
+    "Switzerland",
+    "106 Sea Zone",
+    "86 Sea Zone",
+    "Pripet Marshes",
+    "94 Sea Zone",
+    "67 Sea Zone",
+    "89 Sea Zone",
+    "74 Sea Zone",
+    "102 Sea Zone",
+    "93 Sea Zone",
+    "66 Sea Zone",
+    "85 Sea Zone",
+    "Eire",
+    "Crete",
+    "Argentina",
+    "Bulgaria",
+    "109 Sea Zone",
+    "117 Sea Zone",
+    "Angola",
+    "64 Sea Zone",
+    "Greece",
+    "99 Sea Zone",
+    "97 Sea Zone",
+    "Iraq",
+    "92 Sea Zone",
+    "90 Sea Zone",
+    "Eastern Persia",
+    "72 Sea Zone",
+    "101 Sea Zone",
+    "114 Sea Zone",
+    "71 Sea Zone",
+    "81 Sea Zone",
+    "79 Sea Zone",
+    "Uruguay",
+    "83 Sea Zone",
+    "77 Sea Zone",
+    "121 Sea Zone",
+    "82 Sea Zone",
+    "Brazil",
+    "Venezuela",
+    "127 Sea Zone",
+    "Northwest Persia",
+    "Persia",
+    "Sweden",
+    "115 Sea Zone",
+    "103 Sea Zone",
+    "Yugoslavia",
+    "Spain",
+    "Colombia",
+    "69 Sea Zone",
+    "Bolivia",
+    "Liberia",
+    "Peru",
+    "126 Sea Zone",
+    "98 Sea Zone",
+    "91 Sea Zone",
+    "Finland",
+    "78 Sea Zone",
+    "Suriname",
+    "107 Sea Zone",
+    "110 Sea Zone",
+    "111 Sea Zone",
+    "68 Sea Zone",
+    "88 Sea Zone",
+    "105 Sea Zone",
+    "128 Sea Zone"
+  ],
+  "anchors": {
+    "Caroline Islands": [
+      158,
+      7
+    ],
+    "Iwo Jima": [
+      141.3,
+      24.8
+    ],
+    "Paulau Island": [
+      134.5,
+      7.5
+    ],
+    "Marshall Islands": [
+      168,
+      8
+    ],
+    "Shantung": [
+      118,
+      36
+    ],
+    "Formosa": [
+      121,
+      23.7
+    ],
+    "Kwangsi": [
+      109,
+      23.5
+    ],
+    "Korea": [
+      127.5,
+      38
+    ],
+    "Kiangsu": [
+      119,
+      32.5
+    ],
+    "Kiangsi": [
+      116,
+      28
+    ],
+    "Japan": [
+      138,
+      37
+    ],
+    "Jehol": [
+      118,
+      41.5
+    ],
+    "Okinawa": [
+      127.8,
+      26.5
+    ],
+    "Marianas": [
+      145.7,
+      16
+    ],
+    "Siam": [
+      101,
+      16
+    ],
+    "Manchuria": [
+      126,
+      45
+    ],
+    "Hainan": [
+      109.5,
+      19
+    ],
+    "Shensi": [
+      108.5,
+      35
+    ],
+    "Yunnan": [
+      101,
+      25
+    ],
+    "Suiyuyan": [
+      111,
+      41
+    ],
+    "Kweichow": [
+      106.5,
+      27
+    ],
+    "Hunan": [
+      112,
+      27.5
+    ],
+    "Kansu": [
+      103,
+      38
+    ],
+    "Hopei": [
+      115,
+      37.5
+    ],
+    "Tsinghai": [
+      97,
+      35.5
+    ],
+    "Szechwan": [
+      103,
+      30.5
+    ],
+    "Chahar": [
+      114,
+      40.8
+    ],
+    "Sikang": [
+      98,
+      30
+    ],
+    "Anhwe": [
+      117,
+      32
+    ],
+    "Gilbert Islands": [
+      173,
+      1
+    ],
+    "Fiji": [
+      178,
+      -18
+    ],
+    "Ceylon": [
+      80.7,
+      7.5
+    ],
+    "Samoa": [
+      188,
+      -14
+    ],
+    "Shan State": [
+      98,
+      21
+    ],
+    "Burma": [
+      95,
+      22
+    ],
+    "British Columbia": [
+      235,
+      54
+    ],
+    "India": [
+      80,
+      24
+    ],
+    "West India": [
+      73,
+      23
+    ],
+    "Malaya": [
+      102,
+      4
+    ],
+    "Borneo": [
+      114,
+      1
+    ],
+    "Kwangtung": [
+      113,
+      23
+    ],
+    "Queensland": [
+      145,
+      -22
+    ],
+    "Victoria": [
+      144,
+      -37
+    ],
+    "New Britain": [
+      151,
+      -5.5
+    ],
+    "Northern Territory": [
+      133,
+      -19
+    ],
+    "New Zealand": [
+      173,
+      -41
+    ],
+    "New South Wales": [
+      147,
+      -32
+    ],
+    "South Australia": [
+      135,
+      -30
+    ],
+    "Western Australia": [
+      122,
+      -26
+    ],
+    "Solomon Islands": [
+      160,
+      -9
+    ],
+    "New Guinea": [
+      145,
+      -6
+    ],
+    "Philippines": [
+      123,
+      12
+    ],
+    "Line Islands": [
+      203,
+      2
+    ],
+    "Mexico": [
+      253,
+      27
+    ],
+    "Guam": [
+      144.8,
+      13.4
+    ],
+    "Wake Island": [
+      166.6,
+      19.3
+    ],
+    "Western United States": [
+      240,
+      40
+    ],
+    "Alaska": [
+      208,
+      65
+    ],
+    "Aleutian Islands": [
+      185,
+      52
+    ],
+    "Johnston Island": [
+      190.5,
+      16.7
+    ],
+    "Hawaiian Islands": [
+      204.5,
+      20.5
+    ],
+    "Midway": [
+      182.6,
+      28.2
+    ],
+    "Sakha": [
+      129,
+      67
+    ],
+    "Evenkiyskiy": [
+      95,
+      65
+    ],
+    "Yenisey": [
+      102,
+      60
+    ],
+    "Soviet Far East": [
+      165,
+      66
+    ],
+    "Amur": [
+      132,
+      52
+    ],
+    "Yakut S.S.R.": [
+      115,
+      64
+    ],
+    "Timguska": [
+      91,
+      57
+    ],
+    "Siberia": [
+      147,
+      65
+    ],
+    "Kazakhstan": [
+      68,
+      48
+    ],
+    "Buryatia": [
+      109,
+      53
+    ],
+    "French Indo China": [
+      106,
+      16
+    ],
+    "New Hebrides": [
+      167,
+      -16
+    ],
+    "Celebes": [
+      121,
+      -2
+    ],
+    "Java": [
+      110,
+      -7
+    ],
+    "Dutch New Guinea": [
+      136,
+      -4
+    ],
+    "Sumatra": [
+      102,
+      -1
+    ],
+    "Olgiy": [
+      89,
+      49
+    ],
+    "Dzavhan": [
+      96,
+      49
+    ],
+    "Central Mongolia": [
+      102,
+      46
+    ],
+    "Himalayas": [
+      85,
+      28
+    ],
+    "Buyant-Uhaa": [
+      109,
+      46
+    ],
+    "Ulaanbaatar": [
+      107,
+      48
+    ],
+    "Tsagaan Olom": [
+      96,
+      46
+    ],
+    "West Indies": [
+      -75,
+      20
+    ],
+    "Central United States": [
+      -98,
+      39
+    ],
+    "Central America": [
+      -86,
+      13
+    ],
+    "Greenland": [
+      -42,
+      73
+    ],
+    "Southeast Mexico": [
+      -99,
+      20
+    ],
+    "Eastern United States": [
+      -81,
+      38
+    ],
+    "Belgian Congo": [
+      24,
+      -4
+    ],
+    "Iceland": [
+      -19,
+      65
+    ],
+    "Quebec": [
+      -71,
+      52
+    ],
+    "Alberta Saskatchewan Manitoba": [
+      -103,
+      54
+    ],
+    "Trans-Jordan": [
+      36,
+      31
+    ],
+    "British Somaliland": [
+      45,
+      10
+    ],
+    "Alexandria": [
+      29,
+      31
+    ],
+    "Gibraltar": [
+      -5.4,
+      36.1
+    ],
+    "New Brunswick Nova Scotia": [
+      -64,
+      46
+    ],
+    "Egypt": [
+      30,
+      27
+    ],
+    "Union of South Africa": [
+      25,
+      -29
+    ],
+    "Cyprus": [
+      33,
+      35
+    ],
+    "British Guiana": [
+      -59,
+      5
+    ],
+    "Gold Coast": [
+      -2,
+      8
+    ],
+    "Rio de Oro": [
+      -13,
+      25
+    ],
+    "Ontario": [
+      -85,
+      50
+    ],
+    "Scotland": [
+      -4,
+      57
+    ],
+    "South West Africa": [
+      17,
+      -23
+    ],
+    "Nigeria": [
+      8,
+      10
+    ],
+    "Kenya": [
+      38,
+      0
+    ],
+    "Malta": [
+      14.4,
+      35.9
+    ],
+    "United Kingdom": [
+      -2,
+      53
+    ],
+    "Anglo Egyptian Sudan": [
+      30,
+      14
+    ],
+    "Rhodesia": [
+      28,
+      -16
+    ],
+    "Tanganyika Territory": [
+      35,
+      -6
+    ],
+    "Newfoundland Labrador": [
+      -59,
+      54
+    ],
+    "Morocco": [
+      -6,
+      32
+    ],
+    "French Equatorial Africa": [
+      17,
+      3
+    ],
+    "Normandy Bordeaux": [
+      -0.5,
+      46.5
+    ],
+    "French Central Africa": [
+      12,
+      15
+    ],
+    "French Madagascar": [
+      47,
+      -20
+    ],
+    "French Guiana": [
+      -53,
+      4
+    ],
+    "Algeria": [
+      3,
+      28
+    ],
+    "Southern France": [
+      5,
+      44.5
+    ],
+    "Syria": [
+      38,
+      35
+    ],
+    "French West Africa": [
+      -7,
+      16
+    ],
+    "France": [
+      3,
+      48
+    ],
+    "Tunisia": [
+      10,
+      34
+    ],
+    "Greater Southern Germany": [
+      11,
+      47.8
+    ],
+    "Slovakia Hungary": [
+      20,
+      48
+    ],
+    "Western Germany": [
+      7,
+      51
+    ],
+    "Romania": [
+      25,
+      46
+    ],
+    "Poland": [
+      20,
+      52
+    ],
+    "Germany": [
+      13,
+      52.5
+    ],
+    "Norway": [
+      10,
+      65
+    ],
+    "Denmark": [
+      10,
+      56
+    ],
+    "Holland Belgium": [
+      5,
+      51.5
+    ],
+    "Tobruk": [
+      24,
+      31
+    ],
+    "Albania": [
+      20,
+      41
+    ],
+    "Northern Italy": [
+      10,
+      45
+    ],
+    "Libya": [
+      17,
+      28
+    ],
+    "Sicily": [
+      14,
+      37.5
+    ],
+    "Italian Somaliland": [
+      46,
+      5
+    ],
+    "Southern Italy": [
+      15,
+      41
+    ],
+    "Ethiopia": [
+      39,
+      9
+    ],
+    "Sardinia": [
+      9,
+      40
+    ],
+    "Belarus": [
+      28,
+      54
+    ],
+    "Karelia": [
+      33,
+      65
+    ],
+    "Baltic States": [
+      25,
+      57
+    ],
+    "Bryansk": [
+      34,
+      53
+    ],
+    "Rostov": [
+      40,
+      47
+    ],
+    "Nenetsia": [
+      54,
+      68
+    ],
+    "Urals": [
+      60,
+      65
+    ],
+    "Vyborg": [
+      29,
+      61
+    ],
+    "Archangel": [
+      41,
+      64
+    ],
+    "Eastern Poland": [
+      25,
+      52
+    ],
+    "Bessarabia": [
+      29,
+      47
+    ],
+    "Russia": [
+      38,
+      56
+    ],
+    "Tambov": [
+      42,
+      52
+    ],
+    "Ukraine": [
+      33,
+      48
+    ],
+    "Western Ukraine": [
+      27,
+      50
+    ],
+    "Novosibirsk": [
+      83,
+      55
+    ],
+    "Vologda": [
+      42,
+      60
+    ],
+    "Volgograd": [
+      45,
+      49
+    ],
+    "Turkmenistan": [
+      59,
+      39
+    ],
+    "Novgorod": [
+      31,
+      59
+    ],
+    "Caucasus": [
+      44,
+      43
+    ],
+    "Smolensk": [
+      32,
+      55
+    ],
+    "Samara": [
+      50,
+      53
+    ],
+    "Portugal": [
+      -8,
+      39
+    ],
+    "Portuguese Guinea": [
+      -15,
+      12
+    ],
+    "Ecuador": [
+      -78,
+      -1
+    ],
+    "Chile": [
+      -71,
+      -30
+    ],
+    "Afghanistan": [
+      66,
+      34
+    ],
+    "Sierra Leone": [
+      -12,
+      8.5
+    ],
+    "Turkey": [
+      35,
+      39
+    ],
+    "Mozambique": [
+      35,
+      -18
+    ],
+    "Saudi Arabia": [
+      45,
+      24
+    ],
+    "Paraguay": [
+      -58,
+      -23
+    ],
+    "Switzerland": [
+      8,
+      47
+    ],
+    "Pripet Marshes": [
+      28,
+      52
+    ],
+    "Eire": [
+      -8,
+      53
+    ],
+    "Crete": [
+      25,
+      35
+    ],
+    "Argentina": [
+      -65,
+      -35
+    ],
+    "Bulgaria": [
+      25,
+      43
+    ],
+    "Angola": [
+      18,
+      -12
+    ],
+    "Greece": [
+      23,
+      39
+    ],
+    "Iraq": [
+      44,
+      33
+    ],
+    "Eastern Persia": [
+      58,
+      32
+    ],
+    "Uruguay": [
+      -56,
+      -33
+    ],
+    "Brazil": [
+      -52,
+      -12
+    ],
+    "Venezuela": [
+      -66,
+      8
+    ],
+    "Northwest Persia": [
+      47,
+      37
+    ],
+    "Persia": [
+      51,
+      32
+    ],
+    "Sweden": [
+      16,
+      62
+    ],
+    "Yugoslavia": [
+      18,
+      44
+    ],
+    "Spain": [
+      -4,
+      40
+    ],
+    "Colombia": [
+      -73,
+      5
+    ],
+    "Bolivia": [
+      -64,
+      -17
+    ],
+    "Liberia": [
+      -9,
+      6
+    ],
+    "Peru": [
+      -75,
+      -10
+    ],
+    "Finland": [
+      26,
+      65
+    ],
+    "Suriname": [
+      -56,
+      4
+    ]
+  }
+}

@@ -95,3 +95,36 @@ static func secondary(item: Button) -> void:
 		item.remove_theme_stylebox_override(state)
 	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
 		item.remove_theme_color_override(state)
+
+
+static func field_box(fill := Color("#e4d2aa"), padding_x := 10, padding_y := 8) -> StyleBoxFlat:
+	var paper := box(fill, Color("#927953"), padding_x, padding_y, 2)
+	paper.shadow_color = Color(0.08, 0.065, 0.035, 0.35)
+	paper.shadow_size = 5
+	paper.shadow_offset = Vector2(2, 4)
+	return paper
+
+
+static func field_theme() -> Theme:
+	var theme := make_theme()
+	theme.default_font_size = 14
+	for node_type in ["Label", "Button", "OptionButton", "CheckButton", "LineEdit", "RichTextLabel"]:
+		for state in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color", "default_color"]:
+			theme.set_color(state, node_type, Color("#303327"))
+	for node_type in ["Button", "OptionButton"]:
+		for state in ["normal", "hover", "pressed", "disabled", "focus"]:
+			var fill := Color("#e7d9bb") if state == "normal" else Color("#d7c49b")
+			if state == "disabled":
+				fill = Color("#d4c5a7")
+			theme.set_stylebox(state, node_type, box(fill, Color("#8b7c5c"), 8, 4, 2))
+		theme.set_color("font_disabled_color", node_type, Color("#8b826e"))
+	theme.set_stylebox("panel", "PopupMenu", field_box())
+	theme.set_color("font_color", "PopupMenu", Color("#303327"))
+	theme.set_stylebox("panel", "AcceptDialog", field_box())
+	return theme
+
+
+static func field_primary(item: Button) -> void:
+	primary(item, Color("#596044"))
+	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		item.add_theme_color_override(state, Color("#f0e5c9"))

@@ -77,11 +77,42 @@ Open `project.godot` in Godot **4.7.2 Standard** with the matching export templa
 ```powershell
 godot --headless --editor --path . --import
 godot --headless --path . --script res://tests/smoke.gd
+godot --headless --path . --script res://tests/visual_world.gd
 New-Item -ItemType Directory -Force dist | Out-Null
 godot --headless --path . --export-release 'Windows Desktop' 'dist/CrossroadsCommand-0.9.exe'
 ```
 
 The smoke test checks both turns, movement and factory restrictions, the coastal blitz route, map controls, victory, save compatibility, and two ENet peers on localhost. The network portion requires localhost UDP access. For a device check, use two devices on the same private Wi-Fi and have France leave and rejoin during casualty selection.
+
+### Global tabletop renderer
+
+**Play Global 1940** and the world atlas use the same full-board 3D relief renderer.
+The camera looks straight down; height, directional lighting, shadows and perspective
+produce depth while panning. Ownership is a transparent wash near the inside of
+each territory boundary, fading toward its natural terrain center. The slim top
+strip shows the current round, phase, power and treasury. The paper orders folder
+has collapse and maximize controls; its edge tab reopens it.
+
+National armies use faction-painted procedural tabletop miniatures. At theater
+zoom, forces consolidate by power and land/air/sea domain; zoom closer for separate
+unit types and counts. The inspector always lists complete forces. These original
+stylized sculpts can be refined individually without changing the rules. The world
+terrain uses a GEBCO-derived raster registered to the existing, deliberately
+distorted playable board; it is not survey-grade geography. See
+[terrain sources and rebuilding](game/art/terrain/SOURCES.md).
+
+The visual suite checks projection/picking across continents, ownership changes,
+every power's unit meshes, horizontal wraparound and the folder at desktop and
+small-screen sizes. For real-render captures on a graphical desktop:
+
+```sh
+godot --path . --script res://tests/visual_world.gd -- --capture-dir /absolute/output/path
+```
+
+GPU and actual Android-device performance should be checked on the target device.
+The renderer uses view-culling, shared meshes and coarser terrain at world overview
+to reduce work. All runtime terrain assets are included; no terrain downloads or
+Python dependencies are required to run the game.
 
 The `-- --touch-layout` argument enables the Android layout in a desktop window. To regenerate `game/global_1940.json`, run `python tools/import_global_map.py <source-directory> game/global_1940.json` with the TripleA map’s `centers.txt`, `polygons.txt`, `map.properties` and `ww2global40_2nd_edition.xml` in the source directory.
 

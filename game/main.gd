@@ -521,6 +521,7 @@ func _confirm_leave() -> void:
 
 func _show_licenses() -> void:
 	var sections := PackedStringArray(["Godot Engine", Engine.get_license_text()])
+	sections.append("Global terrain: IHO–IOC GEBCO_08-derived elevation. Adapted to the playable board; heights are exaggerated visual relief. https://www.gebco.net/\nFull provenance: game/art/terrain/SOURCES.md\nTabletop wood and ground materials: ambientCG Wood049 and Ground030, CC0. https://ambientcg.com/")
 	for component in Engine.get_copyright_info():
 		sections.append(component.name)
 		for part in component.parts:

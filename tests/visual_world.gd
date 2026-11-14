@@ -1,0 +1,121 @@
+extends SceneTree
+## Regression coverage for world relief, projection, controllers and folder UI.
+## Optional real-render captures: -- --capture-dir /absolute/path (not headless).
+
+const Screen = preload("res://game/global_screen.gd")
+const Rules = preload("res://game/global_rules.gd")
+const Miniatures = preload("res://game/unit_miniatures.gd")
+var failures := 0
+var checks := 0
+var captures := ""
+
+
+func _initialize() -> void:
+	_run.call_deferred()
+
+
+func _run() -> void:
+	var args := OS.get_cmdline_user_args()
+	if "--capture-dir" in args:
+		captures = args[args.find("--capture-dir") + 1]
+		DirAccess.make_dir_recursive_absolute(captures)
+	root.size = Vector2i(1440, 900)
+	root.content_scale_size = root.size
+	var screen := Screen.new()
+	screen.save_path = "" # Never read or overwrite a player's campaign.
+	screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	root.add_child(screen)
+	screen.open_campaign()
+	await process_frame
+	var map = screen._map
+	_check(map.regions.size() == 332, "Every game territory is retained")
+	_check(map._terrain._copies.size() == 3, "Terrain supports horizontal wraparound")
+	_check(map._terrain.palette.get_pixel(0, 1).is_equal_approx(Color(0, 0, 0, 0)), "Unassigned water has no ownership or battle highlight")
+	_check(map._terrain.camera.rotation_degrees.is_equal_approx(Vector3(-90, 0, 0)), "Camera is straight overhead")
+	_check(map._terrain.camera.projection == Camera3D.PROJECTION_PERSPECTIVE, "Relief has perspective parallax")
+	for zone in ["France", "Caucasus", "Himalayas", "Western United States", "Peru", "Japan", "New South Wales"]:
+		map.focus(zone)
+		var at: Vector2 = map.regions[zone].center
+		_check(map._terrain.height_at(at) > 0, "Land relief exists in " + zone)
+		_check(map._world(map._screen(at)).distance_to(at) < 1.0, "Screen picking agrees with relief in " + zone)
+	map.focus("Himalayas")
+	var high: Vector2 = map.regions.Himalayas.center + Vector2(40, 0)
+	var flat: Vector2 = map._terrain.camera.unproject_position(Vector3(high.x, 0, high.y))
+	_check(map._screen(high).distance_to(flat) > 0.05, "Elevated terrain has actual perspective parallax")
+	map.inspect_theater("France")
+	await process_frame
+	_check(not map._stacks.is_empty(), "Visible armies instantiate 3D miniatures")
+	_check(map._terrain._piece_nodes.size() == map._stacks.size(), "Displayed stacks have matching 3D instances")
+	var stack: Dictionary = map._stacks[0]
+	map._tap(map._screen(stack.point))
+	_check(map._selection == stack.zone, "Tapping a miniature selects its territory")
+	var names: Array = map.regions.keys()
+	var ident := names.find("France") + 1
+	_check(map._terrain.palette.get_pixel(ident, 0).is_equal_approx(map.SIDE_COLORS.French), "French control uses the French tint")
+	var live: Dictionary = map._live.duplicate(true)
+	live.France.owner = "Germans"
+	map.set_campaign(live, [], {}, [])
+	_check(map._terrain.palette.get_pixel(ident, 0).is_equal_approx(map.SIDE_COLORS.Germans), "Capturing land updates ownership without rebuilding relief")
+	screen._refresh()
+	for owner in Rules.ORDER:
+		for unit in Rules.PROFILES:
+			var mesh := Miniatures.build(owner, unit, map.SIDE_COLORS[owner])
+			_check(mesh.get_surface_count() == 1 and mesh.get_aabb().size.length() > 0, owner + " has a " + unit + " sculpt")
+	var german := Miniatures.build("Germans", "armour", map.SIDE_COLORS.Germans)
+	var french := Miniatures.build("French", "armour", map.SIDE_COLORS.French)
+	_check(not german.get_aabb().is_equal_approx(french.get_aabb()), "National tanks have distinct geometry")
+	screen._show_panel(true)
+	await process_frame
+	var original_width := screen._panel.size.x
+	screen._maximize_panel()
+	await process_frame
+	_check(screen._panel.size.x > original_width, "Orders folder maximizes")
+	screen._maximize_panel()
+	screen._show_panel(false, true)
+	await create_timer(0.30).timeout
+	_check(not screen._panel.visible and screen._order_toggle.visible, "Minimized folder leaves an accessible edge tab")
+	screen._order_toggle.pressed.emit()
+	await create_timer(0.30).timeout
+	_check(screen._panel.visible and not screen._order_toggle.visible, "The tab reopens the folder")
+	map.inspect_theater("France")
+	await _capture("europe-folder")
+	screen._show_panel(false)
+	map.reset_camera()
+	await _capture("global-overview")
+	map.inspect_theater("Japan")
+	await _capture("east-asia")
+	map.inspect_theater("Eastern United States")
+	await _capture("north-america")
+	map.inspect_theater("Hawaiian Islands")
+	var before: Vector2 = map._center
+	map._pan(Vector2(-map.extent.x * map._scale(), 0))
+	_check(map._center.distance_to(before) < 0.1, "A complete pan wraps to the original place")
+	root.size = Vector2i(960, 540)
+	root.content_scale_size = root.size
+	await process_frame
+	screen._show_panel(true)
+	await process_frame
+	_check(screen._panel.position.x >= 0 and screen._panel.get_rect().end.x <= map.size.x, "Folder fits a small touchscreen")
+	_check(screen._panel.get_rect().end.y <= map.size.y, "Small-screen folder stays vertically reachable")
+	map.inspect_theater("France")
+	await _capture("touch-layout")
+	print("World visual checks: %d passed, %d failed." % [checks - failures, failures])
+	quit(0 if failures == 0 else 1)
+
+
+func _capture(label: String) -> void:
+	if captures.is_empty() or DisplayServer.get_name() == "headless":
+		return
+	for i in 4:
+		await process_frame
+	await RenderingServer.frame_post_draw
+	var err := root.get_texture().get_image().save_png(captures.path_join(label + ".png"))
+	_check(err == OK, "Rendered " + label)
+	print("Captured ", label, "; FPS ", Engine.get_frames_per_second())
+
+
+func _check(passed: bool, message: String) -> void:
+	checks += 1
+	if not passed:
+		failures += 1
+		push_error(message)
