@@ -1,0 +1,7 @@
+# Godot-generated cache folders
+.godot/
+.import/
+
+# Operating system files
+.DS_Store
+Thumbs.db
