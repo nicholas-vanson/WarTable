@@ -87,11 +87,14 @@ The smoke test checks both turns, movement and factory restrictions, the coastal
 ### Global tabletop renderer
 
 **Play Global 1940** and the world atlas use the same full-board 3D relief renderer.
-The camera looks straight down; height, directional lighting, shadows and perspective
+The camera looks straight down; the 8K RG16 heightfield, directional lighting, shadows and perspective
 produce depth while panning. Ownership is a transparent wash near the inside of
 each territory boundary, fading toward its natural terrain center. The slim top
 strip shows the current round, phase, power and treasury. The paper orders folder
-has collapse and maximize controls; its edge tab reopens it.
+has collapse and maximize controls; its edge tab reopens it. The interface uses
+actual folder, brass, painted-metal and unit-illustration artwork, with Old
+Standard TT serif lettering. The approved reference is retained in
+[the art direction guide](docs/art-direction/README.md).
 
 National armies use faction-painted procedural tabletop miniatures. At theater
 zoom, forces consolidate by power and land/air/sea domain; zoom closer for separate
@@ -111,8 +114,14 @@ godot --path . --script res://tests/visual_world.gd -- --capture-dir /absolute/o
 
 GPU and actual Android-device performance should be checked on the target device.
 The renderer uses view-culling, shared meshes and coarser terrain at world overview
-to reduce work. All runtime terrain assets are included; no terrain downloads or
+to reduce work. Close-ups use up to 64 times the first pass’s triangle density.
+All runtime terrain assets are included; no terrain downloads or
 Python dependencies are required to run the game.
+
+The small **☰** display menu selects High detail (default), Balanced or Performance.
+Performance reduces geometry and disables cast shadows while keeping the same
+terrain data, overhead camera, political overlays and material artwork. The
+choice is stored locally in `user://display.cfg`.
 
 The `-- --touch-layout` argument enables the Android layout in a desktop window. To regenerate `game/global_1940.json`, run `python tools/import_global_map.py <source-directory> game/global_1940.json` with the TripleA map’s `centers.txt`, `polygons.txt`, `map.properties` and `ww2global40_2nd_edition.xml` in the source directory.
 

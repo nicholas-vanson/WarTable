@@ -7,9 +7,9 @@ const HEIGHT = preload("res://game/art/terrain/global_height.png")
 const GEOGRAPHY = preload("res://game/art/terrain/global_geography.png")
 const TERRITORIES = preload("res://game/art/terrain/global_territories.png")
 const WORLD := Vector2(7705, 3213)
-const RELIEF := 75.0
-const CHUNK := 256.0
-const STEP := 8.0
+const RELIEF := 180.0
+const CHUNK := 192.0
+const STEP := 2.0
 
 var camera := Camera3D.new()
 var palette := Image.create(512, 2, false, Image.FORMAT_RGBA8)
@@ -22,8 +22,15 @@ var _pieces := Node3D.new()
 var _piece_nodes := {}
 var _mesh_cache := {}
 static var _terrain_meshes := {}
+static var _detail_keys: Array = []
 var _sun: DirectionalLight3D
 var _tiles: Array = []
+var quality_level := 0
+
+
+func set_quality(level: int) -> void:
+	quality_level = clampi(level, 0, 2)
+	_sun.shadow_enabled = quality_level < 2
 
 
 func _ready() -> void:
@@ -40,13 +47,15 @@ func _ready() -> void:
 	palette_texture = ImageTexture.create_from_image(palette)
 	terrain_material.shader = SHADER
 	terrain_material.set_shader_parameter("height_map", HEIGHT)
+	terrain_material.set_shader_parameter("relief_height", RELIEF)
 	terrain_material.set_shader_parameter("geography", GEOGRAPHY)
+	terrain_material.set_shader_parameter("ground_grain", preload("res://game/art/ground030/Ground030_1K-JPG_Color.jpg"))
 	terrain_material.set_shader_parameter("territories", TERRITORIES)
 	terrain_material.set_shader_parameter("control_palette", palette_texture)
 	terrain_material.set_shader_parameter("raster_size", Vector2(HEIGHT.get_width(), HEIGHT.get_height()))
 	_world.add_child(camera)
 	camera.keep_aspect = Camera3D.KEEP_WIDTH
-	camera.fov = 35
+	camera.fov = 70
 	camera.near = 1.0
 	camera.far = 30000
 	camera.rotation_degrees.x = -90
@@ -55,9 +64,11 @@ func _ready() -> void:
 	_sun = light
 	light.rotation_degrees = Vector3(-56, -35, -18)
 	light.light_color = Color("#fff1d2")
-	light.light_energy = 0.72
+	light.light_energy = 0.62
 	light.shadow_enabled = true
-	light.shadow_bias = 0.025
+	light.shadow_opacity = 0.5
+	light.shadow_bias = 0.16
+	light.shadow_normal_bias = 2.0
 	light.directional_shadow_max_distance = 15000
 	light.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
 	_world.add_child(light)
@@ -67,7 +78,7 @@ func _ready() -> void:
 	environment.environment.background_color = Color("#172829")
 	environment.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	environment.environment.ambient_light_color = Color("#bdcbd6")
-	environment.environment.ambient_light_energy = 0.32
+	environment.environment.ambient_light_energy = 0.60
 	environment.environment.tonemap_mode = Environment.TONE_MAPPER_LINEAR
 	_world.add_child(environment)
 	_build_world()
@@ -81,14 +92,14 @@ func _build_world() -> void:
 		_copies.append(copy)
 	for y in range(0, int(WORLD.y), int(CHUNK)):
 		for x in range(0, int(WORLD.x), int(CHUNK)):
-			var mesh := _chunk_mesh(Vector2(x, y), 24.0)
+			var mesh := _chunk_mesh(Vector2(x, y), 16.0)
 			for copy in _copies:
 				var tile := MeshInstance3D.new()
 				tile.mesh = mesh
 				tile.material_override = terrain_material
 				tile.custom_aabb = AABB(Vector3(x, -1, y), Vector3(CHUNK, RELIEF + 2, CHUNK))
 				copy.add_child(tile)
-				_tiles.append({"node": tile, "origin": Vector2(x, y), "bounds": Rect2(Vector2(x + copy.position.x, y), Vector2.ONE * CHUNK), "step": 24.0})
+				_tiles.append({"node": tile, "origin": Vector2(x, y), "bounds": Rect2(Vector2(x + copy.position.x, y), Vector2.ONE * CHUNK), "step": 16.0})
 
 
 func _chunk_mesh(origin: Vector2, step: float) -> ArrayMesh:
@@ -121,6 +132,10 @@ func _chunk_mesh(origin: Vector2, step: float) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	_terrain_meshes[key] = mesh
+	if step < 16.0:
+		_detail_keys.append(key)
+		while _detail_keys.size() > 160:
+			_terrain_meshes.erase(_detail_keys.pop_front())
 	return mesh
 
 
@@ -135,25 +150,33 @@ func configure(center: Vector2, pixels_per_unit: float, viewport_size: Vector2) 
 	for i in _copies.size():
 		var left := (i - 1) * WORLD.x
 		_copies[i].visible = left <= center.x + half_width and left + WORLD.x >= center.x - half_width
-	var bounds := Rect2(center - viewport_size / pixels_per_unit * 0.5, viewport_size / pixels_per_unit).grow(150)
-	var step := STEP if pixels_per_unit >= 0.35 else 24.0
+	var bounds := Rect2(center - viewport_size / pixels_per_unit * 0.5, viewport_size / pixels_per_unit).grow(430)
+	var step := 1.0 if pixels_per_unit >= 1.4 else (STEP if pixels_per_unit >= 0.65 else (6.0 if pixels_per_unit >= 0.3 else 16.0))
+	step *= [1.0, 2.0, 4.0][quality_level]
 	for tile in _tiles:
 		tile.node.visible = bounds.intersects(tile.bounds)
-		if tile.node.visible and tile.step != step:
-			tile.node.mesh = _chunk_mesh(tile.origin, step)
-			tile.step = step
+		var desired: float = step if tile.node.visible else 16.0
+		if tile.step != desired:
+			tile.node.mesh = _chunk_mesh(tile.origin, desired)
+			tile.step = desired
 
 
 func height_at(point: Vector2) -> float:
 	if height_image == null:
 		return 0.0
 	var uv := Vector2(fposmod(point.x, WORLD.x) / WORLD.x, clampf(point.y / WORLD.y, 0.0, 1.0))
-	var p := uv * Vector2(height_image.get_width() - 1, height_image.get_height() - 1)
+	var image_size := Vector2(height_image.get_width(), height_image.get_height())
+	var p := (uv * image_size - Vector2.ONE * 0.5).max(Vector2.ZERO).min(image_size - Vector2.ONE)
 	var x := int(p.x)
 	var z := int(p.y)
 	var x1 := mini(x + 1, height_image.get_width() - 1)
 	var z1 := mini(z + 1, height_image.get_height() - 1)
-	return lerpf(lerpf(height_image.get_pixel(x, z).r, height_image.get_pixel(x1, z).r, p.x - x), lerpf(height_image.get_pixel(x, z1).r, height_image.get_pixel(x1, z1).r, p.x - x), p.y - z) * RELIEF
+	return lerpf(lerpf(_decode_height(height_image.get_pixel(x, z)), _decode_height(height_image.get_pixel(x1, z)), p.x - x), lerpf(_decode_height(height_image.get_pixel(x, z1)), _decode_height(height_image.get_pixel(x1, z1)), p.x - x), p.y - z) * RELIEF
+
+
+func _decode_height(value: Color) -> float:
+	return (value.r * 65280.0 + value.g * 255.0) / 65535.0
+
 
 
 func screen_point(point: Vector2) -> Vector2:
@@ -163,11 +186,28 @@ func screen_point(point: Vector2) -> Vector2:
 func world_point(screen: Vector2) -> Vector2:
 	var start := camera.project_ray_origin(screen)
 	var direction := camera.project_ray_normal(screen)
-	var point := start + direction * (-start.y / direction.y)
-	for i in 5:
-		var elevation := height_at(Vector2(point.x, point.z))
-		point = start + direction * ((elevation - start.y) / direction.y)
-	return Vector2(point.x, point.z)
+	var near_t := maxf(0.0, (RELIEF - start.y) / direction.y)
+	var far_t := -start.y / direction.y
+	var low := near_t
+	var high := far_t
+	# Find the frontmost surface, then refine the intersection. This remains
+	# stable on the much steeper new relief, unlike fixed-point iteration.
+	for i in range(1, 33):
+		var t := lerpf(near_t, far_t, float(i) / 32.0)
+		var point := start + direction * t
+		if point.y <= height_at(Vector2(point.x, point.z)):
+			high = t
+			break
+		low = t
+	for i in 15:
+		var mid := (low + high) * 0.5
+		var point := start + direction * mid
+		if point.y > height_at(Vector2(point.x, point.z)):
+			low = mid
+		else:
+			high = mid
+	var hit := start + direction * ((low + high) * 0.5)
+	return Vector2(hit.x, hit.z)
 
 
 func update_control(names: Array, regions: Dictionary, live: Dictionary, colors: Dictionary, selection: String, legal: Dictionary, battles: Array) -> void:

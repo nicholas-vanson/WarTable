@@ -90,73 +90,95 @@ COORDS = {
 }
 
 
-def build(source, output, width=2048):
+def build(source, output, width=8192, mask_width=4096):
     raw = source.read_bytes()
     if hashlib.sha256(raw).hexdigest() != SOURCE_SHA256:
         raise ValueError("GEBCO source checksum mismatch")
-    Image.MAX_IMAGE_PIXELS = 250_000_000  # known 21600 x 10800 source, bounded memory
-    elevation = np.asarray(Image.open(source).resize((5400, 2700), Image.Resampling.BILINEAR))
+    Image.MAX_IMAGE_PIXELS = 250_000_000
+    # Retain the complete source, rather than reducing it before registration.
+    elevation = np.asarray(Image.open(source), dtype=np.float32)
     data = json.loads((ROOT / 'game/global_1940.json').read_text())
     world_w, world_h = data['size']
-    height = round(width * world_h / world_w)
-    sx, sy = width / world_w, height / world_h
-    ids = Image.new('I', (width, height))
-    draw = ImageDraw.Draw(ids)
     names = list(data['regions'])
-    for water in [True, False]:
-        for ident, name in enumerate(names, 1):
-            r = data['regions'][name]
-            if r['water'] != water:
-                continue
-            for polygon in r['detail']:
-                draw.polygon([(polygon[i]*sx, polygon[i+1]*sy) for i in range(0, len(polygon), 2)], fill=ident)
-    region_ids = np.asarray(ids)
     land_ids = [i for i,n in enumerate(names,1) if not data['regions'][n]['water']]
-    land = np.isin(region_ids,land_ids)
-    points, coords = [], []
-    for name, r in data['regions'].items():
-        if r['water']:
-            continue
-        if name not in COORDS:
-            raise ValueError('Missing geographic anchor: '+name)
-        for shift in [-1, 0, 1]:
+
+    def rasterize(w):
+        h = round(w * world_h / world_w)
+        sx, sy = w/world_w, h/world_h
+        canvas=Image.new('I',(w,h)); draw=ImageDraw.Draw(canvas); boxes={}
+        for water in [True,False]:
+            for ident,name in enumerate(names,1):
+                r=data['regions'][name]
+                if r['water'] != water: continue
+                points=[]
+                for polygon in r['detail']:
+                    contour=[(polygon[i]*sx,polygon[i+1]*sy) for i in range(0,len(polygon),2)]
+                    draw.polygon(contour,fill=ident);points.extend(contour)
+                if points:
+                    xs,ys=zip(*points)
+                    boxes[ident]=(max(0,int(min(xs))-2),max(0,int(min(ys))-2),min(w,int(max(xs))+3),min(h,int(max(ys))+3))
+        return np.asarray(canvas),boxes
+
+    ids,boxes=rasterize(mask_width)
+    mask_h=ids.shape[0]
+    norm=np.zeros(ids.shape,np.uint8); edge=np.zeros(ids.shape,np.uint8)
+    # Work in each territory's bounds: full 4K masks without 332 whole-world EDTs.
+    for ident,(x0,y0,x1,y1) in boxes.items():
+        selected=ids[y0:y1,x0:x1]==ident
+        distance=distance_transform_edt(selected)
+        if not selected.any():continue
+        local_norm=np.uint8(distance/max(distance.max(),1)*255)
+        local_edge=np.uint8(np.clip(distance/(mask_width/world_w)/16,0,1)*255)
+        norm[y0:y1,x0:x1][selected]=local_norm[selected]
+        edge[y0:y1,x0:x1][selected]=local_edge[selected]
+    territory=np.stack([ids%256,ids//256,norm,edge],axis=-1).astype(np.uint8)
+    output.mkdir(parents=True,exist_ok=True)
+    Image.fromarray(territory).save(output/'global_territories.png')
+
+    high_ids,_=rasterize(width)
+    land=np.isin(high_ids,land_ids)
+    height=land.shape[0]
+    sx,sy=width/world_w,height/world_h
+    coast=np.clip(distance_transform_edt(land)/(width/world_w*2.0),0,1).astype(np.float32)
+    dem=np.empty((height,width),np.float32)
+    latitude=np.empty_like(dem); longitude=np.empty_like(dem)
+    points,coords=[],[]
+    for name,r in data['regions'].items():
+        if r['water']:continue
+        if name not in COORDS:raise ValueError('Missing geographic anchor: '+name)
+        for shift in [-1,0,1]:
             points.append([r['center'][0]+shift*world_w,r['center'][1]])
             coords.append([COORDS[name][0]+shift*360,COORDS[name][1]])
-    yy, xx = np.mgrid[:height,:width]
-    target = np.stack([xx.ravel()/sx,yy.ravel()/sy],axis=-1)
-    geo = LinearNDInterpolator(points,coords)(target)
-    missing = ~np.isfinite(geo[:,0])
-    geo[missing] = NearestNDInterpolator(points,coords)(target[missing])
-    lon, lat = geo[:,0].reshape(height,width),geo[:,1].reshape(height,width)
-    dem = map_coordinates(elevation.astype(np.float32),[(90-lat)/180*2699,((lon+180)%360)/360*5399],order=1,mode='nearest')/255
-    coast = np.clip(distance_transform_edt(land)/2.0,0,1)
-    dem = gaussian_filter(np.maximum(dem,0.008)*land,0.6)*coast
-    image_h = np.uint8(np.clip(dem**0.85*255,0,255))
-    dist_norm, dist_edge = np.zeros_like(dem), np.zeros_like(dem)
-    for ident in range(1,len(names)+1):
-        mask = region_ids==ident
-        if not mask.any():
-            continue
-        distance = distance_transform_edt(mask)
-        dist_norm[mask] = distance[mask]/max(distance.max(),1)
-        dist_edge[mask] = np.minimum(distance[mask]/16,1)
-    territory = np.stack([region_ids%256,region_ids//256,np.uint8(dist_norm*255),np.uint8(dist_edge*255)],axis=-1).astype(np.uint8)
-    # Natural land cover, independent of controller; elevation and latitude set
-    # the survey-model palette. No baked lighting: Godot lights the actual mesh.
-    t = np.clip(dem[...,None]*3,0,1)
-    low,high=np.array([177,178,146]),np.array([153,137,112])
-    color=low*(1-t)+high*t
-    desert=((abs(lat)<33)&(abs(lat)>12)&(((lon>-20)&(lon<65))|((lon>112)&(lon<145))))
-    color[desert]=color[desert]*.45+np.array([211,185,139])*.55
-    snow=np.clip((dem-.42)/.4,0,1)[...,None]
-    color=color*(1-snow)+np.array([233,225,207])*snow
-    color[~land]=[35,65,79]
-    output.mkdir(parents=True,exist_ok=True)
-    Image.fromarray(image_h).save(output/'global_height.png')
-    Image.fromarray(np.uint8(color)).save(output/'global_geography.png')
-    Image.fromarray(territory).save(output/'global_territories.png')
-    (output/'registration.json').write_text(json.dumps({'source_sha256':SOURCE_SHA256,'size':[width,height],'region_names':names,'anchors':COORDS},indent=2)+'\n')
-    print(f'Baked {width}x{height} relief for {len(names)} territories; {len(COORDS)} geographic anchors.')
+    interpolate=LinearNDInterpolator(points,coords)
+    nearest=NearestNDInterpolator(points,coords)
+    for y0 in range(0,height,128):
+        y1=min(y0+128,height)
+        yy,xx=np.mgrid[y0:y1,:width]
+        target=np.stack([xx.ravel()/sx,yy.ravel()/sy],axis=-1)
+        geo=interpolate(target);missing=~np.isfinite(geo[:,0])
+        geo[missing]=nearest(target[missing])
+        lon,lat=geo[:,0].reshape(y1-y0,width),geo[:,1].reshape(y1-y0,width)
+        values=map_coordinates(elevation,[(90-lat)/180*(elevation.shape[0]-1),((lon+180)%360)/360*(elevation.shape[1]-1)],order=1,mode='nearest')/255
+        dem[y0:y1]=np.maximum(values,.003)*land[y0:y1]
+        latitude[y0:y1]=lat;longitude[y0:y1]=lon
+    # Less than one world-unit smoothing, not the previous multi-kilometer blur.
+    base=gaussian_filter(dem,1.8)
+    detail_weight=.22+.43*np.clip(base/.30,0,1)
+    dem=(base+(dem-base)*detail_weight)*coast
+    h16=np.uint16(np.clip(dem**.80*65535,0,65535))
+    packed=np.stack([h16//256,h16%256,land*255],axis=-1).astype(np.uint8)
+    Image.fromarray(packed).save(output/'global_height.png')
+    t=np.clip(dem[...,None]*2.4,0,1)
+    color=np.array([189,182,147],np.float32)*(1-t)+np.array([139,121,96],np.float32)*t
+    desert=((abs(latitude)<33)&(abs(latitude)>12)&(((longitude>-20)&(longitude<65))|((longitude>112)&(longitude<145))))
+    color[desert]=color[desert]*.4+np.array([211,180,131])*.6
+    snow=np.clip((dem-.40)/.36,0,1)[...,None]
+    color=color*(1-snow)+np.array([232,222,201])*snow
+    color[~land]=[42,66,78]
+    # Color is 4K; shape and normal precision come from the separate 8K height data.
+    Image.fromarray(np.uint8(color)).resize((mask_width,mask_h),Image.Resampling.LANCZOS).save(output/'global_geography.png')
+    (output/'registration.json').write_text(json.dumps({'source_sha256':SOURCE_SHA256,'size':[width,height],'mask_size':[mask_width,mask_h],'height_encoding':'RG16 normalized height; B land mask','region_names':names,'anchors':COORDS},indent=2)+'\n')
+    print(f'Baked {width}x{height} RG16 relief and {mask_width}x{mask_h} control masks for {len(names)} territories.',flush=True)
 
 
 if __name__ == '__main__':

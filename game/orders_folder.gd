@@ -1,14 +1,19 @@
 extends PanelContainer
-## A paper folder with an index tab; all controls remain ordinary accessible UI.
-
+## The approved folder artwork is the surface; controls are laid onto its paper.
 const UI = preload("res://game/ui_style.gd")
+var _paper: StyleBoxTexture
 
+func _ready() -> void:
+	_paper = UI.field_box(Color.WHITE, 27, 18)
+	add_theme_stylebox_override("panel", _paper)
+	resized.connect(_sync_paper)
+	_sync_paper()
+
+func _sync_paper() -> void:
+	var compact := get_viewport_rect().size.y < 650 or OS.has_feature("mobile") or "--touch-layout" in OS.get_cmdline_user_args()
+	_paper.content_margin_top = 48 if compact else 72
+	_paper.content_margin_bottom = 18 if compact else 30
+	queue_redraw()
 
 func _draw() -> void:
-	var edge := Color("#a98b55")
-	var manila := Color("#c9ad75")
-	draw_style_box(UI.box(manila.darkened(0.08), edge, 0, 0, 3), Rect2(Vector2(-6, -5), size + Vector2(10, 9)))
-	draw_style_box(UI.box(Color("#ecddbb"), edge, 0, 0, 2), Rect2(Vector2(-2, -2), size + Vector2(3, 3)))
-	draw_colored_polygon(PackedVector2Array([Vector2(9, -5), Vector2(14, -23), Vector2(99, -23), Vector2(112, -5)]), manila)
-	draw_polyline(PackedVector2Array([Vector2(9, -5), Vector2(14, -23), Vector2(99, -23), Vector2(112, -5)]), edge, 1, true)
-	draw_string(UI.DISPLAY, Vector2(26, -9), "ORDERS", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#3c3a27"))
+	draw_string(UI.DISPLAY, Vector2(size.x * 0.13, size.y * 0.035), "ORDERS", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, UI.INK)

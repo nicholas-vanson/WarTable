@@ -1,9 +1,14 @@
 {
   "source_sha256": "4a70590d40dd7b9c69b9ab359d1dc4475ce97c1d2d13625223b248364112c699",
   "size": [
-    2048,
-    854
+    8192,
+    3416
   ],
+  "mask_size": [
+    4096,
+    1708
+  ],
+  "height_encoding": "RG16 normalized height; B land mask",
   "region_names": [
     "Caroline Islands",
     "Iwo Jima",

@@ -509,6 +509,7 @@ func _confirm_leave() -> void:
 		_session.leave()
 		return
 	var dialog := ConfirmationDialog.new()
+	dialog.theme = UI.field_theme()
 	dialog.title = "Close the hosted game?"
 	dialog.dialog_text = "France will disconnect. You can resume from the last autosave."
 	dialog.ok_button_text = "Close game"
@@ -529,12 +530,14 @@ func _show_licenses() -> void:
 	var licenses := Engine.get_license_info()
 	for license_name in licenses:
 		sections.append("%s\n%s" % [license_name, licenses[license_name]])
-	for font in ["Inter", "BarlowCondensed"]:
+	for font in ["Inter", "BarlowCondensed", "OldStandardTT"]:
 		sections.append(FileAccess.get_file_as_string("res://game/fonts/%s-OFL.txt" % font))
 	var dialog := AcceptDialog.new()
+	dialog.theme = UI.field_theme()
 	dialog.title = "Engine and third-party licenses"
 	var content := RichTextLabel.new()
 	content.text = "\n\n".join(sections)
+	content.add_theme_color_override("default_color", UI.INK)
 	content.selection_enabled = true
 	dialog.add_child(content)
 	dialog.confirmed.connect(dialog.queue_free)
@@ -1329,6 +1332,7 @@ func _confirm_skip(phase: String, detail: String, command: String, payload: Dict
 		return
 	var revision: int = _session.view.revision
 	var dialog := ConfirmationDialog.new()
+	dialog.theme = UI.field_theme()
 	_skip_dialog = dialog
 	dialog.title = "Skip %s?" % phase
 	dialog.dialog_text = detail

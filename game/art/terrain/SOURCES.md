@@ -18,6 +18,13 @@ Only its GEBCO raster is used; its program code is not incorporated.
 Source SHA-256:
 `4a70590d40dd7b9c69b9ab359d1dc4475ce97c1d2d13625223b248364112c699`.
 
+The runtime heightfield is **8192 × 3416**, with normalized height packed into
+16-bit R/G channels and a separate land mask in B. It uses the full
+21600 × 10800 source rather than the first pass's 5400 × 2700 reduction. Colors
+and political masks are 4096 × 1708. Close-up mesh spacing is one world unit,
+compared with eight in the first pass; theater spacing is two. Geometry is
+view-culled, with bounded high-detail caching and coarser overview tiles.
+
 The game board is geographically distorted and has enlarged islands and
 playable territories. `tools/build_relief.py` registers the elevation raster to
 204 approximate regional longitude/latitude control points. The registration
@@ -26,6 +33,8 @@ polygons and adjacency graph. It is a visual adaptation, **not a surveyed DEM
 or a replacement for the rules map**. Heights are normalized, exaggerated
 display relief; they do not specify measured elevations in meters. The original
 8-bit display raster and its registration limit local geographic fidelity.
+Full-source sampling, edge-preserving detail damping and RG16 storage retain
+finer slopes while avoiding exaggerated quantization terraces in lowlands.
 
 Terrain color is an original elevation/latitude-based survey-model palette,
 independent of ownership. Shadow and relief lighting are computed in Godot.
@@ -45,7 +54,11 @@ The downloader verifies the pinned SHA-256 before reading the raster. Without
 required at runtime and is not committed. `registration.json` records territory
 order and geographic anchors for reviewing or improving the fit.
 
-`global_height.png` stores normalized relief. `global_geography.png` stores the
+`global_height.png` stores normalized RG16 relief and a B-channel land mask.
+CPU ray picking and GPU displacement decode the same channels. A wider overhead
+perspective lens and taller physical terrain make pan parallax visible. Surface
+normals are evaluated from the high-resolution heightfield at fragment scale.
+`global_geography.png` stores the
 natural surface colors. `global_territories.png` is **data**, not color artwork:
 R/G encode the territory ID, B encodes normalized distance into its interior,
 and A encodes distance from its boundary. Ownership alpha is strongest near

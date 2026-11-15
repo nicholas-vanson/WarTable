@@ -23,47 +23,70 @@ func _ready() -> void:
 	theme = UI.field_theme()
 	var frame := PanelContainer.new()
 	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var timber := StyleBoxTexture.new()
-	timber.texture = preload("res://game/art/wood049/Wood049_1K-JPG_Color.jpg")
-	for side in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
-		timber.set_texture_margin(side, 14)
-		timber.set_content_margin(side, 9)
+	var timber := UI.texture_box(UI.walnut(), 9, 9)
 	frame.add_theme_stylebox_override("panel", timber)
 	add_child(frame)
 	_map = Atlas.new()
 	frame.add_child(_map)
 	_map.selected.connect(_select)
-	var strip := ColorRect.new()
-	strip.color = Color(0.12, 0.115, 0.085, 0.91)
+	var strip := TextureRect.new()
+	strip.texture = UI.walnut()
+	strip.modulate = Color(0.55, 0.50, 0.40)
+	strip.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	strip.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	strip.offset_bottom = 39
+	strip.offset_bottom = 36
 	add_child(strip)
 	var bar := HBoxContainer.new()
 	_header = bar
 	bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
 	bar.offset_left = 9
 	bar.offset_right = -9
-	bar.offset_top = 7
-	bar.offset_bottom = 35
+	bar.offset_top = 3
+	bar.offset_bottom = 33
 	bar.add_theme_constant_override("separation", 8)
 	add_child(bar)
-	UI.button(bar, "‹ Back", _close).custom_minimum_size = Vector2(61, 28)
+	var back := UI.button(bar, "‹ Back", _close)
+	back.custom_minimum_size = Vector2(61, 28)
+	UI.text_link(back)
+	back.add_theme_color_override("font_color", UI.TEXT)
 	var title := UI.heading(bar, "GLOBAL 1940", 15)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	var jump := OptionButton.new()
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bar.add_child(spacer)
+	var jump := MenuButton.new()
+	jump.text = "Theaters ▾"
+	UI.text_link(jump)
+	jump.add_theme_color_override("font_color", UI.TEXT)
 	jump.custom_minimum_size = Vector2(107, 28)
 	bar.add_child(jump)
-	jump.add_item("Jump to…")
 	var theaters := [["Europe", "France"], ["North America", "Eastern United States"], ["Africa", "Egypt"],
 		["Soviet Union", "Russia"], ["East Asia", "Japan"], ["Pacific", "Hawaiian Islands"], ["South Pacific", "New South Wales"]]
 	for theater in theaters:
-		jump.add_item(theater[0])
-	jump.item_selected.connect(func(index: int):
-		if index > 0:
-			_map.inspect_theater(theaters[index - 1][1])
-		jump.select(0)
+		jump.get_popup().add_item(theater[0])
+	jump.get_popup().id_pressed.connect(func(index: int): _map.inspect_theater(theaters[index][1]))
+	var display := MenuButton.new()
+	display.text = "☰"
+	display.tooltip_text = "Display quality"
+	UI.text_link(display)
+	display.add_theme_color_override("font_color", UI.TEXT)
+	display.add_theme_font_size_override("font_size", 21)
+	bar.add_child(display)
+	for option in ["High detail", "Balanced", "Performance"]:
+		display.get_popup().add_radio_check_item(option)
+	var preferences := ConfigFile.new()
+	preferences.load("user://display.cfg")
+	var quality := clampi(int(preferences.get_value("display", "quality", 0)), 0, 2)
+	display.get_popup().set_item_checked(quality, true)
+	_map.set_visual_quality(quality)
+	display.get_popup().id_pressed.connect(func(index: int):
+		for i in 3:
+			display.get_popup().set_item_checked(i, i == index)
+		_map.set_visual_quality(index)
+		preferences.set_value("display", "quality", index)
+		preferences.save("user://display.cfg")
 	)
 	_build_inspector()
 	var footer := HBoxContainer.new()
@@ -75,7 +98,7 @@ func _ready() -> void:
 	footer.offset_bottom = -8
 	footer.add_theme_constant_override("separation", 5)
 	add_child(footer)
-	_region = UI.label(footer, "Opening positions · Select a territory", 13, UI.TEXT)
+	_region = UI.label(footer, "Opening positions · Select a territory", 14, UI.TEXT)
 	_region.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_region.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_region.size_flags_horizontal = Control.SIZE_EXPAND_FILL

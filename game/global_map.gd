@@ -185,6 +185,11 @@ func zoom_by(factor: float) -> void:
 	_zoom_at(size * 0.5, factor)
 
 
+func set_visual_quality(level: int) -> void:
+	_terrain.set_quality(level)
+	_update_camera()
+
+
 func focus(zone: String) -> void:
 	if not regions.has(zone):
 		return
@@ -217,7 +222,7 @@ func _screen(point: Vector2) -> Vector2:
 
 func _zoom_at(cursor: Vector2, factor: float) -> void:
 	var point := _world(cursor)
-	_zoom = clampf(_zoom * factor, 1.0, 30.0)
+	_zoom = clampf(_zoom * factor, 1.0, 20.0)
 	_terrain.configure(_center, _scale(), size)
 	_center += point - _world(cursor)
 	_update_camera()
@@ -384,7 +389,7 @@ func _draw_boundaries(offset: Vector2, bounds: Rect2) -> void:
 		var color := Color(0.15, 0.17, 0.13, 0.78) if not shape.water else Color(0.75, 0.79, 0.71, 0.25)
 		draw_polyline(outline, color, 1.2 if not shape.water else 0.8, true)
 		if _selection == shape.id:
-			draw_polyline(outline, Color("#e9d397"), 2.0, true)
+			draw_polyline(outline, Color("#7e5031"), 1.7, true)
 
 
 func _draw_labels(offset: Vector2, bounds: Rect2, close: bool) -> void:

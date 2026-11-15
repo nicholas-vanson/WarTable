@@ -5,6 +5,7 @@ extends SceneTree
 const Screen = preload("res://game/global_screen.gd")
 const Rules = preload("res://game/global_rules.gd")
 const Miniatures = preload("res://game/unit_miniatures.gd")
+const UI = preload("res://game/ui_style.gd")
 var failures := 0
 var checks := 0
 var captures := ""
@@ -28,7 +29,17 @@ func _run() -> void:
 	screen.open_campaign()
 	await process_frame
 	var map = screen._map
+	map.set_visual_quality(0)
 	_check(map.regions.size() == 332, "Every game territory is retained")
+	_check(map._terrain.height_image.get_width() >= 8192, "World elevation retains its 8K resolution")
+	var fine_height := false
+	for y in range(1000, 1032):
+		for x in range(2270, 2302):
+			fine_height = fine_height or map._terrain.height_image.get_pixel(x, y).g > 0.0
+	_check(fine_height, "Terrain carries sub-byte elevation precision")
+	_check(screen._panel.get_theme_stylebox("panel") is StyleBoxTexture, "Orders use the approved paper artwork")
+	_check(screen._action.get_theme_stylebox("normal") is StyleBoxTexture, "Primary actions use painted material artwork")
+	_check(UI.unit_icon("infantry") != null and UI.unit_icon("carrier") != null, "Purchase sheet includes printed unit illustrations")
 	_check(map._terrain._copies.size() == 3, "Terrain supports horizontal wraparound")
 	_check(map._terrain.palette.get_pixel(0, 1).is_equal_approx(Color(0, 0, 0, 0)), "Unassigned water has no ownership or battle highlight")
 	_check(map._terrain.camera.rotation_degrees.is_equal_approx(Vector3(-90, 0, 0)), "Camera is straight overhead")
@@ -39,13 +50,37 @@ func _run() -> void:
 		_check(map._terrain.height_at(at) > 0, "Land relief exists in " + zone)
 		_check(map._world(map._screen(at)).distance_to(at) < 1.0, "Screen picking agrees with relief in " + zone)
 	map.focus("Himalayas")
-	var high: Vector2 = map.regions.Himalayas.center + Vector2(40, 0)
+	var high: Vector2 = map.regions.Himalayas.center
+	var peak := 0.0
+	for y in range(-100, 101, 10):
+		for x in range(-100, 101, 10):
+			var sample: Vector2 = map.regions.Himalayas.center + Vector2(x, y)
+			var elevation: float = map._terrain.height_at(sample)
+			if elevation > peak:
+				peak = elevation
+				high = sample
 	var flat: Vector2 = map._terrain.camera.unproject_position(Vector3(high.x, 0, high.y))
 	_check(map._screen(high).distance_to(flat) > 0.05, "Elevated terrain has actual perspective parallax")
+	map.inspect_theater("Himalayas")
+	var relative_before: Vector2 = map._screen(high) - map._terrain.camera.unproject_position(Vector3(high.x, 0, high.y))
+	map._pan(Vector2(180, 0))
+	var relative_after: Vector2 = map._screen(high) - map._terrain.camera.unproject_position(Vector3(high.x, 0, high.y))
+	var visible_parallax := relative_after.distance_to(relative_before)
+	_check(visible_parallax >= 10.0, "An ordinary overhead pan visibly separates mountain relief from ground")
+	print("Measured crest/ground parallax: %.2f pixels per 180-pixel pan." % visible_parallax)
 	map.inspect_theater("France")
 	await process_frame
 	_check(not map._stacks.is_empty(), "Visible armies instantiate 3D miniatures")
 	_check(map._terrain._piece_nodes.size() == map._stacks.size(), "Displayed stacks have matching 3D instances")
+	var sample_tile: Dictionary
+	for tile in map._terrain._tiles:
+		if tile.node.visible:
+			sample_tile = tile
+			break
+	var high_vertices: int = sample_tile.node.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size()
+	map.set_visual_quality(2)
+	_check(sample_tile.node.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size() < high_vertices, "Performance mode reduces terrain geometry")
+	map.set_visual_quality(0)
 	var stack: Dictionary = map._stacks[0]
 	map._tap(map._screen(stack.point))
 	_check(map._selection == stack.zone, "Tapping a miniature selects its territory")

@@ -32,13 +32,15 @@ var _legal := {}
 var _flight := -1
 var _transport_mode := false
 var _wallet := ""
-var _filter := 0
+var _filter := 1
 var _losses := {}
 var _factory := ""
 var _panel_anim: Tween
 var _panel_open := true
 var _panel_maximized := false
 var _quick_primary: Button
+var _country_heading: Label
+var _treasury_heading: Label
 var _dice_phase := false
 var _save_error := ""
 var save_path := SAVE
@@ -47,18 +49,21 @@ var save_path := SAVE
 func _ready() -> void:
 	super._ready()
 	(_header.get_child(1) as Label).text = ""
+	(_header.get_child(1) as Label).hide()
 	(_header.get_child(1) as Label).custom_minimum_size.x = 0
-	_phase = UI.label(_header, "", 13, Color("#f0e2c4"))
+	_phase = UI.label(_header, "", 15, Color("#f0e2c4"))
 	_phase.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_header.move_child(_phase, 2)
-	_turn_badge = UI.label(_header, "", 13, Color("#f0e2c4"))
+	_turn_badge = UI.label(_header, "", 15, Color("#f0e2c4"))
 	_turn_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_header.move_child(_turn_badge, 3)
 	_inspect.text = "Inspect"
 	_order_toggle = UI.button(_map, "ORDERS ‹", func(): _show_panel(not _panel_open, true))
-	_order_toggle.custom_minimum_size = Vector2(91, 30)
+	_order_toggle.custom_minimum_size = Vector2(110, 36)
+	_order_toggle.add_theme_stylebox_override("normal", UI.texture_box(UI.folder_tab(), 12, 5))
 	_action = UI.button(_footer, "", _primary)
-	_action.custom_minimum_size = Vector2(110, 30)
+	_action.custom_minimum_size = Vector2(110, 46)
+	_action.add_theme_font_size_override("font_size", 16)
 	UI.field_primary(_action)
 	_dice = Dice.new()
 	_dice.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -66,28 +71,35 @@ func _ready() -> void:
 	_dice.settled.connect(_refresh)
 	_dice.firing_group_changed.connect(_refresh)
 	_panel = Folder.new()
-	_panel.add_theme_stylebox_override("panel", UI.field_box(Color("#e9d9b6"), 12, 10))
-	var paper := ShaderMaterial.new()
-	paper.shader = preload("res://game/field_paper.gdshader")
-	_panel.material = paper
 	_map.add_child(_panel)
 	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 5)
+	content.add_theme_constant_override("separation", 8)
 	_panel.add_child(content)
 	var header := HBoxContainer.new()
 	content.add_child(header)
-	_summary = UI.heading(header, "", 19, Color("#303327"))
+	var orders_title := UI.heading(header, "ORDERS", 25, UI.INK)
+	orders_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_summary = UI.heading(content, "", 16, UI.INK)
 	_summary.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_summary.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	UI.button(header, "□", _maximize_panel).custom_minimum_size = Vector2(28, 26)
-	UI.button(header, "›", func(): _show_panel(false, true)).custom_minimum_size = Vector2(28, 26)
+	UI.button(header, "□", _maximize_panel).custom_minimum_size = Vector2(30, 30)
+	UI.button(header, "›", func(): _show_panel(false, true)).custom_minimum_size = Vector2(30, 30)
+	content.add_child(HSeparator.new())
+	_country_heading = UI.heading(content, "", 22, UI.INK)
+	var briefing := HBoxContainer.new()
+	content.add_child(briefing)
+	content.remove_child(_summary)
+	briefing.add_child(_summary)
+	_treasury_heading = UI.label(briefing, "", 15, UI.INK)
+	_treasury_heading.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	content.add_child(HSeparator.new())
 	_scroll = ScrollContainer.new()
 	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	content.add_child(_scroll)
 	_content = VBoxContainer.new()
 	_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_content.add_theme_constant_override("separation", 4)
+	_content.add_theme_constant_override("separation", 3)
 	_scroll.add_child(_content)
 	_controls = VBoxContainer.new()
 	_controls.add_theme_constant_override("separation", 4)
@@ -163,12 +175,12 @@ func _layout_panel() -> void:
 	if _panel == null:
 		return
 	var compact := OS.has_feature("mobile") or "--touch-layout" in OS.get_cmdline_user_args()
-	var width := clampf(_map.size.x * (0.48 if _panel_maximized else 0.25), 300 if compact else 285, 640 if _panel_maximized else 345)
+	var width := clampf(_map.size.x * (0.48 if _panel_maximized else 0.27), 330 if compact else 345, 650 if _panel_maximized else 410)
 	width = minf(width, _map.size.x - 20)
-	var height := _map.size.y - 92 if _panel_maximized else _map.size.y * 0.70
+	var height := _map.size.y - 88 if _panel_maximized else _map.size.y * 0.83
 	_panel.size = Vector2(width, maxf(120, height))
-	_panel.position = Vector2(_map.size.x - width - 12, 64)
-	_order_toggle.position = Vector2(_map.size.x - 94, 52)
+	_panel.position = Vector2(_map.size.x - width - 10, 47)
+	_order_toggle.position = Vector2(_map.size.x - 112, 38)
 	var right := _panel.position.x if _panel_open else _map.size.x
 	var dice_height := minf(245.0, _map.size.y * 0.49)
 	_dice.set_table(Rect2(Vector2(14, _map.size.y - dice_height - 44), Vector2(maxf(1.0, right - 27.0), dice_height)))
@@ -178,10 +190,12 @@ func _refresh() -> void:
 	if game == null:
 		return
 	var nation := game.power()
-	_phase.text = "R%d · %s" % [game.round, SHORT[game.phase]]
+	_phase.text = "ROUND %d   |   %s" % [game.round, PHASES[game.phase].to_upper()]
 	_turn_badge.text = "%s · %d IPC" % [_map.owner_name(nation), game.treasury[nation]]
 	_turn_badge.add_theme_color_override("font_color", _map.SIDE_COLORS.get(nation, Color("#626047")).lightened(0.23))
-	_summary.text = PHASES[game.phase]
+	_country_heading.text = _map.owner_name(nation).to_upper()
+	_treasury_heading.text = "TREASURY   %d IPC" % game.treasury[nation]
+	_summary.text = PHASES[game.phase].to_upper()
 	var paths := _moves.duplicate()
 	if not _route.is_empty():
 		paths.append(_route)
@@ -200,7 +214,7 @@ func _refresh() -> void:
 		Campaign.Phase.COMBAT: _combat_ui()
 		Campaign.Phase.MOBILIZE: _mobilize_ui()
 		Campaign.Phase.INCOME: _income_ui()
-	var actions := ["Confirm buy", "Commit moves", "Battle", "Commit moves", "Place units", "Collect IPC"]
+	var actions := ["CONFIRM PURCHASE", "Commit moves", "Battle", "Commit moves", "Place units", "Collect IPC"]
 	_action.text = actions[game.phase]
 	if not _route.is_empty() and game.phase in [Campaign.Phase.COMBAT_MOVE, Campaign.Phase.NONCOMBAT]:
 		_action.text = "Queue move"
@@ -225,13 +239,17 @@ func _purchase_ui() -> void:
 	var spent := 0
 	for unit in units:
 		spent += Rules.PROFILES[unit][0] * units[unit]
-	UI.label(_content, "Treasury %d · Draft %d IPC" % [game.treasury[_wallet] - spent, spent], 14, Color("#626047"))
+	UI.label(_controls, "Draft cost  %d IPC     Remaining  %d IPC" % [spent, game.treasury[_wallet] - spent], 14, UI.INK)
+	_controls.add_child(HSeparator.new())
 	var filters := HBoxContainer.new()
 	_content.add_child(filters)
 	for index in TABS.size():
 		var item := UI.button(filters, TABS[index], _choose_filter.bind(index))
 		if index == _filter:
-			UI.field_primary(item)
+			UI.index_tab(item, true)
+		else:
+			UI.index_tab(item)
+	_content.add_child(HSeparator.new())
 	for unit in Rules.PROFILES:
 		if _filter > 0 and Rules.domain(unit) != TABS[_filter].to_lower():
 			continue
@@ -667,28 +685,38 @@ func _confirm(message: String, action: Callable) -> void:
 
 func _quantity_row(title: String, detail: String, count: int, extra: int, change: Callable, compact := false) -> void:
 	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 7)
+	row.custom_minimum_size.y = 48
 	_content.add_child(row)
+	var icon := UI.unit_icon(UI.unit_for_title(title))
+	if icon != null:
+		var illustration := TextureRect.new()
+		illustration.texture = icon
+		illustration.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		illustration.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		illustration.custom_minimum_size = Vector2(46, 42)
+		illustration.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(illustration)
 	var column := VBoxContainer.new()
 	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	column.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	column.add_theme_constant_override("separation", 0)
 	row.add_child(column)
-	if compact:
-		var label := UI.label(column, "%s  %s" % [title, detail], 15, Color("#303327"), true)
-		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		label.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	else:
-		UI.label(column, title, 14, Color("#303327"), true)
-		UI.label(column, detail, 13, Color("#70664f"))
+	UI.label(column, title, 16, UI.INK, true)
+	UI.label(column, detail, 12, Color("#766141"), compact)
 	var less := UI.button(row, "−", change.bind(-1))
-	less.custom_minimum_size = Vector2(32, 32 if compact else 34)
+	less.custom_minimum_size = Vector2(30, 30)
+	less.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	less.disabled = count == 0
-	var quantity := UI.label(row, str(count), 14, Color("#303327"))
-	quantity.custom_minimum_size.x = 21
+	var quantity := UI.label(row, str(count), 17, UI.INK)
+	quantity.custom_minimum_size.x = 20
 	quantity.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	quantity.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	var more := UI.button(row, "+", change.bind(1))
-	more.custom_minimum_size = Vector2(32, 32 if compact else 34)
+	more.custom_minimum_size = Vector2(30, 30)
+	more.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	more.disabled = extra <= 0
+	_content.add_child(HSeparator.new())
 
 
 func _set_quantity(counts: Dictionary, unit: Variant, delta: int) -> void:
