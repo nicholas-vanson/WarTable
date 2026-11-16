@@ -1,5 +1,8 @@
 # Approved tabletop direction
 
+Follow the [visual development worklist](VISUAL_WORKLIST.md) for the current
+focus, review status and queued work.
+
 ![Approved art direction](approved-tabletop.png)
 
 This is the user's approved visual reference. Use it when reviewing actual game
@@ -24,6 +27,9 @@ from this reference and are used by the actual Godot theme. Dynamic labels,
 quantities and controls remain real accessible UI, not a baked screenshot.
 
 ## Implemented game captures
+
+The current focused review is [1A — orders folder](orders-01/README.md).
+The captures below retain the earlier broad implementation for comparison.
 
 [Global 1940 interface](implemented-interface.png) ·
 [World overview](implemented-world.png) · [Main menu](implemented-menu.png)

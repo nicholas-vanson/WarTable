@@ -2,6 +2,7 @@ extends "res://game/atlas_screen.gd"
 ## Orders drawer shared by touch and desktop on the live world board.
 
 const Folder = preload("res://game/orders_folder.gd")
+const Sheet = preload("res://game/orders_style.gd")
 const Campaign = preload("res://game/global_turn.gd")
 const Rules = preload("res://game/global_rules.gd")
 const Dice = preload("res://game/board_dice.gd")
@@ -41,6 +42,10 @@ var _panel_maximized := false
 var _quick_primary: Button
 var _country_heading: Label
 var _treasury_heading: Label
+var _expand_button: Button
+var _document: VBoxContainer
+var _orders_heading: Label
+var _phase_band: PanelContainer
 var _dice_phase := false
 var _save_error := ""
 var save_path := SAVE
@@ -60,37 +65,52 @@ func _ready() -> void:
 	_inspect.text = "Inspect"
 	_order_toggle = UI.button(_map, "ORDERS ‹", func(): _show_panel(not _panel_open, true))
 	_order_toggle.custom_minimum_size = Vector2(110, 36)
-	_order_toggle.add_theme_stylebox_override("normal", UI.texture_box(UI.folder_tab(), 12, 5))
+	_order_toggle.add_theme_stylebox_override("normal", UI.texture_box(Sheet.tab(), 12, 5))
 	_action = UI.button(_footer, "", _primary)
 	_action.custom_minimum_size = Vector2(110, 46)
 	_action.add_theme_font_size_override("font_size", 16)
-	UI.field_primary(_action)
+	Sheet.primary(_action)
 	_dice = Dice.new()
 	_dice.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_map.add_child(_dice)
 	_dice.settled.connect(_refresh)
 	_dice.firing_group_changed.connect(_refresh)
 	_panel = Folder.new()
+	_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_map.add_child(_panel)
 	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 8)
+	_document = content
+	content.add_theme_constant_override("separation", 9)
 	_panel.add_child(content)
 	var header := HBoxContainer.new()
 	content.add_child(header)
-	var orders_title := UI.heading(header, "ORDERS", 25, UI.INK)
+	header.add_theme_constant_override("separation", 7)
+	var orders_title := UI.heading(header, "ORDERS", 22, UI.INK)
+	_orders_heading = orders_title
 	orders_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_summary = UI.heading(content, "", 16, UI.INK)
+	orders_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	var tuck := UI.button(header, "›", func(): _show_panel(false, true))
+	tuck.custom_minimum_size = Vector2(32, 32)
+	tuck.add_theme_font_size_override("font_size", 22)
+	tuck.tooltip_text = "Tuck away orders (Esc)"
+	_expand_button = UI.button(header, "↗", _maximize_panel)
+	_expand_button.custom_minimum_size = Vector2(32, 32)
+	_expand_button.tooltip_text = "Expand orders"
+	content.add_child(HSeparator.new())
+	_country_heading = UI.heading(content, "", 20, UI.INK)
+	var phase_band := PanelContainer.new()
+	_phase_band = phase_band
+	phase_band.add_theme_stylebox_override("panel", Sheet.band())
+	content.add_child(phase_band)
+	var briefing := HBoxContainer.new()
+	briefing.add_theme_constant_override("separation", 6)
+	phase_band.add_child(briefing)
+	_summary = UI.heading(briefing, "", 16, UI.INK)
 	_summary.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_summary.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	UI.button(header, "□", _maximize_panel).custom_minimum_size = Vector2(30, 30)
-	UI.button(header, "›", func(): _show_panel(false, true)).custom_minimum_size = Vector2(30, 30)
-	content.add_child(HSeparator.new())
-	_country_heading = UI.heading(content, "", 22, UI.INK)
-	var briefing := HBoxContainer.new()
-	content.add_child(briefing)
-	content.remove_child(_summary)
-	briefing.add_child(_summary)
-	_treasury_heading = UI.label(briefing, "", 15, UI.INK)
+	_summary.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	briefing.add_child(VSeparator.new())
+	_treasury_heading = UI.heading(briefing, "", 15, UI.INK)
 	_treasury_heading.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	content.add_child(HSeparator.new())
 	_scroll = ScrollContainer.new()
@@ -109,7 +129,7 @@ func _ready() -> void:
 	_action.get_parent().remove_child(_action)
 	content.add_child(_action)
 	_quick_primary = UI.button(_footer, "", _primary)
-	UI.field_primary(_quick_primary)
+	Sheet.primary(_quick_primary)
 	_quick_primary.hide()
 	_map.resized.connect(_layout_panel)
 	_map.selected.connect(_on_board_selected)
@@ -168,22 +188,47 @@ func _show_panel(open: bool, animate := false) -> void:
 
 func _maximize_panel() -> void:
 	_panel_maximized = not _panel_maximized
+	_expand_button.text = "↙" if _panel_maximized else "↗"
+	_expand_button.tooltip_text = "Restore orders size" if _panel_maximized else "Expand orders"
 	_layout_panel()
 
 
 func _layout_panel() -> void:
 	if _panel == null:
 		return
-	var compact := OS.has_feature("mobile") or "--touch-layout" in OS.get_cmdline_user_args()
-	var width := clampf(_map.size.x * (0.48 if _panel_maximized else 0.27), 330 if compact else 345, 650 if _panel_maximized else 410)
+	_layout_document()
+	var compact := _map.size.y < 650 or OS.has_feature("mobile") or "--touch-layout" in OS.get_cmdline_user_args()
+	var width := clampf(_map.size.x * (0.48 if _panel_maximized else 0.28), 342 if compact else 370, 650 if _panel_maximized else 425)
 	width = minf(width, _map.size.x - 20)
 	var height := _map.size.y - 88 if _panel_maximized else _map.size.y * 0.83
 	_panel.size = Vector2(width, maxf(120, height))
-	_panel.position = Vector2(_map.size.x - width - 10, 47)
+	_panel.position = Vector2(_map.size.x - _panel.size.x - 10, 47)
 	_order_toggle.position = Vector2(_map.size.x - 112, 38)
 	var right := _panel.position.x if _panel_open else _map.size.x
 	var dice_height := minf(245.0, _map.size.y * 0.49)
 	_dice.set_table(Rect2(Vector2(14, _map.size.y - dice_height - 44), Vector2(maxf(1.0, right - 27.0), dice_height)))
+	_layout_document()
+
+
+func _layout_document() -> void:
+	if _document == null:
+		return
+	var compact := _map.size.y < 650 or OS.has_feature("mobile") or "--touch-layout" in OS.get_cmdline_user_args()
+	_document.add_theme_constant_override("separation", 5 if compact else 9)
+	_country_heading.visible = not compact
+	_orders_heading.text = "ORDERS · " + _country_heading.text if compact else "ORDERS"
+	_orders_heading.add_theme_font_size_override("font_size", 18 if compact else 22)
+	_orders_heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	var band: StyleBoxTexture = _phase_band.get_theme_stylebox("panel")
+	band.content_margin_top = 6 if compact else 9
+	band.content_margin_bottom = band.content_margin_top
+	_action.custom_minimum_size.y = 40 if compact else 46
+	for child in _content.get_children():
+		if child.has_meta("quantity_row"):
+			child.custom_minimum_size.y = 48 if compact else 56
+	# Category changes can replace the whole scroll body during a container sort.
+	# Refit the document after those changes and the new paper margins settle.
+	_panel.queue_sort.call_deferred()
 
 
 func _refresh() -> void:
@@ -193,9 +238,9 @@ func _refresh() -> void:
 	_phase.text = "ROUND %d   |   %s" % [game.round, PHASES[game.phase].to_upper()]
 	_turn_badge.text = "%s · %d IPC" % [_map.owner_name(nation), game.treasury[nation]]
 	_turn_badge.add_theme_color_override("font_color", _map.SIDE_COLORS.get(nation, Color("#626047")).lightened(0.23))
-	_country_heading.text = _map.owner_name(nation).to_upper()
-	_treasury_heading.text = "TREASURY   %d IPC" % game.treasury[nation]
-	_summary.text = PHASES[game.phase].to_upper()
+	_country_heading.text = _map.owner_name(nation)
+	_treasury_heading.text = "Treasury %d IPC" % game.treasury[nation]
+	_summary.text = PHASES[game.phase]
 	var paths := _moves.duplicate()
 	if not _route.is_empty():
 		paths.append(_route)
@@ -224,9 +269,11 @@ func _refresh() -> void:
 	_action.disabled = _dice.rolling
 	_quick_primary.text = _action.text
 	_quick_primary.disabled = _action.disabled
+	_layout_document()
 
 
 func _purchase_ui() -> void:
+	_treasury_heading.text = "Treasury %d IPC" % game.treasury[_wallet]
 	if game.wallets().size() > 1:
 		var wallets := HBoxContainer.new()
 		_content.add_child(wallets)
@@ -239,16 +286,26 @@ func _purchase_ui() -> void:
 	var spent := 0
 	for unit in units:
 		spent += Rules.PROFILES[unit][0] * units[unit]
-	UI.label(_controls, "Draft cost  %d IPC     Remaining  %d IPC" % [spent, game.treasury[_wallet] - spent], 14, UI.INK)
+	var totals_band := PanelContainer.new()
+	totals_band.add_theme_stylebox_override("panel", Sheet.band())
+	_controls.add_child(totals_band)
+	var totals := HBoxContainer.new()
+	totals.add_theme_constant_override("separation", 5)
+	totals_band.add_child(totals)
+	var cost_label := UI.heading(totals, "Draft cost %d IPC" % spent, 14, UI.INK)
+	cost_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	totals.add_child(VSeparator.new())
+	var remaining := UI.heading(totals, "Remaining %d IPC" % [game.treasury[_wallet] - spent], 14, UI.INK)
+	remaining.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	remaining.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_controls.add_child(HSeparator.new())
 	var filters := HBoxContainer.new()
 	_content.add_child(filters)
 	for index in TABS.size():
 		var item := UI.button(filters, TABS[index], _choose_filter.bind(index))
-		if index == _filter:
-			UI.index_tab(item, true)
-		else:
-			UI.index_tab(item)
+		item.custom_minimum_size.y = 33
+		item.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		Sheet.category(item, index == _filter)
 	_content.add_child(HSeparator.new())
 	for unit in Rules.PROFILES:
 		if _filter > 0 and Rules.domain(unit) != TABS[_filter].to_lower():
@@ -685,8 +742,9 @@ func _confirm(message: String, action: Callable) -> void:
 
 func _quantity_row(title: String, detail: String, count: int, extra: int, change: Callable, compact := false) -> void:
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 7)
-	row.custom_minimum_size.y = 48
+	row.add_theme_constant_override("separation", 6)
+	row.custom_minimum_size.y = 56
+	row.set_meta("quantity_row", true)
 	_content.add_child(row)
 	var icon := UI.unit_icon(UI.unit_for_title(title))
 	if icon != null:
@@ -694,7 +752,7 @@ func _quantity_row(title: String, detail: String, count: int, extra: int, change
 		illustration.texture = icon
 		illustration.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		illustration.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		illustration.custom_minimum_size = Vector2(46, 42)
+		illustration.custom_minimum_size = Vector2(58, 46)
 		illustration.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.add_child(illustration)
 	var column := VBoxContainer.new()
@@ -702,18 +760,24 @@ func _quantity_row(title: String, detail: String, count: int, extra: int, change
 	column.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	column.add_theme_constant_override("separation", 0)
 	row.add_child(column)
-	UI.label(column, title, 16, UI.INK, true)
-	UI.label(column, detail, 12, Color("#766141"), compact)
+	var name_label := UI.heading(column, title, 16, UI.INK)
+	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	UI.label(column, detail, 13, Color("#766141"), compact)
 	var less := UI.button(row, "−", change.bind(-1))
-	less.custom_minimum_size = Vector2(30, 30)
+	less.custom_minimum_size = Vector2(32, 32)
+	less.add_theme_font_size_override("font_size", 22)
+	less.tooltip_text = "Remove one %s" % title.to_lower()
 	less.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	less.disabled = count == 0
-	var quantity := UI.label(row, str(count), 17, UI.INK)
+	var quantity := UI.heading(row, str(count), 18, UI.INK)
 	quantity.custom_minimum_size.x = 20
 	quantity.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	quantity.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	var more := UI.button(row, "+", change.bind(1))
-	more.custom_minimum_size = Vector2(30, 30)
+	more.custom_minimum_size = Vector2(32, 32)
+	more.add_theme_font_size_override("font_size", 22)
+	more.tooltip_text = "Add one %s" % title.to_lower()
 	more.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	more.disabled = extra <= 0
 	_content.add_child(HSeparator.new())

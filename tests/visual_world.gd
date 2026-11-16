@@ -132,6 +132,11 @@ func _run() -> void:
 	await process_frame
 	_check(screen._panel.position.x >= 0 and screen._panel.get_rect().end.x <= map.size.x, "Folder fits a small touchscreen")
 	_check(screen._panel.get_rect().end.y <= map.size.y, "Small-screen folder stays vertically reachable")
+	screen._choose_filter(0)
+	await process_frame
+	await process_frame
+	_check(screen._panel.get_global_rect().encloses(screen._document.get_global_rect()), "Changing categories after resizing keeps the document inside its folder")
+	screen._choose_filter(1)
 	map.inspect_theater("France")
 	await _capture("touch-layout")
 	print("World visual checks: %d passed, %d failed." % [checks - failures, failures])

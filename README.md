@@ -96,6 +96,10 @@ actual folder, brass, painted-metal and unit-illustration artwork, with Old
 Standard TT serif lettering. The approved reference is retained in
 [the art direction guide](docs/art-direction/README.md).
 
+Visual development follows a [saved worklist](docs/art-direction/VISUAL_WORKLIST.md),
+one component at a time. The current sample is the
+[orders folder / purchase document](docs/art-direction/orders-01/README.md).
+
 National armies use faction-painted procedural tabletop miniatures. At theater
 zoom, forces consolidate by power and land/air/sea domain; zoom closer for separate
 unit types and counts. The inspector always lists complete forces. These original
