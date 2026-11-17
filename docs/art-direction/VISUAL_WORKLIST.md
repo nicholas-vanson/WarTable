@@ -83,6 +83,21 @@ Godot renders from the completed 1A implementation pass.
 
 ## Current review: 1A and 2A
 
+### Applied feedback — preview 1A.6
+
+- Replace text-symbol controls with original illustrated assets matching the
+  folder and stationery. Brass tuck/reopen and expand/restore hardware, raised
+  quantity controls, magnifiers, compass and settings gear now share one atlas.
+- Retain native buttons, tooltips and accessible action names. Disabled actions
+  fade, pressed/hover states change the artwork tint, and registration corners
+  show keyboard focus. The expand icon changes to restore when appropriate.
+- Apply this asset-building approach to every subsequent visual pass. Do not
+  fall back to typographic substitutes for graphics. Dynamic text remains text.
+
+Review [actual game captures](orders-06/README.md). This pass also replaces the
+visible frame's symbol controls with the same asset family; the broader 1B/1C
+document, inspector and information-strip reviews remain queued.
+
 ### Applied feedback — preview 1A.5
 
 The user clarified the paper treatment with a red outline over preview 1A.4:

@@ -12,6 +12,14 @@ WWII tabletop concept in `docs/art-direction/approved-tabletop.png`:
   orders-folder review, with quieter edges and less saturated color.
 - `orders-controls.png`: restrained paper counter, olive action, sepia document
   band and manila category tab. Atlas regions are used by `orders_style.gd`.
+- `utility-icons.png`: original transparent 4-by-4 atlas generated with OpenAI
+  image generation on 2026-11-17, using the actual `orders-05/expanded.png` game
+  capture as the material reference. Worn brass arrows, raised add/subtract
+  hardware, antique magnifiers, compass, gear, discard, approval, disclosure and
+  registration marks. No downloaded third-party icon set or font glyphs.
+  `game/ui_art.gd` selects square regions from the unmodified atlas; mipmaps
+  preserve clarity at 20–22 px. Hover, pressed, disabled and focus states remain
+  native Godot UI. Some reserved atlas symbols await later visual passes.
 
 The two `orders-*` assets above are original generated artwork based on the same
 approved concept. They belong to the current interface sample; the visual

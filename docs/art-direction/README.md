@@ -21,6 +21,13 @@ unit placements and values are not replacements for the rules data.
 - Materials must have texture, edge highlights and contact shadows. Flat generic
   colored rectangles, rounded modern cards, Inter/Barlow UI and vector pictogram
   purchase rows do not satisfy this direction.
+- Build each new interface element from the same illustrated asset family as
+  the folder and paper. Create original artwork or curate compatible licensed
+  artwork, record its source, then integrate it into native Godot controls.
+  Do not use ASCII/Unicode characters as stand-ins for arrows, menu icons,
+  quantity controls or other graphics. Keep readable labels and changing values
+  as real text. Review artwork at its actual on-screen size, including disabled,
+  pressed, hover and keyboard-focus states.
 
 The folder, control and illustration textures in `game/art/ui` were generated
 from this reference and are used by the actual Godot theme. Dynamic labels,
@@ -28,7 +35,8 @@ quantities and controls remain real accessible UI, not a baked screenshot.
 
 ## Implemented game captures
 
-The current focused review is [1A.5 — stacked sheets with vertical tabs](orders-05/README.md).
+The current focused review is [1A.6 — illustrated control artwork](orders-06/README.md).
+The [stacked-sheet pass](orders-05/README.md) is retained for comparison.
 The [paper-index refinement](orders-04/README.md) is retained for comparison.
 The [side-tab and ocean pass](orders-03/README.md) is retained for comparison.
 The [tab-title and satellite-surface pass](orders-02/README.md) is retained for comparison.

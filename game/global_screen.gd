@@ -63,10 +63,12 @@ func _ready() -> void:
 	_turn_badge = UI.label(_header, "", 15, Color("#f0e2c4"))
 	_turn_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_header.move_child(_turn_badge, 3)
-	_inspect.text = "Inspect"
-	_order_toggle = UI.button(_map, "ORDERS ‹", func(): _show_panel(not _panel_open, true))
-	_order_toggle.custom_minimum_size = Vector2(110, 36)
-	_order_toggle.add_theme_stylebox_override("normal", UI.texture_box(Sheet.tab(), 12, 5))
+	_order_toggle = UI.button(_map, "ORDERS", func(): _show_panel(not _panel_open, true))
+	_order_toggle.custom_minimum_size = Vector2(122, 36)
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		var tint := Color(0.86, 0.81, 0.71) if state == "pressed" else Color.WHITE
+		_order_toggle.add_theme_stylebox_override(state, UI.texture_box(Sheet.tab(), 12, 5, tint))
+	Art.apply(_order_toggle, "reopen", "Open orders folder", 22)
 	_action = UI.button(_footer, "", _primary)
 	_action.custom_minimum_size = Vector2(110, 46)
 	_action.add_theme_font_size_override("font_size", 16)
@@ -90,13 +92,12 @@ func _ready() -> void:
 	_country_heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_country_heading.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_country_heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	var tuck := UI.button(header, "›", func(): _show_panel(false, true))
+	var tuck := UI.button(header, "", func(): _show_panel(false, true))
 	tuck.custom_minimum_size = Vector2(32, 32)
-	tuck.add_theme_font_size_override("font_size", 22)
-	tuck.tooltip_text = "Tuck away orders (Esc)"
-	_expand_button = UI.button(header, "↗", _maximize_panel)
+	Art.apply(tuck, "tuck", "Tuck away orders (Esc)")
+	_expand_button = UI.button(header, "", _maximize_panel)
 	_expand_button.custom_minimum_size = Vector2(32, 32)
-	_expand_button.tooltip_text = "Expand orders"
+	Art.apply(_expand_button, "expand", "Expand orders")
 	content.add_child(HSeparator.new())
 	var phase_band := PanelContainer.new()
 	_phase_band = phase_band
@@ -186,7 +187,6 @@ func _show_panel(open: bool, animate := false) -> void:
 	_panel_open = open
 	_order_toggle.visible = not open
 	_quick_primary.visible = not open
-	_order_toggle.text = "ORDERS ‹"
 	if is_instance_valid(_panel_anim):
 		_panel_anim.kill()
 	_layout_panel()
@@ -205,8 +205,9 @@ func _show_panel(open: bool, animate := false) -> void:
 
 func _maximize_panel() -> void:
 	_panel_maximized = not _panel_maximized
-	_expand_button.text = "↙" if _panel_maximized else "↗"
+	_expand_button.icon = Art.icon("restore" if _panel_maximized else "expand")
 	_expand_button.tooltip_text = "Restore orders size" if _panel_maximized else "Expand orders"
+	_expand_button.accessibility_name = _expand_button.tooltip_text
 	_layout_panel()
 
 
@@ -220,7 +221,7 @@ func _layout_panel() -> void:
 	var height := _map.size.y - 88 if _panel_maximized else _map.size.y * 0.83
 	_panel.size = Vector2(width, maxf(120, height))
 	_panel.position = Vector2(_map.size.x - _panel.size.x - 10, 47)
-	_order_toggle.position = Vector2(_map.size.x - 112, 38)
+	_order_toggle.position = Vector2(_map.size.x - _order_toggle.get_combined_minimum_size().x - 10, 38)
 	var right := _panel.position.x if _panel_open else _map.size.x
 	var dice_height := minf(245.0, _map.size.y * 0.49)
 	_dice.set_table(Rect2(Vector2(14, _map.size.y - dice_height - 44), Vector2(maxf(1.0, right - 27.0), dice_height)))
@@ -419,11 +420,11 @@ func _movement_ui() -> void:
 		var order: Dictionary = _moves[index]
 		var row := HBoxContainer.new()
 		_content.add_child(row)
-		var caption := UI.label(row, "%s → %s · %d" % [order.path[0], order.path[-1], Campaign._count(order.units)], 15, Color("#303327"), true)
+		var caption := UI.label(row, "%s to %s · %d" % [order.path[0], order.path[-1], Campaign._count(order.units)], 15, Color("#303327"), true)
 		caption.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		UI.button(row, "×", _remove_move.bind(index))
+		Art.apply(UI.button(row, "", _remove_move.bind(index)), "discard", "Remove queued move")
 	if not _route.is_empty():
-		UI.label(_controls, "%s → %s" % [_origin, _route.path[-1]], 15, Color("#626047"), true)
+		UI.label(_controls, "%s to %s" % [_origin, _route.path[-1]], 15, Color("#626047"), true)
 
 
 func _choose_flight(index: int) -> void:
@@ -594,12 +595,16 @@ func _mobilize_ui() -> void:
 			elif unit in Rules.SEA:
 				for zone in game.board[_factory].links:
 					if game.board[zone].water and not Rules.enemy_fleet(game.board[zone], game.diplomacy, game.power(), true):
-						UI.button(_content, label + " → " + zone, _stage_unit.bind(wallet, unit, zone)).autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+						var place := UI.button(_content, label + " to " + zone, _stage_unit.bind(wallet, unit, zone))
+						place.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+						Art.apply(place, "add", "Stage one %s in %s" % [Rules.title(unit), zone])
 			else:
-				UI.button(_content, "+ " + label, _stage_unit.bind(wallet, unit, _factory))
+				Art.apply(UI.button(_content, label, _stage_unit.bind(wallet, unit, _factory)), "add", "Stage one " + Rules.title(unit))
 	for index in _reinforcements.size():
 		var order: Dictionary = _reinforcements[index]
-		UI.button(_content, "− %d %s · %s" % [order.count, Rules.title(order.unit), order.zone], _remove_placement.bind(index)).autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		var remove := UI.button(_content, "%d %s · %s" % [order.count, Rules.title(order.unit), order.zone], _remove_placement.bind(index))
+		remove.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		Art.apply(remove, "subtract", "Remove one staged " + Rules.title(order.unit))
 
 
 func _stage_unit(owner: String, unit: String, zone: String) -> void:
@@ -800,20 +805,18 @@ func _quantity_row(title: String, detail: String, count: int, extra: int, change
 	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	UI.label(column, detail, 13, Color("#766141"), compact)
-	var less := UI.button(row, "−", change.bind(-1))
+	var less := UI.button(row, "", change.bind(-1))
 	less.custom_minimum_size = Vector2(32, 32)
-	less.add_theme_font_size_override("font_size", 22)
-	less.tooltip_text = "Remove one %s" % title.to_lower()
+	Art.apply(less, "subtract", "Remove one %s" % title.to_lower())
 	less.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	less.disabled = count == 0
 	var quantity := UI.heading(row, str(count), 18, UI.INK)
 	quantity.custom_minimum_size.x = 20
 	quantity.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	quantity.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	var more := UI.button(row, "+", change.bind(1))
+	var more := UI.button(row, "", change.bind(1))
 	more.custom_minimum_size = Vector2(32, 32)
-	more.add_theme_font_size_override("font_size", 22)
-	more.tooltip_text = "Add one %s" % title.to_lower()
+	Art.apply(more, "add", "Add one %s" % title.to_lower())
 	more.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	more.disabled = extra <= 0
 	_content.add_child(HSeparator.new())

@@ -5,6 +5,7 @@ signal sector_requested(zone: String)
 
 const Atlas = preload("res://game/global_map.gd")
 const UI = preload("res://game/ui_style.gd")
+const Art = preload("res://game/ui_art.gd")
 const UNIT_NAMES := {"armour": "Tank", "aaGun": "AA gun", "mech_infantry": "Mechanized infantry",
 	"factory_minor": "Minor factory", "factory_major": "Major factory", "harbour": "Naval base"}
 
@@ -46,10 +47,12 @@ func _ready() -> void:
 	bar.offset_bottom = 33
 	bar.add_theme_constant_override("separation", 8)
 	add_child(bar)
-	var back := UI.button(bar, "‹ Back", _close)
+	var back := UI.button(bar, "Back", _close)
 	back.custom_minimum_size = Vector2(61, 28)
 	UI.text_link(back)
-	back.add_theme_color_override("font_color", UI.TEXT)
+	Art.apply(back, "back", "Back to main menu", 20)
+	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		back.add_theme_color_override(state, UI.TEXT)
 	var title := UI.heading(bar, "GLOBAL 1940", 15)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -57,9 +60,11 @@ func _ready() -> void:
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.add_child(spacer)
 	var jump := MenuButton.new()
-	jump.text = "Theaters ▾"
+	jump.text = "Theaters"
 	UI.text_link(jump)
-	jump.add_theme_color_override("font_color", UI.TEXT)
+	Art.apply(jump, "compass", "Jump to a theater", 22)
+	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		jump.add_theme_color_override(state, UI.TEXT)
 	jump.custom_minimum_size = Vector2(107, 28)
 	bar.add_child(jump)
 	var theaters := [["Europe", "France"], ["North America", "Eastern United States"], ["Africa", "Egypt"],
@@ -68,11 +73,9 @@ func _ready() -> void:
 		jump.get_popup().add_item(theater[0])
 	jump.get_popup().id_pressed.connect(func(index: int): _map.inspect_theater(theaters[index][1]))
 	var display := MenuButton.new()
-	display.text = "☰"
-	display.tooltip_text = "Display quality"
 	UI.text_link(display)
-	display.add_theme_color_override("font_color", UI.TEXT)
-	display.add_theme_font_size_override("font_size", 21)
+	Art.apply(display, "settings", "Display quality", 22)
+	display.custom_minimum_size = Vector2(30, 30)
 	bar.add_child(display)
 	for option in ["High detail", "Balanced", "Performance"]:
 		display.get_popup().add_radio_check_item(option)
@@ -103,8 +106,9 @@ func _ready() -> void:
 	_region.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_region.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_region.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_inspect = UI.button(footer, "Details", func(): _details.visible = not _details.visible)
+	_inspect = UI.button(footer, "Inspect", func(): _details.visible = not _details.visible)
 	_inspect.custom_minimum_size = Vector2(65, 30)
+	Art.apply(_inspect, "inspect", "Inspect selected territory", 20)
 	_inspect.disabled = true
 	_sector = UI.button(footer, "View on board", func():
 		var zone: String = _map.region_info(_zone).zone
@@ -112,12 +116,16 @@ func _ready() -> void:
 		sector_requested.emit(zone)
 	)
 	_sector.hide()
-	UI.button(footer, "−", func(): _map.zoom_by(0.72)).custom_minimum_size = Vector2(30, 30)
+	var zoom_out := UI.button(footer, "", func(): _map.zoom_by(0.72))
+	zoom_out.custom_minimum_size = Vector2(32, 30)
+	Art.apply(zoom_out, "zoom_out", "Zoom out", 22)
 	var fit := UI.button(footer, "100%", _map.reset_camera)
 	fit.custom_minimum_size = Vector2(54, 30)
 	fit.tooltip_text = "Whole world"
 	_map.camera_changed.connect(func(percent: int): fit.text = "%d%%" % percent)
-	UI.button(footer, "+", func(): _map.zoom_by(1.38)).custom_minimum_size = Vector2(30, 30)
+	var zoom_in := UI.button(footer, "", func(): _map.zoom_by(1.38))
+	zoom_in.custom_minimum_size = Vector2(32, 30)
+	Art.apply(zoom_in, "zoom_in", "Zoom in", 22)
 	hide()
 
 
