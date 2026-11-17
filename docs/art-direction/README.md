@@ -35,6 +35,9 @@ quantities and controls remain real accessible UI, not a baked screenshot.
 
 ## Implemented game captures
 
+The [S01 game and menu review set](states-01/README.md) provides twelve separate
+screens for markup, including movement, combat, placement, inspection and menus.
+
 The current focused review is [1A.6 — illustrated control artwork](orders-06/README.md).
 The [stacked-sheet pass](orders-05/README.md) is retained for comparison.
 The [paper-index refinement](orders-04/README.md) is retained for comparison.
