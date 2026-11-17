@@ -6,6 +6,31 @@ reference and leave completed implementations **in review** until the user
 accepts their appearance. A passing test suite verifies behavior, not art quality.
 Update this document as decisions and feedback arrive.
 
+## Actual-game markup workflow
+
+The user can review visual changes without running the game locally.
+
+1. Render the changed component in Godot and post the actual PNG inline in the
+   chat, with a downloadable full-resolution copy. Label the item, preview
+   revision, game commit and viewport. Include context and a closer view when
+   needed; show relevant states rather than only the default screen.
+2. Accept annotations on the screenshot, an attached marked-up copy, or numbered
+   comments referring to visible elements. Record actionable feedback here.
+3. Apply that feedback to the real game code, assets and layout, then run the
+   relevant behavior checks and render the same view again for comparison.
+4. Post the next numbered preview and describe the visible changes. Preserve
+   prior captures and keep the item in review until the user accepts it.
+
+Review images must show the game as implemented. Keep concept artwork separate
+and label it as concept artwork. Do not paint proposed fixes onto a screenshot
+and present that as an implemented game change. Still images establish appearance;
+use actual game clips when the review depends on motion or interaction.
+
+The initial markup set is **1A.1**, captured from game commit `c1d44f7`:
+[desktop context](orders-01/desktop.png) and
+[expanded folder](orders-01/expanded.png), both 1440 × 900. These are saved
+Godot renders from the completed 1A implementation pass.
+
 ## 1. Interface, menus and overlays — active
 
 - **1A. Orders folder / purchase document — in review.** Establish the matte
