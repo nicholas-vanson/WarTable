@@ -47,7 +47,6 @@ var _expand_button: Button
 var _document: VBoxContainer
 var _phase_band: PanelContainer
 var _category_tabs: VBoxContainer
-var _purchase_margin: MarginContainer
 var _dice_phase := false
 var _save_error := ""
 var save_path := SAVE
@@ -117,10 +116,7 @@ func _ready() -> void:
 	_scroll = ScrollContainer.new()
 	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_purchase_margin = MarginContainer.new()
-	_purchase_margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	content.add_child(_purchase_margin)
-	_purchase_margin.add_child(_scroll)
+	content.add_child(_scroll)
 	_content = VBoxContainer.new()
 	_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_content.add_theme_constant_override("separation", 3)
@@ -135,14 +131,14 @@ func _ready() -> void:
 	_quick_primary = UI.button(_footer, "", _primary)
 	Sheet.primary(_quick_primary)
 	_quick_primary.hide()
-	# The index is part of the paper margin, with the purchase list inset
-	# beside it. This overlay follows the folder while the list scrolls.
+	# The folder draws the sheet stack; transparent native buttons lie over
+	# its projecting tabs and follow the folder while the list scrolls.
 	var index_overlay := Control.new()
 	index_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_panel.add_child(index_overlay)
 	_category_tabs = VBoxContainer.new()
 	_category_tabs.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_category_tabs.add_theme_constant_override("separation", 0)
+	_category_tabs.add_theme_constant_override("separation", 4)
 	index_overlay.add_child(_category_tabs)
 	for index in TABS.size():
 		var tab := IndexTab.new()
@@ -262,12 +258,18 @@ func _layout_index_tabs() -> void:
 	var compact := _map.size.y < 650 or OS.has_feature("mobile") or "--touch-layout" in OS.get_cmdline_user_args()
 	var tab_height := 38.0 if compact else 48.0
 	for tab in _category_tabs.get_children():
-		tab.custom_minimum_size = Vector2(54, tab_height)
+		tab.custom_minimum_size = Vector2(36, tab_height)
 	_category_tabs.size = _category_tabs.get_combined_minimum_size()
 	var overlay := _category_tabs.get_parent() as Control
 	var top := _scroll.global_position.y - overlay.global_position.y
 	var bottom := _panel.global_position.y + _panel.size.y * 0.94 - overlay.global_position.y
-	_category_tabs.position = Vector2(-8, minf(top, bottom - _category_tabs.size.y))
+	_category_tabs.position = Vector2(_panel.size.x * 0.03 - _panel._paper.content_margin_left - 32, minf(top, bottom - _category_tabs.size.y))
+	var pages: Array[Rect2] = []
+	if _category_tabs.visible:
+		var origin := _category_tabs.global_position - _panel.global_position
+		for index in TABS.size():
+			pages.append(Rect2(origin + Vector2(0, index * (tab_height + 4)), Vector2(36, tab_height)))
+	_panel.set_index_pages(pages, _filter)
 
 
 func _refresh() -> void:
@@ -293,7 +295,6 @@ func _refresh() -> void:
 	_clear(_content)
 	_clear(_controls)
 	_category_tabs.visible = game.phase == Campaign.Phase.PURCHASE
-	_purchase_margin.add_theme_constant_override("margin_left", 54 if _category_tabs.visible else 0)
 	for index in TABS.size():
 		_category_tabs.get_child(index).active = index == _filter
 	match game.phase:

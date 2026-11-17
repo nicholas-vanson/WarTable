@@ -28,7 +28,8 @@ quantities and controls remain real accessible UI, not a baked screenshot.
 
 ## Implemented game captures
 
-The current focused review is [1A.4 / 2A.3 — integrated paper index and quieter water](orders-04/README.md).
+The current focused review is [1A.5 — stacked sheets with vertical tabs](orders-05/README.md).
+The [paper-index refinement](orders-04/README.md) is retained for comparison.
 The [side-tab and ocean pass](orders-03/README.md) is retained for comparison.
 The [tab-title and satellite-surface pass](orders-02/README.md) is retained for comparison.
 The [first orders folder pass](orders-01/README.md) is retained for comparison.

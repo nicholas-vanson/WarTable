@@ -83,6 +83,22 @@ Godot renders from the completed 1A implementation pass.
 
 ## Current review: 1A and 2A
 
+### Applied feedback — preview 1A.5
+
+The user clarified the paper treatment with a red outline over preview 1A.4:
+
+- Rotate the category labels **90° counterclockwise**, reading upward along
+  the left edge of the sheets.
+- Project the tabs from the **paper edge** at the marked locations. Each
+  category is a separate piece of cream paper in a four-sheet stack, with its
+  tab part of the same textured outline. This supersedes the previous internal
+  index treatment and its containment requirement.
+- Bring the selected category's sheet to the front. Retain visible offsets,
+  paper edges and light contact shadows on the other sheets.
+
+Review [the Land and Air sheets and compact capture](orders-05/README.md).
+The board, water, ownership wash and main title are unchanged.
+
 ### Applied feedback — preview 1A.4 / 2A.3
 
 - At (17.2%, 42.1%): the ocean texture reads as repetitive; retain the depth
