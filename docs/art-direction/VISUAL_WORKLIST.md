@@ -8,13 +8,23 @@ Update this document as decisions and feedback arrive.
 
 ## Actual-game markup workflow
 
-The user can review visual changes without running the game locally.
-They specifically want ChatGPT/Codex's **built-in image markup and comments**.
-Ordinary file embeds and inline screenshot outputs did not expose those controls.
-Use the native image-card delivery format used for the concept images, while
-preserving the actual Godot screenshot unchanged. The first such repost is
-awaiting confirmation that the controls appear in the user's client; the assistant
-cannot inspect or enable those client-side controls directly.
+**Delivery blocked with the tools currently available in this chat.** The user
+specifically wants ChatGPT/Codex's **built-in image markup and comments** on
+actual game captures, without having to run the game locally.
+
+File embeds and inline screenshot outputs did not expose those controls. Sending
+an unchanged screenshot through the image-generation result formatter also
+failed: the user reported that no image card appeared. That formatter does not
+establish an attachment in the client's annotation viewer. Tool discovery found
+no supported way to register an existing PNG with that viewer or enable its
+controls. The assistant's earlier claim that it had delivered a native image
+card was incorrect. Do not repeat that claim or ask the user to check the same
+unsuccessful delivery method again.
+
+The intended loop below depends on finding and verifying a supported native
+screenshot attachment capability. Do not describe this loop as operational
+until then, or regenerate the screenshot with an image model to manufacture a
+markup-enabled concept image: that would not reliably preserve the game's pixels.
 
 1. Render the changed component in Godot and post the actual PNG as a native
    image card in the chat. Label the item, preview
@@ -35,7 +45,7 @@ and label it as concept artwork. Do not paint proposed fixes onto a screenshot
 and present that as an implemented game change. Still images establish appearance;
 use actual game clips when the review depends on motion or interaction.
 
-The initial markup set is **1A.1**, captured from game commit `c1d44f7`:
+The initial screenshot set is **1A.1**, captured from game commit `c1d44f7`:
 [desktop context](orders-01/desktop.png) and
 [expanded folder](orders-01/expanded.png), both 1440 × 900. These are saved
 Godot renders from the completed 1A implementation pass.
