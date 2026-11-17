@@ -20,6 +20,46 @@ SOURCE_URL = "https://raw.githubusercontent.com/vasturiano/three-globe/1e1f4400b
 SOURCE_SHA256 = "228deba2e4b600146bdcb6cfa359b8ead6aacc2b1c13550a29cd82824cfa1c01"
 
 
+def ocean_surface(land, world_width):
+    """Bake a flat, illustrative bathymetric color field; not surveyed depths."""
+    height, width = land.shape
+    scale = width / world_width
+    rng = np.random.default_rng(1940)
+    # Periodic horizontal noise and coast distance avoid a texture seam when
+    # the camera crosses the board's wrapping east/west edge.
+    padding = min(width, round(500 * scale))
+    wrapped = np.pad(land, ((0, 0), (padding, padding)), mode="wrap")
+    distance = distance_transform_edt(~wrapped)[:, padding:-padding].astype(np.float32) / scale
+
+    def noise(cell_size):
+        nx = max(3, round(world_width / cell_size))
+        ny = max(3, round(height / scale / cell_size))
+        grid = rng.uniform(-1, 1, (ny + 1, nx + 1)).astype(np.float32)
+        grid[:, -1] = grid[:, 0]
+        yy, xx = np.meshgrid(np.linspace(0, ny, height, dtype=np.float32),
+                             np.linspace(0, nx, width, dtype=np.float32), indexing="ij")
+        return map_coordinates(grid, [yy, xx], order=3, mode="nearest")
+
+    broad = noise(220)
+    medium = noise(65)
+    fine = noise(16)
+    grain = noise(3)
+    # A variable-width shelf joins shallow coastal water to deeper basins.
+    # The depth estimate changes the palette while mottling supplies the same
+    # natural material detail as the satellite land. No waves or geometry.
+    depth = 1.0 - np.exp(-distance / np.maximum(18, 58 + broad * 24 + medium * 9))
+    depth = np.clip(depth + (broad * 0.10 + medium * 0.035) * depth, 0, 1)
+    shallow = np.array([64, 108, 112], dtype=np.float32)
+    deep = np.array([19, 47, 66], dtype=np.float32)
+    color = shallow + (deep - shallow) * depth[..., None] ** 0.68
+    detail = broad * 4.0 + medium * 4.5 + fine * 3.0 + grain * 1.2
+    # A diffuse shelf slope, baked as pigment variation rather than lighting.
+    gy, gx = np.gradient(gaussian_filter(depth, max(1, scale * 2)))
+    shelf_detail = np.clip((gx * 0.65 - gy) / scale * 160, -4, 4)
+    color += (detail + shelf_detail)[..., None]
+    return np.clip(color, 0, 255)
+
+
 def build(source, elevation_source, output, width=8192):
     if hashlib.sha256(source.read_bytes()).hexdigest() != SOURCE_SHA256:
         raise ValueError("Blue Marble source checksum mismatch")
@@ -76,9 +116,7 @@ def build(source, elevation_source, output, width=8192):
     # registration samples a nearby valley. Preserve the photographic color below.
     alpine = np.clip((elevation - 0.48) / 0.35, 0, 1)[..., None] * 0.6
     color = color * (1-alpine) + np.array([193, 194, 179]) * alpine
-    sea_distance = distance_transform_edt(~land) / (width / world_w)
-    shelf = np.exp(-sea_distance / 7)[..., None]
-    sea = np.array([17, 43, 65]) * (1-shelf) + np.array([36, 83, 103]) * shelf
+    sea = ocean_surface(land, world_w)
     color[~land] = sea[~land]
     output.parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(np.uint8(np.clip(color, 0, 255))).save(output)

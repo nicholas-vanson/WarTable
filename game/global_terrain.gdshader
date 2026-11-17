@@ -34,11 +34,21 @@ void fragment() {
 	float dx = (altitude(UV + vec2(texel.x, 0.0)) - altitude(UV - vec2(texel.x, 0.0))) / (2.0 * texel.x * world_size.x);
 	float dz = (altitude(UV + vec2(0.0, texel.y)) - altitude(UV - vec2(0.0, texel.y))) / (2.0 * texel.y * world_size.y);
 	NORMAL = normalize((VIEW_MATRIX * vec4(normalize(vec3(-dx, 1.0, -dz)), 0.0)).xyz);
-	// Transparent at the territory center; strongest just inside its boundary.
-	float wash = pow(1.0 - smoothstep(0.0, 0.68, territory.b), 1.35) * 0.50 * owner.a;
-	base = mix(base, owner.rgb, wash);
 	float edge_distance = territory.a * 16.0;
 	bool land = texture(height_map, UV).b > 0.5;
+	// A broader ink wash remains transparent in the central fifth of the
+	// territory. Fine engraved hatching reinforces the border without hiding
+	// the geographic base. Both follow live ownership, not the baked image.
+	float border_band = 1.0 - smoothstep(0.0, 0.80, territory.b);
+	vec3 ink = mix(owner.rgb, vec3(1.0), 0.08);
+	float wash = pow(border_band, 0.85) * 0.68 * owner.a;
+	base = mix(base, ink, wash);
+	float hatch_coordinate = dot(UV * world_size, vec2(1.0, 1.0)) / 10.0;
+	float footprint = fwidth(hatch_coordinate);
+	float hatch = 1.0 - smoothstep(0.12 - footprint, 0.12 + footprint, abs(fract(hatch_coordinate) - 0.5));
+	hatch *= 1.0 - smoothstep(0.25, 0.65, footprint);
+	hatch *= (1.0 - smoothstep(0.08, 0.40, territory.b)) * owner.a;
+	base = mix(base, ink * 1.18, hatch * 0.34);
 	// Crisp vector outlines are projected from the authoritative polygons above
 	// this surface, rather than enlarged from this lower-resolution ID raster.
 	float highlight = 1.0 - smoothstep(1.1, 3.2, edge_distance);

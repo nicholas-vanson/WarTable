@@ -9,7 +9,7 @@ Update this document as decisions and feedback arrive.
 ## Actual-game markup workflow
 
 **Annotated feedback received successfully.** The user returned the actual
-expanded-folder screenshot with two numbered, positioned comments. Apply those
+expanded-folder screenshots with numbered, positioned comments. Apply those
 comments directly to the game and provide matching Godot captures for the next
 review. The user wants built-in image markup inside Codex desktop.
 
@@ -81,7 +81,22 @@ Godot renders from the completed 1A implementation pass.
 - 5C. Target-machine performance, quality settings and final visual regression
   captures. Software-rendered clips are not hardware-performance benchmarks.
 
-## Current review: 1A
+## Current review: 1A and 2A
+
+### Applied feedback — preview 1A.3 / 2A.2
+
+- At (63.7%, 30.7%): move All/Land/Air/Sea to secondary sheet tabs on the side
+  of the orders folder. The index leaves remain fixed while purchases scroll,
+  use native button input and focus, and tuck away with the folder.
+- At (19.1%, 36.9%): texture the ocean and blend it with depth and distance
+  from land. A flat, baked texture now suggests coastal shelves and deep basins,
+  using muted teal/blue and multiscale grain. Depth is illustrative, not surveyed.
+- At (48.2%, 43.9%): make ownership clearer while retaining the geographic
+  base. A stronger, broader edge gradient and fine diagonal hatching distinguish
+  control; centers remain clear. Hatching fades away at overview zoom.
+
+Review [the matching Godot captures](orders-03/README.md). The title, purchase
+controls, land imagery and gameplay are retained from the previous pass.
 
 ### Applied feedback — preview 1A.2 / 2A.1
 
@@ -93,17 +108,18 @@ The user explicitly extended this pass to board color as well as the folder:
   base on the 3D terrain, representative of real geography. Apply country-color
   gradients over that surface.
 
-The current implementation uses one scalable tab title, the country heading
+That pass introduced one scalable tab title, the country heading
 on the document, and a registered Blue Marble base under the existing ownership
-wash. Review [the matching captures](orders-02/README.md) before further styling.
+wash. Its [captures](orders-02/README.md) remain available for comparison.
 
 Aim for the reference's paper document: moderate serif headings, a calm country
 line, shaded phase/treasury and totals bands, readable illustrated purchase rows,
 thin printed rules and an olive action. Avoid gold/leather-looking folder edges,
 stretched beveled controls, text touching the paper edge and cramped counters.
 
-Scope is the live Global 1940 orders folder and its purchase sheet. Board/map,
-miniature art, other menus and new animations remain separate work items.
+Scope is the live Global 1940 orders folder and purchase sheet, plus the board
+color, ocean and ownership treatments explicitly requested in these annotations.
+Miniature art, other menus and new animations remain separate work items.
 
 The [first folder review](orders-01/README.md) records the implementation,
 actual desktop/compact captures and verification. Review paper warmth, border

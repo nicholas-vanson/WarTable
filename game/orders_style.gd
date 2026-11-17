@@ -70,13 +70,3 @@ static func primary(button: Button) -> void:
 	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
 		button.add_theme_color_override(state, UI.TEXT)
 	button.add_theme_font_override("font", UI.DISPLAY)
-
-
-static func category(button: Button, active: bool) -> void:
-	for state in ["normal", "hover", "pressed", "focus"]:
-		var tint := Color.WHITE if active else Color(1, 1, 1, 0.5)
-		if state == "hover": tint = Color(1.06, 1.03, 0.97)
-		button.add_theme_stylebox_override(state, UI.texture_box(tab(), 10, 7, tint))
-	button.add_theme_font_override("font", UI.DISPLAY if active else UI.BODY)
-	button.add_theme_font_size_override("font_size", 14)
-	button.tooltip_text = "Show %s units" % button.text.to_lower()

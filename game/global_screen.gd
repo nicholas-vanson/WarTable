@@ -2,6 +2,7 @@ extends "res://game/atlas_screen.gd"
 ## Orders drawer shared by touch and desktop on the live world board.
 
 const Folder = preload("res://game/orders_folder.gd")
+const IndexTab = preload("res://game/orders_index_tab.gd")
 const Sheet = preload("res://game/orders_style.gd")
 const Campaign = preload("res://game/global_turn.gd")
 const Rules = preload("res://game/global_rules.gd")
@@ -45,6 +46,7 @@ var _treasury_heading: Label
 var _expand_button: Button
 var _document: VBoxContainer
 var _phase_band: PanelContainer
+var _category_tabs: VBoxContainer
 var _dice_phase := false
 var _save_error := ""
 var save_path := SAVE
@@ -129,6 +131,23 @@ func _ready() -> void:
 	_quick_primary = UI.button(_footer, "", _primary)
 	Sheet.primary(_quick_primary)
 	_quick_primary.hide()
+	# A free-positioned child of the panel follows its tuck animation. The
+	# overlay itself ignores input; only the protruding index leaves consume it.
+	var index_overlay := Control.new()
+	index_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_panel.add_child(index_overlay)
+	_category_tabs = VBoxContainer.new()
+	_category_tabs.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_category_tabs.add_theme_constant_override("separation", 6)
+	index_overlay.add_child(_category_tabs)
+	for index in TABS.size():
+		var tab := IndexTab.new()
+		tab.text = TABS[index]
+		tab.tooltip_text = "Show %s units" % TABS[index].to_lower()
+		tab.pressed.connect(_choose_filter.bind(index))
+		_category_tabs.add_child(tab)
+	_scroll.resized.connect(_layout_index_tabs)
+	_scroll.item_rect_changed.connect(_layout_index_tabs)
 	_map.resized.connect(_layout_panel)
 	_map.selected.connect(_on_board_selected)
 
@@ -197,7 +216,8 @@ func _layout_panel() -> void:
 	_layout_document()
 	var compact := _map.size.y < 650 or OS.has_feature("mobile") or "--touch-layout" in OS.get_cmdline_user_args()
 	var width := clampf(_map.size.x * (0.48 if _panel_maximized else 0.28), 342 if compact else 370, 650 if _panel_maximized else 425)
-	width = minf(width, _map.size.x - 20)
+	# Reserve the protruding leaf width even on a narrow portrait viewport.
+	width = minf(width, _map.size.x - 70)
 	var height := _map.size.y - 88 if _panel_maximized else _map.size.y * 0.83
 	_panel.size = Vector2(width, maxf(120, height))
 	_panel.position = Vector2(_map.size.x - _panel.size.x - 10, 47)
@@ -224,6 +244,22 @@ func _layout_document() -> void:
 	# Category changes can replace the whole scroll body during a container sort.
 	# Refit the document after those changes and the new paper margins settle.
 	_panel.queue_sort.call_deferred()
+	_layout_index_tabs.call_deferred()
+
+
+func _layout_index_tabs() -> void:
+	if _category_tabs == null:
+		return
+	var compact := _map.size.y < 650 or OS.has_feature("mobile") or "--touch-layout" in OS.get_cmdline_user_args()
+	var tab_height := 38.0 if compact else 48.0
+	_category_tabs.add_theme_constant_override("separation", 4 if compact else 6)
+	for tab in _category_tabs.get_children():
+		tab.custom_minimum_size = Vector2(70, tab_height)
+	_category_tabs.size = _category_tabs.get_combined_minimum_size()
+	var overlay := _category_tabs.get_parent() as Control
+	var top := _scroll.global_position.y - overlay.global_position.y
+	var bottom := _panel.global_position.y + _panel.size.y * 0.94 - overlay.global_position.y
+	_category_tabs.position = Vector2(-_panel._paper.content_margin_left - 45, minf(top, bottom - _category_tabs.size.y))
 
 
 func _refresh() -> void:
@@ -248,6 +284,9 @@ func _refresh() -> void:
 		_select(_zone)
 	_clear(_content)
 	_clear(_controls)
+	_category_tabs.visible = game.phase == Campaign.Phase.PURCHASE
+	for index in TABS.size():
+		_category_tabs.get_child(index).active = index == _filter
 	match game.phase:
 		Campaign.Phase.PURCHASE: _purchase_ui()
 		Campaign.Phase.COMBAT_MOVE, Campaign.Phase.NONCOMBAT: _movement_ui()
@@ -294,14 +333,6 @@ func _purchase_ui() -> void:
 	remaining.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	remaining.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_controls.add_child(HSeparator.new())
-	var filters := HBoxContainer.new()
-	_content.add_child(filters)
-	for index in TABS.size():
-		var item := UI.button(filters, TABS[index], _choose_filter.bind(index))
-		item.custom_minimum_size.y = 33
-		item.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		Sheet.category(item, index == _filter)
-	_content.add_child(HSeparator.new())
 	for unit in Rules.PROFILES:
 		if _filter > 0 and Rules.domain(unit) != TABS[_filter].to_lower():
 			continue

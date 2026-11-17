@@ -51,16 +51,30 @@ SHA-256: `228deba2e4b600146bdcb6cfa359b8ead6aacc2b1c13550a29cd82824cfa1c01`.
 `tools/build_surface.py` registers this image using the same regional anchors as
 the relief. It extends nearby source land colors into water before sampling to
 accommodate enlarged islands and distorted coastlines, lifts dark midtones,
-blends exposed high ridges toward rock/ice, and supplies a blue sea with a narrow
-coastal shelf. The 8K output provides smooth registration; its photographic
+blends exposed high ridges toward rock/ice, and supplies a textured blue sea.
+The 8K output provides smooth registration; its photographic
 detail is limited by the 4K source. It is representative geography, not an exact
 satellite survey or a historical photograph of the world in 1940. Source terrain
 shading remains in the image; Godot adds the live mesh lighting and shadows.
-Country colors are applied afterward by the shader, transparent at the centers
-and strongest along the inside of territory boundaries.
+Country colors are applied afterward by the shader: a broader, stronger wash
+fades to transparent in territory centers. Fine diagonal hatching reinforces
+the inner boundary band. The hatch is anchored to world coordinates, softens
+with pixel footprint, and fades out at overview zoom to avoid moiré. Both wash
+and hatching use the live ownership palette, including after captures.
 Mipmaps and pixel-footprint slope sampling reduce shimmer at distant zooms.
 World overview uses slope lighting without coarse-mesh cast shadows; theater
 and close-up views restore the cast shadows (except in Performance mode).
+
+### Ocean color and texture
+
+The ocean remains flat geometry. `ocean_surface()` in `tools/build_surface.py`
+bakes a deterministic, illustrative depth field from distance to the playable
+coastline. Variable shelf width and multiscale pigment texture blend muted teal
+shallows into darker blue basins. A subtle shelf-slope variation connects the
+surface to the land's geographic appearance. Noise and distance sampling wrap
+horizontally with the board. These are **suggested depths**, not measured GEBCO
+bathymetry; the existing source raster contains land elevation only. No extra
+water mesh, animated waves, runtime downloads or texture samplers are added.
 
 ## Rebuild
 
