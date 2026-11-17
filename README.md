@@ -27,11 +27,25 @@ Hosting uses UDP port `41740`. If Windows prompts for local access, allow it on 
 
 The game autosaves each accepted order, including dice and pending casualty decisions. Existing saves keep the five-territory scenario and replay their recorded results. 0.7 writes to separate save files, so the previous executable can still use its own saves. **Continue local game** and **Resume hosted game** use separate save slots. A resumed host gets a fresh invite code. Uncommitted purchases, movement and mobilization plans are local drafts.
 
-## Play 0.9 on Android
+## Test the current game on Android
 
-Open `dist/CrossroadsCommand-0.9.apk` on an ARM64 phone or tablet running Android 7.0 or later. The APK uses the same test certificate as 0.7 and 0.8. Tap **Update** or **Install**. If Android prompts, open **Settings**, enable **Allow from this source** for the file manager, then return to finish installation. [Android installation help](https://support.google.com/pixelphone/answer/7391672)
+[Download Crossroads Command Test 0.9.1-test.1 APK](https://github.com/nicholas-vanson/WarTable/raw/refs/heads/android-test-builds/CrossroadsCommand-0.9.1-test.1.apk)
 
-Drag to pan, pinch to zoom and tap units or territories. **Orders** opens the phase controls over the map. The drawer collapses on movement phases, and the footer carries queue and commit actions. For a Western Europe same-Wi-Fi test, use 0.9 on both devices.
+This roughly 80 MB test build includes the latest tabletop visuals and stacked
+paper orders. One APK supports **64-bit and 32-bit ARM**, Android **7.0 or later**
+and OpenGL ES 3.0. It installs as **Crossroads Command Test** alongside older
+builds, using a separate save location and test signing certificate.
+
+1. Open the download link in your phone's browser while signed in to GitHub.
+2. Open the downloaded APK and tap **Install**. If prompted, enable **Allow
+   from this source** for that browser or file manager, then return to install.
+3. Open **Crossroads Command Test** and choose **Play Global 1940**.
+
+Phones start with **Balanced** graphics and 4K terrain textures to reduce memory
+use. The map's **☰** menu offers High detail and Performance modes. Desktop
+builds retain the 8K terrain. [Build details and installation help](docs/ANDROID_TESTING.md)
+
+Drag to pan, pinch to zoom and tap units or territories. **Orders** opens the phase controls over the map. The drawer collapses on movement phases, and the footer carries queue and commit actions. For a Western Europe same-Wi-Fi test, use matching game versions on both devices.
 
 ## Play the world board
 

@@ -8,3 +8,8 @@ Thumbs.db
 
 # Exported game builds
 /dist/
+
+# Android signing keys and local SDK/build state
+*.keystore
+*.jks
+/android/build/

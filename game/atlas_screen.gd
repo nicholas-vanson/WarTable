@@ -78,7 +78,8 @@ func _ready() -> void:
 		display.get_popup().add_radio_check_item(option)
 	var preferences := ConfigFile.new()
 	preferences.load("user://display.cfg")
-	var quality := clampi(int(preferences.get_value("display", "quality", 0)), 0, 2)
+	var default_quality := 1 if OS.has_feature("mobile") else 0
+	var quality := clampi(int(preferences.get_value("display", "quality", default_quality)), 0, 2)
 	display.get_popup().set_item_checked(quality, true)
 	_map.set_visual_quality(quality)
 	display.get_popup().id_pressed.connect(func(index: int):

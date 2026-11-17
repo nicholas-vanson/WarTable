@@ -83,6 +83,25 @@ water mesh, animated waves, runtime downloads or texture samplers are added.
 
 ## Rebuild
 
+### Phone texture set
+
+`mobile/global_height.png` and `mobile/global_surface.png` are 4096 × 1708
+versions for Android and other mobile platforms. `tools/build_mobile_terrain.py`
+decodes the RG16 height before resampling and repacks it afterward, so downsizing
+does not mix the high and low bytes independently. The land mask uses nearest
+sampling and the color image uses Lanczos. Phone CPU picking and shader normals
+use the same smaller heightfield. Desktop 8K textures are not preloaded on phones
+and are excluded from the Android Test APK. The two principal images use about
+one quarter of their desktop texture memory; ownership masks are shared.
+
+Regenerate these after changing desktop terrain:
+
+```sh
+python tools/build_mobile_terrain.py
+```
+
+### Desktop source bake
+
 With Python 3 and numpy, scipy and Pillow installed:
 
 ```sh

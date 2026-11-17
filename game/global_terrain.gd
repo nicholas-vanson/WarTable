@@ -3,8 +3,7 @@ extends SubViewport
 
 const Miniatures = preload("res://game/unit_miniatures.gd")
 const SHADER = preload("res://game/global_terrain.gdshader")
-const HEIGHT = preload("res://game/art/terrain/global_height.png")
-const GEOGRAPHY = preload("res://game/art/terrain/global_surface.png")
+const TERRAIN_DIR := "res://game/art/terrain/"
 const TERRITORIES = preload("res://game/art/terrain/global_territories.png")
 const WORLD := Vector2(7705, 3213)
 const RELIEF := 180.0
@@ -26,6 +25,7 @@ static var _detail_keys: Array = []
 var _sun: DirectionalLight3D
 var _tiles: Array = []
 var quality_level := 0
+var use_mobile_textures := OS.has_feature("mobile")
 
 
 func set_quality(level: int) -> void:
@@ -40,19 +40,24 @@ func _ready() -> void:
 	render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
 	add_child(_world)
 	_world.add_child(_pieces)
-	height_image = HEIGHT.get_image()
+	# Load only the texture set used on this device. Preloading desktop 8K
+	# textures as well would defeat the phone memory reduction.
+	var texture_dir := TERRAIN_DIR + ("mobile/" if use_mobile_textures else "")
+	var height_texture := load(texture_dir + "global_height.png") as Texture2D
+	var geography := load(texture_dir + "global_surface.png") as Texture2D
+	height_image = height_texture.get_image()
 	# Color.TRANSPARENT has white RGB in Godot; unused state entries must be
 	# black as well as transparent, otherwise lakes can acquire highlight colors.
 	palette.fill(Color(0, 0, 0, 0))
 	palette_texture = ImageTexture.create_from_image(palette)
 	terrain_material.shader = SHADER
-	terrain_material.set_shader_parameter("height_map", HEIGHT)
+	terrain_material.set_shader_parameter("height_map", height_texture)
 	terrain_material.set_shader_parameter("relief_height", RELIEF)
-	terrain_material.set_shader_parameter("geography", GEOGRAPHY)
+	terrain_material.set_shader_parameter("geography", geography)
 	terrain_material.set_shader_parameter("ground_grain", preload("res://game/art/ground030/Ground030_1K-JPG_Color.jpg"))
 	terrain_material.set_shader_parameter("territories", TERRITORIES)
 	terrain_material.set_shader_parameter("control_palette", palette_texture)
-	terrain_material.set_shader_parameter("raster_size", Vector2(HEIGHT.get_width(), HEIGHT.get_height()))
+	terrain_material.set_shader_parameter("raster_size", Vector2(height_texture.get_width(), height_texture.get_height()))
 	_world.add_child(camera)
 	camera.keep_aspect = Camera3D.KEEP_WIDTH
 	camera.fov = 70
