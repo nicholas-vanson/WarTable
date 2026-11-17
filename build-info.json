@@ -1,10 +1,10 @@
 {
-  "source_commit": "3c847e33440908888b4ae5187d2abfd790631508",
+  "source_commit": "fc87dcb94464bcd880cc0615b3cd062f69e119a3",
   "source_dirty": false,
   "godot_version": "4.7.2.stable.official.ed1daf0bf",
-  "apk": "CrossroadsCommand-0.9.1-test.1.apk",
-  "sha256": "b846fd4e701ee51f03ee2cc583a25127ab754f168e80113a7d865f9883be98a3",
-  "bytes": 83465962,
+  "apk": "CrossroadsCommand-0.9.1-test.2.apk",
+  "sha256": "f8de54b1de1858ce3214d8164424adce54c411dbbf06d503f428119abfcb80fd",
+  "bytes": 87677448,
   "package": "org.crossroadscommand.cloudtest",
   "architectures": [
     "arm64-v8a",
