@@ -83,6 +83,22 @@ Godot renders from the completed 1A implementation pass.
 
 ## Current review: 1A and 2A
 
+### Applied feedback — preview 1A.4 / 2A.3
+
+- At (17.2%, 42.1%): the ocean texture reads as repetitive; retain the depth
+  gradient. Keep the depth field and palette, replace cell-like detail with
+  quieter irregular texture, and remove the repeating ocean grain layer.
+- At (56.2%, 30.7%): the category tabs should belong to the paper already in
+  the folder. Integrate them into its cream margin with subtle cut edges, using
+  the existing paper grain. Keep all four index labels inside the folder.
+- At (65.3%, 7.7%): improve the title's fit and left-justify it. Scale the
+  single title from 13–19 px with the folder height and align it to the tab's
+  left inset, with breathing room above and beside the text.
+
+Review [the matching Godot captures](orders-04/README.md). Ownership styling
+and the land surface retain the previous treatment; this pass addresses these
+three annotations only.
+
 ### Applied feedback — preview 1A.3 / 2A.2
 
 - At (63.7%, 30.7%): move All/Land/Air/Sea to secondary sheet tabs on the side

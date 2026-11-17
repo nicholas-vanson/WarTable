@@ -42,8 +42,6 @@ def ocean_surface(land, world_width):
 
     broad = noise(220)
     medium = noise(65)
-    fine = noise(16)
-    grain = noise(3)
     # A variable-width shelf joins shallow coastal water to deeper basins.
     # The depth estimate changes the palette while mottling supplies the same
     # natural material detail as the satellite land. No waves or geometry.
@@ -52,7 +50,23 @@ def ocean_surface(land, world_width):
     shallow = np.array([64, 108, 112], dtype=np.float32)
     deep = np.array([19, 47, 66], dtype=np.float32)
     color = shallow + (deep - shallow) * depth[..., None] ** 0.68
-    detail = broad * 4.0 + medium * 4.5 + fine * 3.0 + grain * 1.2
+    # The previous equal-sized noise cells read as a repeating quilt. A
+    # continuous spectrum of randomly phased features has no cell grid or
+    # small repeating tile. Gentle domain warping breaks up round blotches.
+    nw = 2048
+    nh = round(nw * height / width)
+    frequencies_x = np.fft.rfftfreq(nw, world_width / nw)
+    frequencies_y = np.fft.fftfreq(nh, world_width / nw)
+    frequency = np.hypot(frequencies_y[:, None], frequencies_x[None, :])
+    spectrum = (frequency**2 + (1 / 310)**2) ** -0.72
+    spectrum *= np.exp(-(frequency * 13)**2)
+    spectrum[0, 0] = 0
+    field = np.fft.irfft2(np.fft.rfft2(rng.normal(size=(nh, nw))) * spectrum, s=(nh, nw)).astype(np.float32)
+    field /= field.std()
+    yy, xx = np.meshgrid(np.linspace(0, nh - 1, height, dtype=np.float32),
+                         np.linspace(0, nw, width, endpoint=False, dtype=np.float32), indexing="ij")
+    warped = map_coordinates(field, [yy + broad * 11, xx + medium * 17], order=3, mode="grid-wrap")
+    detail = np.clip(warped, -2.5, 2.5) * 1.6 + broad * 0.7
     # A diffuse shelf slope, baked as pigment variation rather than lighting.
     gy, gx = np.gradient(gaussian_filter(depth, max(1, scale * 2)))
     shelf_detail = np.clip((gx * 0.65 - gy) / scale * 160, -4, 4)

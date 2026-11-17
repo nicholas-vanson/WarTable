@@ -71,7 +71,12 @@ The ocean remains flat geometry. `ocean_surface()` in `tools/build_surface.py`
 bakes a deterministic, illustrative depth field from distance to the playable
 coastline. Variable shelf width and multiscale pigment texture blend muted teal
 shallows into darker blue basins. A subtle shelf-slope variation connects the
-surface to the land's geographic appearance. Noise and distance sampling wrap
+surface to the land's geographic appearance. The approved depth field and
+palette remain unchanged in the texture refinement: lower-contrast, randomly
+phased spectral detail replaces the regular grid of similarly sized blotches.
+Gentle coordinate warping varies the shapes across the full board. Water no
+longer receives the small repeating ground-grain texture in the shader.
+Noise and distance sampling wrap
 horizontally with the board. These are **suggested depths**, not measured GEBCO
 bathymetry; the existing source raster contains land elevation only. No extra
 water mesh, animated waves, runtime downloads or texture samplers are added.

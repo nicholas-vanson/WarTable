@@ -29,9 +29,9 @@ func _sync_paper() -> void:
 func _draw() -> void:
 	# The tab is the document's only title. Fit it within the physical tab at
 	# normal, expanded and compact widths instead of repeating it on the sheet.
-	var tab := Rect2(size.x * 0.09, size.y * 0.018, size.x * 0.30, size.y * 0.055)
-	var font_size := 23
+	var tab := Rect2(size.x * 0.11, size.y * 0.018, size.x * 0.26, size.y * 0.055)
+	var font_size := clampi(roundi(size.y * 0.025), 13, 19)
 	while font_size > 12 and UI.DISPLAY.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > tab.size.x:
 		font_size -= 1
 	var baseline := tab.position.y + (tab.size.y - UI.DISPLAY.get_height(font_size)) * 0.5 + UI.DISPLAY.get_ascent(font_size)
-	draw_string(UI.DISPLAY, Vector2(tab.position.x, baseline), title, HORIZONTAL_ALIGNMENT_CENTER, tab.size.x, font_size, UI.INK)
+	draw_string(UI.DISPLAY, Vector2(tab.position.x, baseline), title, HORIZONTAL_ALIGNMENT_LEFT, tab.size.x, font_size, UI.INK)

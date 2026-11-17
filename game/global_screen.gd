@@ -47,6 +47,7 @@ var _expand_button: Button
 var _document: VBoxContainer
 var _phase_band: PanelContainer
 var _category_tabs: VBoxContainer
+var _purchase_margin: MarginContainer
 var _dice_phase := false
 var _save_error := ""
 var save_path := SAVE
@@ -116,7 +117,10 @@ func _ready() -> void:
 	_scroll = ScrollContainer.new()
 	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	content.add_child(_scroll)
+	_purchase_margin = MarginContainer.new()
+	_purchase_margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	content.add_child(_purchase_margin)
+	_purchase_margin.add_child(_scroll)
 	_content = VBoxContainer.new()
 	_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_content.add_theme_constant_override("separation", 3)
@@ -131,14 +135,14 @@ func _ready() -> void:
 	_quick_primary = UI.button(_footer, "", _primary)
 	Sheet.primary(_quick_primary)
 	_quick_primary.hide()
-	# A free-positioned child of the panel follows its tuck animation. The
-	# overlay itself ignores input; only the protruding index leaves consume it.
+	# The index is part of the paper margin, with the purchase list inset
+	# beside it. This overlay follows the folder while the list scrolls.
 	var index_overlay := Control.new()
 	index_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_panel.add_child(index_overlay)
 	_category_tabs = VBoxContainer.new()
 	_category_tabs.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_category_tabs.add_theme_constant_override("separation", 6)
+	_category_tabs.add_theme_constant_override("separation", 0)
 	index_overlay.add_child(_category_tabs)
 	for index in TABS.size():
 		var tab := IndexTab.new()
@@ -216,8 +220,7 @@ func _layout_panel() -> void:
 	_layout_document()
 	var compact := _map.size.y < 650 or OS.has_feature("mobile") or "--touch-layout" in OS.get_cmdline_user_args()
 	var width := clampf(_map.size.x * (0.48 if _panel_maximized else 0.28), 342 if compact else 370, 650 if _panel_maximized else 425)
-	# Reserve the protruding leaf width even on a narrow portrait viewport.
-	width = minf(width, _map.size.x - 70)
+	width = minf(width, _map.size.x - 20)
 	var height := _map.size.y - 88 if _panel_maximized else _map.size.y * 0.83
 	_panel.size = Vector2(width, maxf(120, height))
 	_panel.position = Vector2(_map.size.x - _panel.size.x - 10, 47)
@@ -241,6 +244,12 @@ func _layout_document() -> void:
 	for child in _content.get_children():
 		if child.has_meta("quantity_row"):
 			child.custom_minimum_size.y = 48 if compact else 56
+			child.add_theme_constant_override("separation", 5 if compact else 6)
+			for item in child.get_children():
+				if item is TextureRect:
+					item.custom_minimum_size = Vector2(38, 38) if compact else Vector2(58, 46)
+				elif item is VBoxContainer and item.get_child_count() > 0:
+					item.get_child(0).add_theme_font_size_override("font_size", 15 if compact else 16)
 	# Category changes can replace the whole scroll body during a container sort.
 	# Refit the document after those changes and the new paper margins settle.
 	_panel.queue_sort.call_deferred()
@@ -252,14 +261,13 @@ func _layout_index_tabs() -> void:
 		return
 	var compact := _map.size.y < 650 or OS.has_feature("mobile") or "--touch-layout" in OS.get_cmdline_user_args()
 	var tab_height := 38.0 if compact else 48.0
-	_category_tabs.add_theme_constant_override("separation", 4 if compact else 6)
 	for tab in _category_tabs.get_children():
-		tab.custom_minimum_size = Vector2(70, tab_height)
+		tab.custom_minimum_size = Vector2(54, tab_height)
 	_category_tabs.size = _category_tabs.get_combined_minimum_size()
 	var overlay := _category_tabs.get_parent() as Control
 	var top := _scroll.global_position.y - overlay.global_position.y
 	var bottom := _panel.global_position.y + _panel.size.y * 0.94 - overlay.global_position.y
-	_category_tabs.position = Vector2(-_panel._paper.content_margin_left - 45, minf(top, bottom - _category_tabs.size.y))
+	_category_tabs.position = Vector2(-8, minf(top, bottom - _category_tabs.size.y))
 
 
 func _refresh() -> void:
@@ -285,6 +293,7 @@ func _refresh() -> void:
 	_clear(_content)
 	_clear(_controls)
 	_category_tabs.visible = game.phase == Campaign.Phase.PURCHASE
+	_purchase_margin.add_theme_constant_override("margin_left", 54 if _category_tabs.visible else 0)
 	for index in TABS.size():
 		_category_tabs.get_child(index).active = index == _filter
 	match game.phase:

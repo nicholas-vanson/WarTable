@@ -57,7 +57,7 @@ void fragment() {
 	base = mix(base, vec3(0.70, 0.27, 0.15), highlight * state.b * 0.85);
 	// Fine physical material grain, without baked shadows.
 	float grain = dot(texture(ground_grain, UV * world_size / 110.0).rgb, vec3(0.299, 0.587, 0.114));
-	base *= 1.0 + (grain - 0.5) * (land ? 0.08 : 0.025);
+	base *= 1.0 + (grain - 0.5) * (land ? 0.08 : 0.0);
 	ALBEDO = base * 0.9;
 	ROUGHNESS = land ? 0.94 : 0.78;
 	SPECULAR = land ? 0.12 : 0.24;
