@@ -1,11 +1,18 @@
 # Android test build
 
-[Download the APK](https://github.com/nicholas-vanson/WarTable/raw/refs/heads/android-test-builds/CrossroadsCommand-0.9.1-test.1.apk)
+[Download the APK](https://raw.githubusercontent.com/nicholas-vanson/WarTable/android-test-builds/CrossroadsCommand-0.9.1-test.2.apk)
 · [Download branch](https://github.com/nicholas-vanson/WarTable/tree/android-test-builds)
 
-Version **0.9.1-test.1**, version code **901**, about **80 MB**.
+Version **0.9.1-test.2**, version code **902**.
 App name: **Crossroads Command Test**.
 Package: `org.crossroadscommand.cloudtest`.
+
+This update includes the illustrated controls, clean rounded rectangular buttons,
+and individually offset/rotated orders sheets with matching tabs. Selecting a
+category brings its sheet to the front. It includes the changes reviewed in 1A.7.
+
+Install it over **0.9.1-test.1** to keep this test app's saves. The package ID
+and signing certificate are unchanged; there is no need to uninstall first.
 
 The dedicated `android-test-builds` branch contains the installable APK, SHA-256
 checksum and build metadata with the exact source commit. Source and build
@@ -36,12 +43,12 @@ with this same key can update this test app. Keep it installed to retain saves.
 - OpenGL ES 3.0 is required. Landscape, immersive display, and all Android
   screen-size classes are declared. Only the Internet permission is requested.
 - Phone terrain uses 4K textures with packed 16-bit elevations. Balanced is
-  the initial quality setting; choose Performance in **☰** if panning is slow.
+  the initial quality setting; choose Performance from the **gear** menu if panning is slow.
   Desktop keeps 8K textures and its existing quality default.
 - This is a release-mode APK signed with a test key, not a Play Store release.
   APK v2/v3 signatures, ZIP alignment and 16 KB ARM64 library alignment pass.
 - 18 mobile terrain/projection checks pass both against source resources and
-  resources extracted from the APK. The 166 desktop visual checks and gameplay,
+  resources extracted from the APK. The 178 desktop visual checks and gameplay,
   touch-input, save and LAN smoke tests pass.
 
 No physical Android phone or accelerated Android emulator was available here.

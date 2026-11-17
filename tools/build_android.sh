@@ -12,7 +12,7 @@ for tool in "$JAVA_HOME/bin/java" "$JAVA_HOME/bin/keytool" "$build_tools/apksign
 done
 godot_version="$("$godot_bin" --version)"
 [[ "$godot_version" == 4.7.2.* ]] || { printf 'Expected Godot 4.7.2, got %s\n' "$godot_version" >&2; exit 1; }
-output="${1:-$project_root/dist/CrossroadsCommand-0.9.1-test.1.apk}"
+output="${1:-$project_root/dist/CrossroadsCommand-0.9.1-test.2.apk}"
 mkdir -p -- "$(dirname -- "$output")"
 output="$(realpath -- "$output")"
 export GODOT_ANDROID_KEYSTORE_RELEASE_PATH="${ANDROID_TEST_KEYSTORE:-${XDG_DATA_HOME:-$HOME/.local/share}/wartable-signing/android-test.keystore}"
