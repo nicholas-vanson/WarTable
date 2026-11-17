@@ -61,7 +61,13 @@ static func apply(button: Button, key: String, description: String, pixels := 22
 			button.add_theme_stylebox_override(state, face)
 	# Registration corners make keyboard focus visible on paper and walnut.
 	var focus := StyleBoxTexture.new()
-	focus.texture = icon("frame")
+	if not _textures.has("focus_frame"):
+		var frame := icon("frame").get_image()
+		frame.resize(32, 32, Image.INTERPOLATE_LANCZOS)
+		_textures["focus_frame"] = ImageTexture.create_from_image(frame)
+	focus.texture = _textures["focus_frame"]
+	focus.set_texture_margin_all(10)
+	focus.draw_center = false
 	focus.modulate_color = Color(1.35, 1.2, 0.88, 0.8)
 	focus.content_margin_left = 4
 	focus.content_margin_right = 4

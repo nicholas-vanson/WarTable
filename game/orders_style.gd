@@ -1,8 +1,9 @@
 extends RefCounted
-## The orders document is the first material sample; other screens retain their skin.
+## Orders stationery and spacing use the shared paper/olive control materials.
 
 const UI = preload("res://game/ui_style.gd")
 const PAPER = preload("res://game/art/ui/orders-stationery.png")
+const FOLDER = preload("res://game/art/ui/orders-empty-folder.png")
 const CONTROLS = preload("res://game/art/ui/orders-controls.png")
 static var _textures := {}
 
@@ -18,11 +19,11 @@ static func _atlas(key: String, region: Rect2) -> AtlasTexture:
 
 
 static func counter() -> Texture2D:
-	return _atlas("counter", Rect2(170, 176, 298, 302))
+	return UI.paper_button()
 
 
 static func olive() -> Texture2D:
-	return _atlas("olive", Rect2(658, 246, 566, 164))
+	return UI.painted_button()
 
 
 static func tab() -> Texture2D:

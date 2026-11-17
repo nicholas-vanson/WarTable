@@ -12,6 +12,18 @@ WWII tabletop concept in `docs/art-direction/approved-tabletop.png`:
   orders-folder review, with quieter edges and less saturated color.
 - `orders-controls.png`: restrained paper counter, olive action, sepia document
   band and manila category tab. Atlas regions are used by `orders_style.gd`.
+- `button-materials.png`: original cream-paper and olive-paint faces generated
+  with OpenAI image generation on 2026-11-17, using the implemented 1A.6 review
+  as the material reference. The unmodified source atlas supplies two regions,
+  normalized to 96 UI pixels in `ui_style.gd`. Seven-pixel nine-slice borders
+  preserve roughly four-pixel corner radii; the center tiles to avoid stretching
+  the material. Shared buttons and input fields use these clean rectangular faces.
+- `orders-empty-folder.png`: generated edit of `orders-stationery.png`, removing
+  its baked-in paper stack while preserving the manila folder. The original
+  stationery still supplies the cream texture for independent live sheets.
+  `orders_folder.gd` gives each sheet its own stable offset/rotation and draws
+  the selected sheet last. Tab hit areas, type and live document follow the same
+  transforms. The file is original OpenAI-generated project artwork (2026-11-17).
 - `utility-icons.png`: original transparent 4-by-4 atlas generated with OpenAI
   image generation on 2026-11-17, using the actual `orders-05/expanded.png` game
   capture as the material reference. Worn brass arrows, raised add/subtract
@@ -21,7 +33,7 @@ WWII tabletop concept in `docs/art-direction/approved-tabletop.png`:
   preserve clarity at 20–22 px. Hover, pressed, disabled and focus states remain
   native Godot UI. Some reserved atlas symbols await later visual passes.
 
-The two `orders-*` assets above are original generated artwork based on the same
+The `orders-*` assets above are original generated artwork based on the same
 approved concept. They belong to the current interface sample; the visual
 worklist records its review status. Their treatment is scoped to the live orders
 folder while other screens await their own passes.

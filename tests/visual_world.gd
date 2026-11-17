@@ -136,6 +136,30 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 	_check(screen._panel.get_global_rect().encloses(screen._document.get_global_rect()), "Changing categories after resizing keeps the document inside its folder")
+	# Exercise the transformed hit areas, not just the tab's pressed signal.
+	# The selected sheet, its tab and the live document must stay together.
+	for index in [2, 3, 0, 1]:
+		var tab: Button = screen._category_tabs.get_child(index)
+		var at: Vector2 = tab.get_global_transform() * (tab.size * 0.5)
+		var motion := InputEventMouseMotion.new()
+		motion.position = at
+		root.push_input(motion, true)
+		for down in [true, false]:
+			var click := InputEventMouseButton.new()
+			click.position = at
+			click.button_index = MOUSE_BUTTON_LEFT
+			click.pressed = down
+			root.push_input(click, true)
+		for frame in 4: await process_frame
+		_check(screen._filter == index and screen._panel.front_page() == index, "Clicking the rotated %s tab brings its sheet forward" % tab.text)
+		_check(is_equal_approx(tab.rotation, screen._document.rotation), "The %s tab and document follow the same sheet angle" % tab.text)
+		var within_paper := true
+		var inverse: Transform2D = screen._panel.page_transform(index).affine_inverse()
+		var paper: Rect2 = screen._panel.page_rect()
+		for corner in [Vector2.ZERO, Vector2(screen._action.size.x, 0), screen._action.size, Vector2(0, screen._action.size.y)]:
+			var point: Vector2 = screen._action.get_global_transform() * corner - screen._panel.global_position
+			within_paper = within_paper and paper.has_point(inverse * point)
+		_check(within_paper, "The action remains inside the %s sheet after switching" % tab.text)
 	screen._choose_filter(1)
 	map.inspect_theater("France")
 	await _capture("touch-layout")

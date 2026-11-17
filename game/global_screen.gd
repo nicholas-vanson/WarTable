@@ -46,7 +46,7 @@ var _treasury_heading: Label
 var _expand_button: Button
 var _document: VBoxContainer
 var _phase_band: PanelContainer
-var _category_tabs: VBoxContainer
+var _category_tabs: Control
 var _dice_phase := false
 var _save_error := ""
 var save_path := SAVE
@@ -84,7 +84,12 @@ func _ready() -> void:
 	var content := VBoxContainer.new()
 	_document = content
 	content.add_theme_constant_override("separation", 9)
-	_panel.add_child(content)
+	# A plain layer lets the entire live document follow the front sheet's
+	# transform without a Container resetting its rotation during layout.
+	var page_content := Control.new()
+	page_content.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_panel.add_child(page_content)
+	page_content.add_child(content)
 	var header := HBoxContainer.new()
 	content.add_child(header)
 	header.add_theme_constant_override("separation", 7)
@@ -137,9 +142,8 @@ func _ready() -> void:
 	var index_overlay := Control.new()
 	index_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_panel.add_child(index_overlay)
-	_category_tabs = VBoxContainer.new()
+	_category_tabs = Control.new()
 	_category_tabs.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_category_tabs.add_theme_constant_override("separation", 4)
 	index_overlay.add_child(_category_tabs)
 	for index in TABS.size():
 		var tab := IndexTab.new()
@@ -149,6 +153,7 @@ func _ready() -> void:
 		_category_tabs.add_child(tab)
 	_scroll.resized.connect(_layout_index_tabs)
 	_scroll.item_rect_changed.connect(_layout_index_tabs)
+	_panel.sort_children.connect(_layout_index_tabs)
 	_map.resized.connect(_layout_panel)
 	_map.selected.connect(_on_board_selected)
 
@@ -254,23 +259,36 @@ func _layout_document() -> void:
 
 
 func _layout_index_tabs() -> void:
-	if _category_tabs == null:
+	if _category_tabs == null or _panel.size.x < 100 or _panel.size.y < 300:
 		return
 	var compact := _map.size.y < 650 or OS.has_feature("mobile") or "--touch-layout" in OS.get_cmdline_user_args()
 	var tab_height := 38.0 if compact else 48.0
-	for tab in _category_tabs.get_children():
-		tab.custom_minimum_size = Vector2(36, tab_height)
-	_category_tabs.size = _category_tabs.get_combined_minimum_size()
 	var overlay := _category_tabs.get_parent() as Control
-	var top := _scroll.global_position.y - overlay.global_position.y
-	var bottom := _panel.global_position.y + _panel.size.y * 0.94 - overlay.global_position.y
-	_category_tabs.position = Vector2(_panel.size.x * 0.03 - _panel._paper.content_margin_left - 32, minf(top, bottom - _category_tabs.size.y))
+	var page_content := _document.get_parent() as Control
+	# Work in unrotated page coordinates. Taking a transformed global scroll
+	# position here would feed the previous rotation back into the next layout.
+	var top := page_content.position.y + _scroll.position.y
+	var page: Rect2 = _panel.page_rect()
+	top = clampf(top, page.position.y + 12, page.end.y - TABS.size() * (tab_height + 6) - 10)
+	_category_tabs.position = -overlay.position
+	_category_tabs.size = _panel.size
 	var pages: Array[Rect2] = []
 	if _category_tabs.visible:
-		var origin := _category_tabs.global_position - _panel.global_position
 		for index in TABS.size():
-			pages.append(Rect2(origin + Vector2(0, index * (tab_height + 4)), Vector2(36, tab_height)))
-	_panel.set_index_pages(pages, _filter)
+			pages.append(Rect2(Vector2(page.position.x - 42, top + index * (tab_height + 6)), Vector2(36, tab_height)))
+	_panel.set_index_pages(pages, _filter if _category_tabs.visible else -1)
+	for index in pages.size():
+		var tab := _category_tabs.get_child(index) as Button
+		var pose: Transform2D = _panel.page_transform(index)
+		tab.custom_minimum_size = pages[index].size
+		tab.size = pages[index].size
+		tab.position = pose * pages[index].position
+		tab.rotation = pose.get_rotation()
+		tab.z_index = _panel._stack_order.find(index)
+	var front_pose: Transform2D = _panel.page_transform(_panel.front_page())
+	_document.position = front_pose * page_content.position - page_content.position
+	_document.rotation = front_pose.get_rotation()
+	_document.size = page_content.size
 
 
 func _refresh() -> void:

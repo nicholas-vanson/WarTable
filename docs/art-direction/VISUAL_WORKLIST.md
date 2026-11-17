@@ -83,6 +83,21 @@ Godot renders from the completed 1A implementation pass.
 
 ## Current review: 1A and 2A
 
+### Applied feedback — preview 1A.7
+
+- Replace tapered/stretched rectangular controls with clean, subtly rounded
+  paper and olive faces. Nine-slice corners and edges retain their dimensions
+  across square counters, long actions, menu buttons and text-entry fields.
+- Replace the uniform baked-in orders stack with four independent paper sheets.
+  Each has its own offset and slight angle, fixed across redraws and selections.
+- Apply each sheet's transform to its projecting tab, vertical text and native
+  hit area. Selecting a tab brings that sheet to the front; the live document
+  follows its angle. Keep the action and other controls inside the paper margins.
+
+Review [Land, Air, Sea, compact and menu captures](orders-07/README.md).
+The broader menu layouts remain in review; this pass updates their shared
+rectangular control faces.
+
 ### Applied feedback — preview 1A.6
 
 - Replace text-symbol controls with original illustrated assets matching the

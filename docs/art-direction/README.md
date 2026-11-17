@@ -16,6 +16,11 @@ unit placements and values are not replacements for the rules data.
   build toward the inside of borders.
 - Layered manila folder and ivory document paper, period serif lettering,
   illustrated unit rows, printed rules and small paper quantity controls.
+- Rectangular control faces have small clean corner radii and fixed-size borders;
+  use nine-slice artwork so wide buttons do not taper or stretch their end caps.
+  Give individual orders sheets varied, stable offsets and slight rotations.
+  Tabs, tab lettering and the active document follow their sheet; selection
+  moves that sheet to the front without rearranging the other pages' poses.
 - Deep olive painted/brass primary actions, dark walnut surround and a slim
   unobtrusive information strip. Folder collapse and maximize are functional.
 - Materials must have texture, edge highlights and contact shadows. Flat generic
@@ -38,7 +43,8 @@ quantities and controls remain real accessible UI, not a baked screenshot.
 The [S01 game and menu review set](states-01/README.md) provides twelve separate
 screens for markup, including movement, combat, placement, inspection and menus.
 
-The current focused review is [1A.6 — illustrated control artwork](orders-06/README.md).
+The current focused review is [1A.7 — clean buttons and loose sheets](orders-07/README.md).
+The [illustrated-control pass](orders-06/README.md) is retained for comparison.
 The [stacked-sheet pass](orders-05/README.md) is retained for comparison.
 The [paper-index refinement](orders-04/README.md) is retained for comparison.
 The [side-tab and ocean pass](orders-03/README.md) is retained for comparison.
@@ -54,7 +60,7 @@ a continuous middle-button drag. The frames were rendered offline and assembled
 at 12 frames per second to make the spatial effect easy to compare; this is not
 a real-time performance benchmark. The camera remains directly overhead.
 
-The visual suite passes 170 checks, including terrain precision, continent
+The visual suite passes 178 checks, including terrain precision, continent
 projection and picking, ownership updates, native folder controls, display
 quality changes and a smaller viewport. At High detail, a 180-pixel pan gives
 27.69 pixels of measured crest-to-ground parallax in the Himalayan test area.

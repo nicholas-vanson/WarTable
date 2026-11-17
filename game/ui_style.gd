@@ -6,6 +6,7 @@ const DISPLAY = preload("res://game/fonts/OldStandardTT-Bold.ttf")
 const FOLDER = preload("res://game/art/ui/orders-folder.png")
 const CONTROLS = preload("res://game/art/ui/controls-atlas.png")
 const ILLUSTRATIONS = preload("res://game/art/ui/unit-illustrations.png")
+const BUTTON_MATERIALS = preload("res://game/art/ui/button-materials.png")
 const TEXT := Color("#f0e2c7")
 const MUTED := Color("#b8aa8c")
 const GOLD := Color("#cdb077")
@@ -30,11 +31,24 @@ static func _atlas(key: String, region: Rect2) -> AtlasTexture:
 
 
 static func paper_button() -> Texture2D:
-	return _atlas("paper", Rect2(188, 178, 276, 282))
+	return _button_material("paper", Rect2i(55, 58, 810, 772))
 
 
 static func painted_button() -> Texture2D:
-	return _atlas("olive", Rect2(657, 225, 572, 184))
+	return _button_material("olive", Rect2i(908, 58, 810, 772))
+
+
+static func _button_material(key: String, region: Rect2i) -> Texture2D:
+	key = "button:" + key
+	if not _textures.has(key):
+		# Normalize the source artwork to UI pixels once. Nine-slice margins then
+		# preserve a small corner radius on both counters and long action buttons.
+		var surface := BUTTON_MATERIALS.get_image().get_region(region)
+		surface.resize(96, 96, Image.INTERPOLATE_LANCZOS)
+		var texture := ImageTexture.create_from_image(surface)
+		texture.set_meta("button_nine_slice", true)
+		_textures[key] = texture
+	return _textures[key]
 
 
 static func folder_tab() -> Texture2D:
@@ -53,6 +67,10 @@ static func texture_box(texture: Texture2D, padding_x := 10, padding_y := 6, tin
 	style.content_margin_right = padding_x
 	style.content_margin_top = padding_y
 	style.content_margin_bottom = padding_y
+	if texture.has_meta("button_nine_slice"):
+		style.set_texture_margin_all(7)
+		style.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_TILE_FIT
+		style.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_TILE_FIT
 	return style
 
 
@@ -136,9 +154,10 @@ static func button(parent: Control, title: String, callback: Callable) -> Button
 
 
 static func primary(item: Button, _accent: Color = GOLD) -> void:
-	for state in ["normal", "hover", "pressed", "focus"]:
+	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
 		var tint := Color(1.12, 1.10, 1.0) if state == "hover" else Color.WHITE
 		if state == "pressed": tint = Color(0.80, 0.77, 0.66)
+		if state == "disabled": tint = Color(0.85, 0.84, 0.77, 0.65)
 		item.add_theme_stylebox_override(state, texture_box(painted_button(), 14, 8, tint))
 	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
 		item.add_theme_color_override(state, TEXT)
@@ -150,7 +169,7 @@ static func field_primary(item: Button) -> void:
 
 
 static func secondary(item: Button) -> void:
-	for state in ["normal", "hover", "pressed", "focus"]:
+	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
 		item.remove_theme_stylebox_override(state)
 	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
 		item.remove_theme_color_override(state)
