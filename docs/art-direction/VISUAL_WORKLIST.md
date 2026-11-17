@@ -9,13 +9,22 @@ Update this document as decisions and feedback arrive.
 ## Actual-game markup workflow
 
 The user can review visual changes without running the game locally.
+They specifically want ChatGPT/Codex's **built-in image markup and comments**.
+Ordinary file embeds and inline screenshot outputs did not expose those controls.
+Use the native image-card delivery format used for the concept images, while
+preserving the actual Godot screenshot unchanged. The first such repost is
+awaiting confirmation that the controls appear in the user's client; the assistant
+cannot inspect or enable those client-side controls directly.
 
-1. Render the changed component in Godot and post the actual PNG inline in the
-   chat, with a downloadable full-resolution copy. Label the item, preview
+1. Render the changed component in Godot and post the actual PNG as a native
+   image card in the chat. Label the item, preview
    revision, game commit and viewport. Include context and a closer view when
    needed; show relevant states rather than only the default screen.
-2. Accept annotations on the screenshot, an attached marked-up copy, or numbered
-   comments referring to visible elements. Record actionable feedback here.
+2. Receive the user's built-in image annotations and comments and map their
+   locations to the matching game capture. Record actionable feedback here.
+   Do not substitute an external editor or numbered-note workflow unless the
+   user asks for that fallback. If the client still lacks native markup, state
+   that limitation instead of claiming the review format is working.
 3. Apply that feedback to the real game code, assets and layout, then run the
    relevant behavior checks and render the same view again for comparison.
 4. Post the next numbered preview and describe the visible changes. Preserve
