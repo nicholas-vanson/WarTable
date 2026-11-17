@@ -21,7 +21,8 @@ Source SHA-256:
 The runtime heightfield is **8192 × 3416**, with normalized height packed into
 16-bit R/G channels and a separate land mask in B. It uses the full
 21600 × 10800 source rather than the first pass's 5400 × 2700 reduction. Colors
-and political masks are 4096 × 1708. Close-up mesh spacing is one world unit,
+and political masks originally used 4096 × 1708. The satellite surface below
+now uses an 8192 × 3416 registered texture. Close-up mesh spacing is one world unit,
 compared with eight in the first pass; theater spacing is two. Geometry is
 view-culled, with bounded high-detail caching and coarser overview tiles.
 
@@ -36,9 +37,30 @@ display relief; they do not specify measured elevations in meters. The original
 Full-source sampling, edge-preserving detail damping and RG16 storage retain
 finer slopes while avoiding exaggerated quantization terraces in lowlands.
 
-Terrain color is an original elevation/latitude-based survey-model palette,
-independent of ownership. Shadow and relief lighting are computed in Godot.
-The PNGs contain no baked lamp shadows or country colors.
+## Satellite-style surface
+
+`global_surface.png` replaces the pale elevation palette in the live terrain
+material. It uses `example/img/earth-blue-marble.jpg` from
+[three-globe](https://github.com/vasturiano/three-globe/tree/1e1f4400b80179809f761e632e207d9a3cfc298e),
+pinned to commit `1e1f4400b80179809f761e632e207d9a3cfc298e`.
+The source is a 4096 × 2048 Blue Marble world texture. The mirror's MIT notice
+is included in `BLUE-MARBLE-LICENSE.txt`. Blue Marble imagery credit: NASA.
+
+SHA-256: `228deba2e4b600146bdcb6cfa359b8ead6aacc2b1c13550a29cd82824cfa1c01`.
+
+`tools/build_surface.py` registers this image using the same regional anchors as
+the relief. It extends nearby source land colors into water before sampling to
+accommodate enlarged islands and distorted coastlines, lifts dark midtones,
+blends exposed high ridges toward rock/ice, and supplies a blue sea with a narrow
+coastal shelf. The 8K output provides smooth registration; its photographic
+detail is limited by the 4K source. It is representative geography, not an exact
+satellite survey or a historical photograph of the world in 1940. Source terrain
+shading remains in the image; Godot adds the live mesh lighting and shadows.
+Country colors are applied afterward by the shader, transparent at the centers
+and strongest along the inside of territory boundaries.
+Mipmaps and pixel-footprint slope sampling reduce shimmer at distant zooms.
+World overview uses slope lighting without coarse-mesh cast shadows; theater
+and close-up views restore the cast shadows (except in Performance mode).
 
 ## Rebuild
 
@@ -46,6 +68,7 @@ With Python 3 and numpy, scipy and Pillow installed:
 
 ```sh
 python tools/build_relief.py --source /path/to/gebco_08.png --download
+python tools/build_surface.py --source /path/to/blue-marble.jpg --elevation-source /path/to/gebco_08.png --download
 godot --headless --editor --path . --import
 ```
 
@@ -58,8 +81,9 @@ order and geographic anchors for reviewing or improving the fit.
 CPU ray picking and GPU displacement decode the same channels. A wider overhead
 perspective lens and taller physical terrain make pan parallax visible. Surface
 normals are evaluated from the high-resolution heightfield at fragment scale.
-`global_geography.png` stores the
-natural surface colors. `global_territories.png` is **data**, not color artwork:
+`global_surface.png` stores the current natural surface colors.
+`global_geography.png` retains the earlier procedural palette for comparison.
+`global_territories.png` is **data**, not color artwork:
 R/G encode the territory ID, B encodes normalized distance into its interior,
 and A encodes distance from its boundary. Ownership alpha is strongest near
 the inside edge and falls to zero toward the center. Runtime palette updates

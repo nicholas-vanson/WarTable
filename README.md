@@ -88,7 +88,8 @@ The smoke test checks both turns, movement and factory restrictions, the coastal
 
 **Play Global 1940** and the world atlas use the same full-board 3D relief renderer.
 The camera looks straight down; the 8K RG16 heightfield, directional lighting, shadows and perspective
-produce depth while panning. Ownership is a transparent wash near the inside of
+produce depth while panning. A registered Blue Marble texture supplies natural
+vegetation, desert and rock color over that relief. Ownership is a transparent wash near the inside of
 each territory boundary, fading toward its natural terrain center. The slim top
 strip shows the current round, phase, power and treasury. The paper orders folder
 has collapse and maximize controls; its edge tab reopens it. The interface uses

@@ -8,26 +8,19 @@ Update this document as decisions and feedback arrive.
 
 ## Actual-game markup workflow
 
-**Delivery blocked with the tools currently available in this chat.** The user
-specifically wants ChatGPT/Codex's **built-in image markup and comments** on
-actual game captures, without having to run the game locally.
+**Annotated feedback received successfully.** The user returned the actual
+expanded-folder screenshot with two numbered, positioned comments. Apply those
+comments directly to the game and provide matching Godot captures for the next
+review. The user wants built-in image markup inside Codex desktop.
 
-File embeds and inline screenshot outputs did not expose those controls. Sending
-an unchanged screenshot through the image-generation result formatter also
-failed: the user reported that no image card appeared. That formatter does not
-establish an attachment in the client's annotation viewer. Tool discovery found
-no supported way to register an existing PNG with that viewer or enable its
-controls. The assistant's earlier claim that it had delivered a native image
-card was incorrect. Do not repeat that claim or ask the user to check the same
-unsuccessful delivery method again.
+We can consume these annotations. Automatic delivery into the native annotation
+viewer remains unverified: earlier file embeds and the image-generation result
+formatter did not expose a usable image card. Do not claim those methods enable
+markup, or regenerate screenshots to manufacture a concept card. Preserve the
+game's pixels and provide the actual PNG for the attachment route the user used.
 
-The intended loop below depends on finding and verifying a supported native
-screenshot attachment capability. Do not describe this loop as operational
-until then, or regenerate the screenshot with an image model to manufacture a
-markup-enabled concept image: that would not reliably preserve the game's pixels.
-
-1. Render the changed component in Godot and post the actual PNG as a native
-   image card in the chat. Label the item, preview
+1. Render the changed component in Godot and provide the actual PNG in the chat.
+   Label the item, preview
    revision, game commit and viewport. Include context and a closer view when
    needed; show relevant states rather than only the default screen.
 2. Receive the user's built-in image annotations and comments and map their
@@ -62,9 +55,9 @@ Godot renders from the completed 1A implementation pass.
 - 1D. Main menu, pause/settings, save and multiplayer screens; confirmations,
   errors, tooltips and keyboard focus.
 
-## 2. Board and map — queued
+## 2. Board and map — first color sample in review
 
-- 2A. One Western Europe reference view: terrain form, relief readability,
+- 2A. One Western Europe reference view (satellite color requested now): terrain form, relief readability,
   natural color, sea material and border ownership wash.
 - 2B. Geographic labels, capital markers, boundaries and sea-zone treatment.
 - 2C. Carry the reviewed treatment across all continents and zoom levels.
@@ -89,6 +82,20 @@ Godot renders from the completed 1A implementation pass.
   captures. Software-rendered clips are not hardware-performance benchmarks.
 
 ## Current review: 1A
+
+### Applied feedback — preview 1A.2 / 2A.1
+
+The user explicitly extended this pass to board color as well as the folder:
+
+- At (64.6%, 5.6%): make the folder tab the main title location and remove the
+  duplicate title on the sheet. Use this convention for future titled folders.
+- At (33.6%, 68.4%): replace the washed-out map color with a satellite-style
+  base on the 3D terrain, representative of real geography. Apply country-color
+  gradients over that surface.
+
+The current implementation uses one scalable tab title, the country heading
+on the document, and a registered Blue Marble base under the existing ownership
+wash. Review [the matching captures](orders-02/README.md) before further styling.
 
 Aim for the reference's paper document: moderate serif headings, a calm country
 line, shaded phase/treasury and totals bands, readable illustrated purchase rows,

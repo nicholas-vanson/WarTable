@@ -4,7 +4,7 @@ extends SubViewport
 const Miniatures = preload("res://game/unit_miniatures.gd")
 const SHADER = preload("res://game/global_terrain.gdshader")
 const HEIGHT = preload("res://game/art/terrain/global_height.png")
-const GEOGRAPHY = preload("res://game/art/terrain/global_geography.png")
+const GEOGRAPHY = preload("res://game/art/terrain/global_surface.png")
 const TERRITORIES = preload("res://game/art/terrain/global_territories.png")
 const WORLD := Vector2(7705, 3213)
 const RELIEF := 180.0
@@ -146,6 +146,9 @@ func configure(center: Vector2, pixels_per_unit: float, viewport_size: Vector2) 
 	var altitude := viewport_size.x / (2.0 * maxf(pixels_per_unit, 0.001) * tan(deg_to_rad(camera.fov) * 0.5))
 	camera.position = Vector3(center.x, altitude, center.y)
 	_sun.directional_shadow_max_distance = altitude * 1.6
+	# At world overview the coarse mesh shadows alias against fine surface normals.
+	# Keep slope lighting there; restore cast shadows at theater/close-up scale.
+	_sun.shadow_enabled = quality_level < 2 and pixels_per_unit >= 0.65
 	var half_width := viewport_size.x / (2.0 * maxf(pixels_per_unit, 0.001))
 	for i in _copies.size():
 		var left := (i - 1) * WORLD.x

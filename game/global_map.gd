@@ -413,14 +413,14 @@ func _draw_labels(offset: Vector2, bounds: Rect2, close: bool) -> void:
 		if region.city:
 			title = "★ " + title
 		if close or region.city or region.bounds.size.x * _scale() > 95.0 or _selection == zone:
-			_caption(center, title, 14 if close else 12, Color("#30362b"))
+			_caption(center, title, 14 if close else 12, Color("#f1e6c8"))
 		if close:
 			_draw_region_badges(center, region_info(zone) if _live.has(zone) else region, zone)
 
 
 func _draw_region_badges(center: Vector2, region: Dictionary, _zone: String) -> void:
 	if not region.water and region.ipc > 0 and _zoom >= 4.4:
-		_caption(center + Vector2(0, 14), "%d IPC" % region.ipc, 11, Color("#3e4434"))
+		_caption(center + Vector2(0, 14), "%d IPC" % region.ipc, 11, Color("#e0dcc2"))
 
 
 func _caption(point: Vector2, value: String, font_size: int, color: Color) -> void:

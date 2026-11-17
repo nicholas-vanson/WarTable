@@ -3,6 +3,10 @@ extends PanelContainer
 const UI = preload("res://game/ui_style.gd")
 const Sheet = preload("res://game/orders_style.gd")
 var _paper: StyleBoxTexture
+@export var title := "ORDERS":
+	set(value):
+		title = value
+		queue_redraw()
 
 func _ready() -> void:
 	theme = Sheet.theme()
@@ -23,4 +27,11 @@ func _sync_paper() -> void:
 	queue_redraw()
 
 func _draw() -> void:
-	draw_string(UI.DISPLAY, Vector2(size.x * 0.11, size.y * 0.05), "ORDERS", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, UI.INK)
+	# The tab is the document's only title. Fit it within the physical tab at
+	# normal, expanded and compact widths instead of repeating it on the sheet.
+	var tab := Rect2(size.x * 0.09, size.y * 0.018, size.x * 0.30, size.y * 0.055)
+	var font_size := 23
+	while font_size > 12 and UI.DISPLAY.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > tab.size.x:
+		font_size -= 1
+	var baseline := tab.position.y + (tab.size.y - UI.DISPLAY.get_height(font_size)) * 0.5 + UI.DISPLAY.get_ascent(font_size)
+	draw_string(UI.DISPLAY, Vector2(tab.position.x, baseline), title, HORIZONTAL_ALIGNMENT_CENTER, tab.size.x, font_size, UI.INK)

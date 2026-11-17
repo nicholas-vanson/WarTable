@@ -44,7 +44,6 @@ var _country_heading: Label
 var _treasury_heading: Label
 var _expand_button: Button
 var _document: VBoxContainer
-var _orders_heading: Label
 var _phase_band: PanelContainer
 var _dice_phase := false
 var _save_error := ""
@@ -85,10 +84,10 @@ func _ready() -> void:
 	var header := HBoxContainer.new()
 	content.add_child(header)
 	header.add_theme_constant_override("separation", 7)
-	var orders_title := UI.heading(header, "ORDERS", 22, UI.INK)
-	_orders_heading = orders_title
-	orders_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	orders_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_country_heading = UI.heading(header, "", 20, UI.INK)
+	_country_heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_country_heading.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_country_heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	var tuck := UI.button(header, "›", func(): _show_panel(false, true))
 	tuck.custom_minimum_size = Vector2(32, 32)
 	tuck.add_theme_font_size_override("font_size", 22)
@@ -97,7 +96,6 @@ func _ready() -> void:
 	_expand_button.custom_minimum_size = Vector2(32, 32)
 	_expand_button.tooltip_text = "Expand orders"
 	content.add_child(HSeparator.new())
-	_country_heading = UI.heading(content, "", 20, UI.INK)
 	var phase_band := PanelContainer.new()
 	_phase_band = phase_band
 	phase_band.add_theme_stylebox_override("panel", Sheet.band())
@@ -215,10 +213,7 @@ func _layout_document() -> void:
 		return
 	var compact := _map.size.y < 650 or OS.has_feature("mobile") or "--touch-layout" in OS.get_cmdline_user_args()
 	_document.add_theme_constant_override("separation", 5 if compact else 9)
-	_country_heading.visible = not compact
-	_orders_heading.text = "ORDERS · " + _country_heading.text if compact else "ORDERS"
-	_orders_heading.add_theme_font_size_override("font_size", 18 if compact else 22)
-	_orders_heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_country_heading.add_theme_font_size_override("font_size", 18 if compact else 20)
 	var band: StyleBoxTexture = _phase_band.get_theme_stylebox("panel")
 	band.content_margin_top = 6 if compact else 9
 	band.content_margin_bottom = band.content_margin_top
