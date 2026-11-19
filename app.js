@@ -1,4 +1,4 @@
-import {places,stats,types,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,rollRound,casualties,retreat} from './rules.js';
+import {places,stats,types,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,rollAttack,rollDefense,casualties,retreat} from './rules.js';
 import {atlas} from './map.js';
 const $=id=>document.getElementById(id), key='wartable.western-front.v1';
 const freshUI=()=>({from:null,to:null,units:{inf:0,tank:0},losses:{inf:0,tank:0}});
@@ -60,9 +60,20 @@ function planPanel(){
   $('action').innerHTML=!ui.to?'<button class="primary" id="hold" '+(s.orders.length?'':'disabled')+'>Hold to commit attacks</button>':'';
   return html;
 }
-function rollsBox(b){
-  const row=(name,list)=>'<div>'+name+' · '+list.map(d=>d.hit?'<b>['+d.face+']</b>':d.face).join(' ')+'</div>';
-  return b.dice?'<div class="rolls">'+row('DE',b.dice.attack)+row('FR',b.dice.defense)+'<small>[ ] = hit</small></div>':'';
+function rollsBox(dice){
+  if(!dice)return '';
+  return ['attack','defense'].filter(side=>dice[side]).map(side=>{
+    const rolls=dice[side], hits=rolls.filter(d=>d.hit).length;
+    const label=side==='attack'?'German attack':'French defense';
+    const groups=types.map(type=>{
+      const group=rolls.filter(d=>d.type===type);
+      if(!group.length)return '';
+      const threshold=stats[type][side];
+      const diceRow=group.map(d=>'<span class="die '+(d.hit?'hit':'miss')+'"><b>'+d.face+'</b> '+(d.hit?'Hit':'Miss')+'</span>').join('');
+      return '<div class="roll-unit"><strong>'+stats[type].name+'</strong><small>Hits on '+(threshold===1?'1':'1–'+threshold)+'</small><div class="dice-row">'+diceRow+'</div></div>';
+    }).join('');
+    return '<section class="roll-card"><h4>'+label+'<span>'+hits+' '+(hits===1?'hit':'hits')+'</span></h4>'+groups+'</section>';
+  }).join('');
 }
 function battlePanel(){
   const b=currentBattle(s);
@@ -70,21 +81,29 @@ function battlePanel(){
     return title('Conduct combat','Choose the next battle to resolve.')+block('Battle order')+
       s.battles.map(b=>b.resolved?'<div class="review-item"><strong>'+places[b.to].name+'</strong><p>'+b.result+'</p></div>':opt(b.to,places[b.to].name,describe(b.attack)+' attacking','⚑','battle')).join('');
   }
-  const info=title(places[b.to].name,'Germany · '+describe(b.attack)+'<br>France · '+describe(s.units[b.to]))+block(b.round?'Battle round '+b.round:'Land battle')+rollsBox(b);
+  const info=title(places[b.to].name,'Germany · '+describe(b.attack)+'<br>France · '+describe(s.units[b.to]))+block(b.round?'Battle round '+b.round:'Land battle')+rollsBox(b.dice);
+  if(b.step==='defense'){
+    $('action').innerHTML=btn('Roll French defense','defend','primary');
+    return info+'<p class="hint">All defending units in this round return fire, including those hit by Germany.</p>';
+  }
+  if(b.step==='losses' && !b.hits){
+    $('action').innerHTML=btn('Resolve round','loss','primary');
+    return info+'<p class="hint">Germany takes no casualties this round.</p>';
+  }
   if(b.step==='losses'){
     const limits={};
     for(const k of types)limits[k]=Math.min(b.attack[k],ui.losses[k]+b.hits-count(ui.losses));
     $('action').innerHTML=btn('Confirm casualties','loss','primary',count(ui.losses)===b.hits?'':'disabled');
     return info+'<h3>Choose your casualties</h3><p class="hint">Assign '+b.hits+' German '+(b.hits===1?'loss':'losses')+'.</p>'+stepper('casualty',ui.losses,limits);
   }
-  $('action').innerHTML=btn(b.round?'Continue · roll next round':'Roll first round','roll','primary');
+  $('action').innerHTML=btn(b.round?'Continue · roll German attack':'Roll German attack','roll','primary');
   if(b.step==='decision'){
     return info+'<h3>Continue or retreat?</h3><p class="hint">Retreat all survivors to one origin.</p>'+b.origins.map(id=>btn('Retreat to '+places[id].name,'retreat','secondary','data-id="'+id+'"')).join('');
   }
   return info+'<p class="hint">Infantry hit on 1 attacking or 1–2 defending. Tanks hit on 1–3.</p>';
 }
 function timeline(){
-  return s.record.map(e=>'<div class="review-item"><strong>'+esc(e.title)+'</strong><p>'+esc(e.detail)+'</p></div>').join('');
+  return s.record.map(e=>'<div class="review-item"><strong>'+esc(e.title)+'</strong><p>'+esc(e.detail)+'</p>'+rollsBox(e.dice)+'</div>').join('');
 }
 let stopHold=()=>{};
 function bindHold(){
@@ -128,7 +147,8 @@ document.addEventListener('click',e=>{
       case 'add': plan(s,ui.from,ui.to,ui.units);ui=freshUI();break;
       case 'remove': plan(s,ui.from,ui.to,{inf:0,tank:0});ui=freshUI();break;
       case 'battle': chooseBattle(s,id);break;
-      case 'roll': ui.losses={inf:0,tank:0};rollRound(s);break;
+      case 'roll': ui.losses={inf:0,tank:0};rollAttack(s);break;
+      case 'defend': rollDefense(s);break;
       case 'loss': casualties(s,ui.losses);ui.losses={inf:0,tank:0};break;
       case 'retreat': retreat(s,id);break;
       case 'reset': showDialog('<h2>Restart exercise?</h2><p>This replaces the position and its local review on this device.</p>'+btn('Restart exercise','confirm-reset','danger'));break;

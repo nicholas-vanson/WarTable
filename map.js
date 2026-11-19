@@ -1,4 +1,4 @@
-import {places,count,available} from './rules.js';
+import {places,types,describe,count,available} from './rules.js';
 const ns='http://www.w3.org/2000/svg';
 function node(tag,attrs,text=''){
   const el=document.createElementNS(ns,tag);
@@ -7,6 +7,43 @@ function node(tag,attrs,text=''){
 }
 const project=(lon,lat)=>[(lon+13)*34,(69-lat)*52];
 const position=id=>project(places[id].lon,places[id].lat);
+// Follow the actual border crossing on the atlas rather than cutting across a third territory.
+const crossings={
+  'hb-nb':[[4.4,51],[3.3,50.8],[2.35,50.24],[1.15,49.65],[.2,48.85]],
+  'wg-fr':[[7.4,49.45],[6.9,49.14]]
+};
+const silhouettes={
+  inf:'M-2 -7a2 2 0 1 1 4 0a2 2 0 1 1 -4 0 M-2 -4h4l2 4 3 -2 1 1 -5 4 -2 -3v3l3 5h-3L0 4l-2 4h-3l3 -7z',
+  tank:'M-8 1h16l-2 4H-6z M-5 0l2 -4h6l1 2h5v1H3v1z'
+};
+function forceRow(parent,units,nation,y,detailed,selected){
+  const label=nation==='Germany'?'DE':'FR', ink=nation==='Germany'?'#354735':'#294856';
+  const paper=nation==='Germany'?'#e5e4c9':'#dce7e5';
+  const row=node('g',{transform:'translate(0 '+y+')','aria-label':nation+' · '+describe(units)});
+  const groups=types.filter(type=>units[type]);
+  const gap=3;
+  const widths=groups.map(type=>detailed?Math.max(44,units[type]*13+8):36);
+  const width=widths.reduce((sum,w)=>sum+w+gap,0)+17;
+  let x=-width/2;
+  row.append(node('rect',{x,y:-11,width:18,height:22,fill:ink}));
+  row.append(node('text',{x:x+9,y:3,'text-anchor':'middle',fill:'#fff','font-family':'sans-serif','font-size':9},label));
+  x+=18;
+  for(const [i,type] of groups.entries()){
+    const w=widths[i],h=detailed?35:22;
+    const tile=node('g',{'data-unit':type,'data-count':units[type]});
+    tile.append(node('title',{},nation+' · '+describe({inf:0,tank:0,[type]:units[type]})));
+    tile.append(node('rect',{x,y:-11,width:w,height:h,rx:1,fill:paper,stroke:selected?'#96452c':ink,'stroke-width':selected?2:1.25}));
+    const figures=detailed?units[type]:1;
+    for(let n=0;n<figures;n++){
+      const sx=detailed?x+w/2+(n-(figures-1)/2)*13:x+10;
+      tile.append(node('path',{d:silhouettes[type],transform:'translate('+sx+' 0) scale(.8)',fill:ink,'data-piece':type}));
+    }
+    tile.append(node('text',{x:detailed?x+w/2:x+26,y:detailed?19:4,'text-anchor':'middle',fill:ink,'font-family':'sans-serif','font-weight':700,'font-size':detailed?10:13},
+      detailed?units[type]+' '+(type==='tank'?'ARM':'INF'):units[type]));
+    row.append(tile);x+=w+gap;
+  }
+  parent.append(row);
+}
 const labels=[
   ['NORTH SEA',1,55.2,'water'],['BALTIC SEA',19.7,57.3,'water'],['ATLANTIC OCEAN',-8,47.5,'water'],['MEDITERRANEAN SEA',7.3,38,'water'],['BLACK SEA',33.3,43.4,'water'],['NORWEGIAN SEA',.5,66,'water'],
   ['English Channel',-2.4,50.15,'water'],['Bay of Biscay',-4.3,45.3,'water'],['Adriatic Sea',15,43,'water'],
@@ -45,31 +82,44 @@ export async function atlas(onPick,onView,initial) {
     document.querySelector('#coordinates').textContent=lat.toFixed(1)+'° N   '+Math.abs(lon).toFixed(1)+'° '+(lon<0?'W':'E');
     if(!game)return;
     routes.replaceChildren();forces.replaceChildren();
+    for(const region of regions.children){
+      const id=region.dataset.place;
+      const legal=game.phase==='plan'&&places[focus]?.targets.includes(id);
+      region.setAttribute('fill',id===target?'#ba84353a':legal?'#d6b65728':'transparent');
+      region.setAttribute('stroke',legal?'#895a31':'none');
+      region.setAttribute('stroke-width','2');
+    }
     for(const order of game.orders){
       const [x,y]=position(order.from),[tx,ty]=position(order.to);
-      const dx=tx-x,dy=ty-y,dist=Math.hypot(dx,dy);
+      const via=(crossings[order.from+'-'+order.to]||[]).map(([lon,lat])=>project(lon,lat));
+      const points=[[x,y],...via];
+      const [lastX,lastY]=points.at(-1);
+      const dx=tx-lastX,dy=ty-lastY,dist=Math.hypot(dx,dy);
       const trim=Math.min(dist*.25,22/scale);
-      routes.append(node('path',{d:'M'+x+' '+y+' L'+(tx-dx*trim/dist)+' '+(ty-dy*trim/dist),'stroke':'#99432e','stroke-width':2.4/scale,'stroke-dasharray':game.phase==='plan'?(6/scale)+' '+(3/scale):'none','marker-end':'url(#arrow)',fill:'none'}));
+      routes.append(node('path',{d:'M'+points.map(pt=>pt.join(' ')).join(' L')+' L'+(tx-dx*trim/dist)+' '+(ty-dy*trim/dist),'stroke':'#99432e','stroke-width':2.4/scale,'stroke-dasharray':game.phase==='plan'?(6/scale)+' '+(3/scale):'none','marker-end':'url(#arrow)',fill:'none'}));
     }
     const compact=view.z<.66;
     for(const [id,p] of Object.entries(places)){
       const [x,y]=position(id),friendly=game.owners[id]==='Germany';
       const units=game.phase==='plan'&&friendly?available(game,id):game.units[id];
-      const color=friendly?'#434f3b':'#3f5964',paper=friendly?'#e3dfc5':'#d5e1db';
+      const color=friendly?'#434f3b':'#3f5964';
       const selected=id===focus||id===target;
       const g=node('g',{'data-place':id,transform:'translate('+x+' '+y+') scale('+1/scale+')',cursor:'pointer','aria-label':p.name});
       g.append(node('title',{},p.name));
       if(compact){
         g.append(node('circle',{r:6,fill:color,stroke:'#f7f2df','stroke-width':1.6}));
       }else{
-        const width=view.z>=1.55?62:46;
-        g.append(node('rect',{x:-width/2,y:-13,width,height:25,rx:1.4,fill:paper,stroke:selected?'#a04a2b':color,'stroke-width':selected?2.8:1.5}));
-        const mark=units.inf?'M-17 -6h16V6h-16z M-17 -6l16 12 M-17 6l16 -12':'M-17 0a8 5 0 1 0 16 0a8 5 0 1 0 -16 0';
-        g.append(node('path',{d:mark,fill:'none',stroke:color,'stroke-width':1.5}));
-        g.append(node('text',{x:9,y:4,'text-anchor':'middle','font-family':'monospace','font-weight':'bold','font-size':13,fill:color},count(units)));
-        g.append(node('text',{x:0,y:id==='fr'?27:25,'text-anchor':'middle',fill:'#29392d',stroke:'#e9e4cd','stroke-width':3,'paint-order':'stroke','font-family':'Georgia,serif','font-weight':'bold','font-size':11.5},p.name));
-        if(view.z>=1.55)g.append(node('text',{x:0,y:40,'text-anchor':'middle',fill:color,stroke:'#f1ecd8','stroke-width':3,'paint-order':'stroke','font-family':'monospace','font-size':10},units.inf+' INF · '+units.tank+' ARM'));
-        g.append(node('rect',{x:-25,y:-22,width:50,height:44,fill:'transparent'}));
+        const detailed=view.z>=1.55;
+        const spacing=detailed?39:26;
+        let row=0;
+        if(count(units))forceRow(g,units,game.owners[id],row++*spacing,detailed,selected);
+        const battle=game.battles.find(b=>b.to===id&&!b.resolved);
+        const incoming=game.phase==='plan'?game.orders.filter(o=>o.to===id)
+          .reduce((sum,o)=>({inf:sum.inf+o.units.inf,tank:sum.tank+o.units.tank}),{inf:0,tank:0}):battle?.attack;
+        if(incoming&&count(incoming))forceRow(g,incoming,'Germany',row++*spacing,detailed,selected);
+        if(!row)g.append(node('circle',{r:4,fill:color}));
+        g.append(node('text',{x:0,y:row?row*spacing+1:17,'text-anchor':'middle',fill:'#29392d',stroke:'#e9e4cd','stroke-width':3,'paint-order':'stroke','font-family':'Georgia,serif','font-weight':'bold','font-size':11.5},p.name));
+        g.append(node('rect',{x:-24,y:-20,width:48,height:44,fill:'transparent'}));
       }
       forces.append(g);
     }

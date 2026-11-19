@@ -74,22 +74,29 @@ function applyLosses(s,b,losses){
   let hits=b.dice.attack.filter(d=>d.hit).length;
   const lost=empty();
   for(const k of types){lost[k]=Math.min(defenders[k],hits);defenders[k]-=lost[k];hits-=lost[k];}
-  const faces=rolls=>rolls.map(d=>d.face).join(', ');
-  s.record.push({title:places[b.to].name+' · round '+b.round,detail:'German dice '+faces(b.dice.attack)+'; French dice '+faces(b.dice.defense)+'. Losses — Germany: '+describe(losses)+'; France: '+describe(lost)+'.'});
+  s.record.push({title:places[b.to].name+' · round '+b.round,dice:b.dice,
+    detail:'Losses — Germany: '+describe(losses)+'; France: '+describe(lost)+'.'});
   if(!count(defenders)&&count(b.attack)){
     s.owners[b.to]='Germany';s.units[b.to]={...b.attack};finishBattle(s,b,'Captured by Germany with '+describe(b.attack)+'.');
   }else if(!count(b.attack)){
     finishBattle(s,b,count(defenders)?'France held with '+describe(defenders)+'.':'Both forces lost. France retains control.');
   }else b.step='decision';
 }
-export function rollRound(s,random=die){
+export function rollAttack(s,random=die){
   const b=currentBattle(s);
   check(b&&['ready','decision'].includes(b.step),'Resolve casualties before rolling again.');
   b.round++;
-  b.dice={attack:rollForce(b.attack,'attack',random),defense:rollForce(s.units[b.to],'defense',random)};
+  b.dice={attack:rollForce(b.attack,'attack',random)};
+  b.step='defense';
+}
+export function rollDefense(s,random=die){
+  const b=currentBattle(s);
+  check(b?.step==='defense','Roll the attack first. Each side rolls once per round.');
+  // Defenders hit by the attack still return fire in this land battle.
+  b.dice.defense=rollForce(s.units[b.to],'defense',random);
   b.hits=Math.min(count(b.attack),b.dice.defense.filter(d=>d.hit).length);
   b.step='losses';
-  if(!b.hits) applyLosses(s,b,empty());
+
 }
 export function casualties(s,losses){
   const b=currentBattle(s);
