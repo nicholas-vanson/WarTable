@@ -4,6 +4,8 @@ A local, phone-first PWA for a partial German combat turn. On another machine, c
 
 ## Play
 
+[Open or install the current WarTable playtest](https://nicholas-vanson.github.io/WarTable/). Use this stable link in each release announcement.
+
 For a hosted copy use HTTPS, open the playtest in Chrome on the Galaxy, then choose **Install app** or **Add to home screen**. Allow the first load to finish before going offline. Device storage holds the current match, in-progress orders, battle dice and map view. Each browser or install origin has its own local game. GitHub synchronizes development files across machines.
 
 The downloadable archive contains the complete static site. The single-file HTML edition includes the map and game in one file for browsers that open local HTML. Browser policies for local files vary; use the HTTPS edition for home-screen installation.

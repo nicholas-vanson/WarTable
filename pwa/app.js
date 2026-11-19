@@ -13,6 +13,10 @@ function save(){
 }
 function selectOrigin(id){ui.from=id;ui.to=null;ui.stack=null;message='';}
 function selectStack(id,type){
+  if(ui.from===id && ui.stack===type){
+    ui=freshUI();
+    return;
+  }
   const remaining=available(s,id)[type];
   if(!remaining)throw new Error('This stack is already allocated.');
   selectOrigin(id);
