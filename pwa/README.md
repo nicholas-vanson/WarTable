@@ -9,8 +9,8 @@ For a hosted copy use HTTPS, open the playtest in Chrome on the Galaxy, then cho
 The downloadable archive contains the complete static site. The single-file HTML edition includes the map and game in one file for browsers that open local HTML. Browser policies for local files vary; use the HTTPS edition for home-screen installation.
 
 1. Pan across Europe, pinch to zoom, use the theater overview button, then recenter on the western front.
-2. Select Holland Belgium or Western Germany. Choose an adjacent French target and assign infantry and tanks. Holland Belgium can reach both French targets. Western Germany can reach France.
-3. Add an order. Select the row to revise or cancel it. Close and reopen mid-plan to check the save.
+2. Tap a German infantry (cross) or armor (ellipse) counter. Adjust the quantity and tap an adjacent French destination. Holland Belgium can reach both French targets. Western Germany can reach France.
+3. Split the remaining stack for another destination, or add a different type to the same route. Select an order to revise or cancel it. Close and reopen mid-plan to check the save.
 4. Hold to commit all attacks. Choose a battle, roll the German attack, then roll French return fire. Each die identifies its unit type and hit or miss. Manually assign German losses. Defenders take the cheapest legal casualties. Between eligible rounds choose to continue or retreat.
 5. After the last battle, review the committed actions. Open the field guide to restart.
 

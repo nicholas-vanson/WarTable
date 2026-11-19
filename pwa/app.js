@@ -1,7 +1,7 @@
 import {places,stats,types,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,rollAttack,rollDefense,casualties,retreat} from './rules.js';
 import {atlas} from './map.js';
 const $=id=>document.getElementById(id), key='wartable.western-front.v1';
-const freshUI=()=>({from:null,to:null,units:{inf:0,tank:0},losses:{inf:0,tank:0}});
+const freshUI=()=>({from:null,to:null,stack:null,quantity:1,units:{inf:0,tank:0},losses:{inf:0,tank:0}});
 let s=newGame(),ui=freshUI(),view=null,draw=()=>{},message='';
 try{
   const saved=JSON.parse(localStorage.getItem(key)||'null');
@@ -11,17 +11,33 @@ function save(){
   try{localStorage.setItem(key,JSON.stringify({game:s,ui,view}));}
   catch{$('storage').textContent='Saving unavailable';}
 }
-function selectOrigin(id){ui.from=id;ui.to=null;message='';}
+function selectOrigin(id){ui.from=id;ui.to=null;ui.stack=null;message='';}
+function selectStack(id,type){
+  const remaining=available(s,id)[type];
+  if(!remaining)throw new Error('This stack is already allocated.');
+  selectOrigin(id);
+  ui.stack=type;ui.quantity=remaining;
+}
 function selectTarget(id){
   if(!ui.from)throw new Error('Select a German force first.');
   if(!places[ui.from].targets.includes(id))throw new Error(places[id].name+' does not share a playable border with '+places[ui.from].name+'.');
-  ui.to=id;const order=s.orders.find(o=>o.from===ui.from&&o.to===id);
+  const order=s.orders.find(o=>o.from===ui.from&&o.to===id);
+  if(ui.stack){
+    const assigned=order?{...order.units}:{inf:0,tank:0};
+    assigned[ui.stack]+=ui.quantity;
+    plan(s,ui.from,id,assigned);
+    ui=freshUI();
+    return;
+  }
+  ui.to=id;
   ui.units=order?{...order.units}:{inf:0,tank:0};
 }
-function pick(id){
+function pick(id,type){
   if(s.phase==='plan'){run(()=>{
-    if(places[id].owner==='Germany')selectOrigin(id);
-    else selectTarget(id);
+    if(places[id].owner==='Germany'&&type)selectStack(id,type);
+    else if(places[id].owner==='Germany')selectOrigin(id);
+    else if(ui.stack||ui.to)selectTarget(id);
+    else throw new Error('Choose an infantry or armor stack first.');
   });}
   else if(s.phase==='combat'&&!s.active)run(()=>chooseBattle(s,id));
 }
@@ -37,27 +53,35 @@ function opt(id,label,sub,code,act,selected=false){
 }
 function title(t,sub){return '<h2>'+t+'</h2><p class="hint">'+sub+'</p>';}
 function block(t){return '<div class="block-title">'+t+'</div>';}
-function stepper(kind,values,limits){
-  return types.map(k=>'<div class="stepper"><span>'+stats[k].name+'</span><button aria-label="Remove one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="-1" '+(values[k]===0?'disabled':'')+'>−</button><output>'+values[k]+'</output><button aria-label="Add one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="1" '+(values[k]>=limits[k]?'disabled':'')+'>+</button></div>').join('');
+function stepper(kind,values,limits,keys=types,min=0){
+  return keys.map(k=>'<div class="stepper"><span>'+stats[k].name+'</span><button aria-label="Remove one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="-1" '+(values[k]<=min?'disabled':'')+'>−</button><output>'+values[k]+'</output><button aria-label="Add one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="1" '+(values[k]>=limits[k]?'disabled':'')+'>+</button></div>').join('');
 }
 function planPanel(){
-  let html=title('Combat move','Choose a German force, then plan an attack across a shared border.');
+  let html=title('Combat move','Tap an infantry or armor counter, choose how many to move, then tap a highlighted destination.');
   if(ui.to){
     const existing=s.orders.some(o=>o.from===ui.from&&o.to===ui.to);
     html=title('Plan attack',places[ui.from].name+' → '+places[ui.to].name)+block('Assign units')+stepper('assign',ui.units,available(s,ui.from,ui.to))+
     '<div class="actions">'+btn('Back','back')+btn(existing?'Update order':'Add order','add','primary',count(ui.units)?'':'disabled')+'</div>';
     if(existing)html+=btn('Cancel this order','remove','danger','style="margin-top:8px"');
-  }else if(ui.from){
-    html=title(places[ui.from].name,describe(available(s,ui.from))+' available.')+block('Attack destination')+
-    places[ui.from].targets.map(id=>opt(id,places[id].name,describe(s.units[id]),'FR','target')).join('')+
-    '<div class="actions">'+btn('Choose another force','clear')+'</div>';
+  }else if(ui.stack){
+    html=title(stats[ui.stack].name+' stack',places[ui.from].name)+block('Units to move')+
+      stepper('quantity',{[ui.stack]:ui.quantity},available(s,ui.from),[ui.stack],1)+
+      block('Tap destination to plan move')+
+      places[ui.from].targets.map(id=>opt(id,places[id].name,describe(s.units[id]),'↗','target')).join('')+
+      '<div class="actions">'+btn('Deselect stack','clear')+'</div>';
   }else{
-    html+=block('Available forces')+['hb','wg'].map(id=>opt(id,places[id].name,describe(available(s,id)),'DE','origin')).join('');
+    const origins=ui.from?[ui.from]:['hb','wg'];
+    html+=origins.map(id=>{
+      const free=available(s,id);
+      return block(places[id].name)+types.filter(k=>free[k]).map(k=>
+        opt(id+'-'+k,stats[k].name,free[k]+' available',k==='inf'?'⊠':'⬭','stack')).join('');
+    }).join('');
+    if(ui.from)html+=btn('All forces','clear');
   }
   if(!ui.to&&s.orders.length){
     html+=block('Planned attacks · '+s.orders.length)+s.orders.map((o,i)=>opt(String(i),places[o.to].name,places[o.from].name+' · '+describe(o.units),'↗','edit')).join('');
   }
-  $('action').innerHTML=!ui.to?'<button class="primary" id="hold" '+(s.orders.length?'':'disabled')+'>Hold to commit attacks</button>':'';
+  $('action').innerHTML=!ui.to&&!ui.stack?'<button class="primary" id="hold" '+(s.orders.length?'':'disabled')+'>Hold to commit attacks</button>':'';
   return html;
 }
 function rollsBox(dice){
@@ -129,7 +153,7 @@ function render(){
     $('panel').innerHTML=title('Exercise review','Committed attacks and resolved outcomes.')+timeline();
     $('action').innerHTML=btn('Start another exercise','reset');
   }
-  $('notice').textContent=message;draw(s,ui.from,ui.to);bindHold();
+  $('notice').textContent=message;draw(s,ui.from,ui.to,ui.stack);bindHold();
 }
 function showDialog(html){$('dialogBody').innerHTML=html;if(!$('dialog').open)$('dialog').showModal();}
 document.addEventListener('click',e=>{
@@ -137,7 +161,8 @@ document.addEventListener('click',e=>{
   const {act,id,k,n}=b.dataset;
   run(()=>{
     switch(act){
-      case 'origin': selectOrigin(id);break;
+      case 'stack': {const [place,type]=id.split('-');selectStack(place,type);break;}
+      case 'quantity': ui.quantity=Math.max(1,Math.min(available(s,ui.from)[ui.stack],ui.quantity+Number(n)));break;
       case 'target': selectTarget(id);break;
       case 'assign': ui.units[k]+=Number(n);break;
       case 'casualty': ui.losses[k]+=Number(n);break;
@@ -158,7 +183,7 @@ document.addEventListener('click',e=>{
 });
 $('closeDialog').onclick=()=>$('dialog').close();
 $('journal').onclick=()=>showDialog('<h2>Exercise review</h2>'+(s.phase==='review'?timeline():'<p>The record opens after the last battle. It includes committed attacks, dice, casualties, retreats, and control of each territory.</p>'));
-$('help').onclick=()=>showDialog('<h2>Field guide</h2><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater.</p><p>Choose a German force and a French destination. Set unit counts and add an order. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><p>This local exercise covers adjacent land attacks with infantry and tanks. The starting forces are arranged for testing. The surrounding atlas is for exploration.</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+btn('Restart exercise','reset','danger'));
+$('help').onclick=()=>showDialog('<h2>Field guide</h2><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater.</p><p>Tap a German counter: crossed lines mean infantry, an ellipse means armor. Adjust the quantity, then tap a highlighted French territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><p>This local exercise covers adjacent land attacks with infantry and tanks. The starting forces are arranged for testing. The surrounding atlas is for exploration.</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+btn('Restart exercise','reset','danger'));
 render();
 try{draw=await atlas(pick,v=>{view=v;save();},view);render();}catch{message='The map could not load. Reopen the playtest while online to finish the download.';render();}
 if('serviceWorker' in navigator){

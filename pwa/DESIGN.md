@@ -28,7 +28,7 @@ Publish one shared review after each nation's turn. Include committed moves, bat
 
 The entire game must be playable on a modern Samsung Galaxy. Phones and tablets are primary, with desktop support desirable. Prefer landscape if only one orientation is practical; retain support for portrait where feasible. The PWA launches in a standalone window after installation.
 
-Use the Staff Map concept: period-inspired colors, cartographic lettering, named territories and boxed tactical symbols at overview scale. Show separate infantry and armor counters with counts at tactical zoom, and individual figures at close zoom. Make every playable adjacency visible on the map. Subtle panning parallax is desirable. Keep free rotation and full 3D deferred. Support future player-selectable themes and understated phase treatments, including Situation Map pencil-like routes in combat. Keep game decisions independent of how the map is rendered.
+Use the Staff Map concept: period-inspired colors, cartographic lettering, named territories and boxed tactical symbols at overview scale. Disperse unit-type stacks across each territory. Show counted, boxed infantry crosses and armor ellipses. Players select a stack, choose how many units to send, then tap a destination. Make every playable adjacency visible on the map. Subtle panning parallax is desirable. Keep free rotation and full 3D deferred. Support future player-selectable themes and understated phase treatments, including Situation Map pencil-like routes in combat. Keep game decisions independent of how the map is rendered.
 
 ## Project history and research
 
