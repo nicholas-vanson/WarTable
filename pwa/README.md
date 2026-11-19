@@ -11,7 +11,7 @@ The downloadable archive contains the complete static site. The single-file HTML
 1. Pan across Europe, pinch to zoom, use the theater overview button, then recenter on the western front.
 2. Select Holland Belgium or Western Germany. Choose an adjacent French target and assign infantry and tanks. Holland Belgium can reach both French targets. Western Germany can reach France.
 3. Add an order. Select the row to revise or cancel it. Close and reopen mid-plan to check the save.
-4. Hold to commit all attacks. Choose a battle, roll, and manually assign German losses. Defenders take the cheapest legal casualties. Between eligible rounds choose to continue or retreat.
+4. Hold to commit all attacks. Choose a battle, roll the German attack, then roll French return fire. Each die identifies its unit type and hit or miss. Manually assign German losses. Defenders take the cheapest legal casualties. Between eligible rounds choose to continue or retreat.
 5. After the last battle, review the committed actions. Open the field guide to restart.
 
 ## Run and distribute

@@ -20,7 +20,7 @@ Start every player with a conservative defense profile. Scramble eligible fighte
 
 ## Playing and reviewing a turn
 
-All players may watch tentative moves, cancellations, and phase changes on the live board. Allow revision throughout purchases, combat movement, noncombat movement and placement. Hold to commit each phase; releasing early preserves the plan. Let the attacker choose battle order wherever the rules permit. The attacker manually assigns their own casualties from scratch. At each eligible round boundary, pause for their decision to continue or retreat.
+All players may watch tentative moves, cancellations, and phase changes on the live board. Allow revision throughout purchases, combat movement, noncombat movement and placement. Hold to commit each phase; releasing early preserves the plan. Let the attacker choose battle order wherever the rules permit. Roll the attack and defense separately. Identify the unit type, die result, and hit or miss for each roll. Defenders eligible for return fire get their roll before removal. The attacker manually assigns their own casualties from scratch. At each eligible round boundary, pause for their decision to continue or retreat.
 
 Publish one shared review after each nation's turn. Include committed moves, battle outcomes, and transitions to and from AI. Everyone can consult previous turns at any time and resume at the first unseen event with “Since my last visit.” The first local exercise uses its last battle as the review boundary.
 
@@ -28,7 +28,7 @@ Publish one shared review after each nation's turn. Include committed moves, bat
 
 The entire game must be playable on a modern Samsung Galaxy. Phones and tablets are primary, with desktop support desirable. Prefer landscape if only one orientation is practical; retain support for portrait where feasible. The PWA launches in a standalone window after installation.
 
-Use the Staff Map concept: period-inspired colors, cartographic lettering, named territories and boxed tactical symbols at overview scale. Add richer unit illustration and counts at close zoom. Subtle panning parallax is desirable. Keep free rotation and full 3D deferred. Support future player-selectable themes and understated phase treatments, including Situation Map pencil-like routes in combat. Keep game decisions independent of how the map is rendered.
+Use the Staff Map concept: period-inspired colors, cartographic lettering, named territories and boxed tactical symbols at overview scale. Show separate infantry and armor counters with counts at tactical zoom, and individual figures at close zoom. Make every playable adjacency visible on the map. Subtle panning parallax is desirable. Keep free rotation and full 3D deferred. Support future player-selectable themes and understated phase treatments, including Situation Map pencil-like routes in combat. Keep game decisions independent of how the map is rendered.
 
 ## Project history and research
 

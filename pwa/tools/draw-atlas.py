@@ -38,22 +38,33 @@ countries = {}
 for f in features('admin_0_countries'):
     geom = shape(f['geometry']).intersection(extent)
     if not geom.is_empty:
-        countries[f['properties']['ADM0_A3']] = geom.simplify(.014, preserve_topology=True)
+        countries[f['properties']['ADM0_A3']] = geom
 land = unary_union(list(countries.values()))
 # Cartographic approximations for the four exercise areas; their legal graph is in rules.js.
 holland = unary_union([countries[k] for k in ('NLD','BEL','LUX')])
 germany = countries['DEU'].intersection(Polygon([(5,56),(10.1,56),(10.4,53.7),(10,52.8),(9.5,51.8),(10,50.9),(9.3,50),(10.2,49),(10.3,47),(5,47)]))
-france = countries['FRA'].intersection(Polygon([(-5,51.6),(4,51.6),(8.5,50),(8,47.4),(6.3,46.5),(4,46.3),(2.5,46.1),(0.8,45.9),(.65,47.1),(.5,48.1),(.6,48.7),(1.55,49.6),(1.7,50.4)]))
-normandy = countries['FRA'].difference(france).intersection(Polygon([(-6,51),(2.7,51),(2.5,46.1),(.8,45.9),(.3,44.6),(-1.5,43.3),(-6,43)]))
+# Partition the same French land polygon so shared frontiers coincide exactly.
+front = countries['FRA'].intersection(Polygon([
+    (-6,52),(9,52),(9,47.4),(6.3,46.5),(4,46.3),(2.5,46.1),
+    (.8,45.9),(.3,44.6),(-1.5,43.3),(-6,43)
+]))
+coastal_sector = Polygon([(-7,53),(4.1,53),(3.75,50.4),(2.3,49.7),
+                         (1.4,49.1),(.9,48.4),(.8,47.3),(1,46.1),(1,43),(-7,43)])
+normandy = front.intersection(coastal_sector)
+france = front.difference(coastal_sector)
 areas = {'hb':holland, 'wg':germany, 'fr':france, 'nb':normandy}
+for origin, target in [('hb','nb'),('hb','fr'),('wg','fr')]:
+    shared = areas[origin].boundary.intersection(areas[target].boundary)
+    assert shared.length > .4, f'Missing visible shared border: {origin} / {target}'
+assert not germany.intersects(normandy)
 out = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}">', '''<defs><pattern id="sea" width="14" height="13" patternUnits="userSpaceOnUse"><path d="M2 6h2m4 5h1" stroke="#44696d" opacity=".32" stroke-width=".8"/></pattern></defs>''',
        '<rect width="100%" height="100%" fill="#b9ccca"/><rect width="100%" height="100%" fill="url(#sea)"/>']
 def draw(g, attrs):
     out.append(f'<path d="{path(g)}" {attrs}/>')
 draw(land,'fill="#e5dfc5" stroke="#799896" stroke-width="6" stroke-linejoin="round"')
 draw(land,'fill="#e4dec4" stroke="#595e50" stroke-width="1.4"')
-for a, color in zip(areas.values(),['#cec7a8','#cdc6a8','#d8d6ba','#d1d6bd']):
-    draw(a,f'fill="{color}" stroke="#75694e" stroke-width="1.4" stroke-dasharray="5 2" stroke-linejoin="round"')
+for a, color in zip(areas.values(),['#d3c39b','#c7c3a3','#d8dcc6','#c1d0ba']):
+    draw(a,f'fill="{color}" stroke="#605c4b" stroke-width="1.8" stroke-linejoin="round"')
 # Background regions deliberately have no modern political borders.
 for feature in features('rivers_lake_centerlines'):
     g=shape(feature['geometry']).intersection(extent)
