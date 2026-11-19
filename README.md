@@ -1,3 +1,7 @@
+# WarTable PWA playtest
+
+The new local European theater playtest is in [pwa/](pwa/README.md). See the [design decisions](pwa/DESIGN.md) for the current direction. The original project notes follow.
+
 # Crossroads Command
 
 An unofficial, independently built WWII strategy game prototype. **0.9 makes the wraparound world board playable in local pass-and-play.** The seven-territory Germany–France scenario is available locally and over the same Wi-Fi network.
