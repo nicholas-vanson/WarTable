@@ -1,8 +1,19 @@
 const prefix='wartable:'+self.registration.scope+':';
-const cacheName=prefix+'printed-board-25';
-const files=['./','./index.html','./menu.js','./app.js','./global-game.js','./rules.js','./formation-names.js','./map.js','./style.css','./manifest.webmanifest','./assets/staff-map.svg','./assets/staff-overview.webp','./assets/territories.json','./assets/fronts.json','./assets/world-chart.webp','./assets/global-setup.json','./assets/world-sectors.json','./assets/world-staff.webp','./assets/world-engraving.svg','./assets/world-europe-detail.webp','./assets/sea-zones.json','./assets/icon-192.png','./assets/icon-512.png'];
+const cacheName=prefix+'terrain-sheets-26';
+const files=['./','./index.html','./menu.js','./app.js','./global-game.js','./rules.js','./formation-names.js','./map.js','./style.css','./manifest.webmanifest','./assets/staff-map.svg','./assets/staff-overview.webp','./assets/territories.json','./assets/fronts.json','./assets/world-chart.webp','./assets/global-setup.json','./assets/world-sectors.json','./assets/world-staff.webp','./assets/world-engraving.svg','./assets/world-terrain.json','./assets/sea-zones.json','./assets/icon-192.png','./assets/icon-512.png'];
 self.addEventListener('install',event=>{
-  event.waitUntil(caches.open(cacheName).then(cache=>cache.addAll(files)));
+  event.waitUntil((async()=>{
+    const cache=await caches.open(cacheName);
+    await cache.addAll(files);
+    const layout=await (await cache.match('./assets/world-terrain.json')).json();
+    // Bound simultaneous requests on phones. A newly installed build is
+    // ready for offline panning even in a previously unvisited theater.
+    const sheets=[];
+    for(let row=0;row<layout.rows;row++)
+      for(let col=0;col<layout.columns;col++)sheets.push('./assets/world-tiles/'+col+'-'+row+'.webp');
+    const worker=async()=>{while(sheets.length)await cache.add(sheets.pop());};
+    await Promise.all(Array.from({length:4},worker));
+  })());
 });
 self.addEventListener('activate',event=>{
   event.waitUntil((async()=>{

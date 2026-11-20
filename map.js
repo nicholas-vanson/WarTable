@@ -469,6 +469,41 @@ function buildSeaZones(map,chart){
   return zones;
 }
 const bound=(v,min,max)=>Math.min(max,Math.max(min,v));
+// The downloadable HTML embeds the same sheets that the PWA caches on disk.
+const embeddedSheets=null;
+function terrainSheets(layout,extent){
+  const layer=document.getElementById('worldTiles');
+  const width=extent.width/layout.columns,height=extent.height/layout.rows;
+  const bleedX=width*layout.bleed/layout.tileWidth,bleedY=height*layout.bleed/layout.tileHeight;
+  const mounted=new Map();
+  let previous='';
+  return (view,vw,vh,scale)=>{
+    const close=scale*window.devicePixelRatio>.54;
+    const x0=Math.max(0,Math.floor((view.x-vw/2)/width)),y0=Math.max(0,Math.floor((view.y-vh/2)/height));
+    const x1=Math.min(layout.columns-1,Math.floor((view.x+vw/2)/width)),y1=Math.min(layout.rows-1,Math.floor((view.y+vh/2)/height));
+    const key=close?[x0,y0,x1,y1].join(','):'overview';
+    if(key===previous)return;
+    previous=key;
+    const visible=new Set();
+    if(close){
+      for(let row=y0;row<=y1;row++){
+        for(let col=x0;col<=x1;col++){
+          const id=col+'-'+row;
+          visible.add(id);
+          if(mounted.has(id))continue;
+          const href=embeddedSheets?.[row*layout.columns+col]||'./assets/world-tiles/'+id+'.webp';
+          const image=node('image',{x:col*width-bleedX,y:row*height-bleedY,
+            width:width+2*bleedX,height:height+2*bleedY,preserveAspectRatio:'none',href});
+          mounted.set(id,image);
+          layer.append(image);
+        }
+      }
+    }
+    for(const [id,image] of mounted){
+      if(!visible.has(id)){image.remove();mounted.delete(id);}
+    }
+  };
+}
 export async function atlas(onPick,onView,initial,exercise) {
   const map=document.querySelector('#map'), forces=document.querySelector('#forces'), regions=document.querySelector('#regions'),routes=document.querySelector('#routes');
   const western=await (await fetch('./assets/territories.json')).json();
@@ -484,11 +519,11 @@ export async function atlas(onPick,onView,initial,exercise) {
     }))};
     const worldPlate=document.getElementById('worldPlate');worldPlate.removeAttribute('display');
     worldPlate.setAttribute('href',worldPlate.dataset.src);
-    const detail=document.getElementById('worldDetail');detail.setAttribute('href',detail.dataset.src);
     const engraving=document.getElementById('worldEngraving');engraving.setAttribute('href',engraving.dataset.src);
     document.getElementById('europeX').setAttribute('display','none');
   }
   const extent=exercise.world?{left:0,top:0,width:exercise.projection.width,height:exercise.projection.height}:{left:0,top:0,width:2006,height:1716};
+  const drawSheets=exercise.world?terrainSheets(await (await fetch('./assets/world-terrain.json')).json(),extent):null;
   const bands=buildControlBands(map,shapes,regions), zones=buildSeaZones(map,chart);
   if(exercise.world){
     for(const [id,sector] of Object.entries(exercise.shapes)){
@@ -524,7 +559,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     mark.append(name);labelGroup.append(mark);
     return {mark,name,x,y};
   });
-  const detailPlate=map.querySelector(exercise.world?'#worldDetail':'#detailPlate');
+  const detailPlate=map.querySelector('#detailPlate');
   const landLabels=buildLandLabels(map,labelGroup,exercise);
   const selection=map.querySelector('#selection'),reveal=map.querySelector('#pencil-stroke');
   reveal.setAttribute('d',pencilLine);
@@ -546,6 +581,9 @@ export async function atlas(onPick,onView,initial,exercise) {
   }
   let game=null,focus=null,target=null,selectedType=null,selectedNation=null;
   let view=initial&&(!exercise.world||initial.projection===exercise.projection.id)&&[initial.x,initial.y,initial.z].every(Number.isFinite)?{...initial}:{...exercise.camera};
+  const maxZoom=2,minZoom=exercise.world ? .025 : .15;
+  view.z=bound(view.z,minZoom,maxZoom);
+  if(initial&&initial.z!==view.z)onView({...view});
   const pointers=new Map();let gesture=null;
   function metrics(){
     const w=map.clientWidth||1,h=map.clientHeight||1;
@@ -555,10 +593,14 @@ export async function atlas(onPick,onView,initial,exercise) {
   }
   function render(){
     const {vw,vh,scale}=metrics();
-    const display=scale*window.devicePixelRatio>(exercise.world ? .64 : 2)?'inline':'none';
-    if(detailPlate.getAttribute('display')!==display)detailPlate.setAttribute('display',display);
+    if(!exercise.world){
+      const display=scale*window.devicePixelRatio>2?'inline':'none';
+      if(detailPlate.getAttribute('display')!==display)detailPlate.setAttribute('display',display);
+    }
     view.x=extent.left+(vw>=extent.width?extent.width/2:bound(view.x-extent.left,vw/2,extent.width-vw/2));
     view.y=extent.top+(vh>=extent.height?extent.height/2:bound(view.y-extent.top,vh/2,extent.height-vh/2));
+    drawSheets?.(view,vw,vh,scale);
+    document.getElementById('zoomIn').disabled=view.z>=maxZoom;
     map.setAttribute('viewBox',[view.x-vw/2,view.y-vh/2,vw,vh].join(' '));
     document.querySelector('#scale').textContent=Math.round(view.z*100)+'%';
     let lon=view.x/34-13,lat=69-view.y/52;
@@ -696,7 +738,7 @@ export async function atlas(onPick,onView,initial,exercise) {
   }
   function zoom(factor,px=map.clientWidth/2,py=map.clientHeight/2) {
     const old=metrics();const wx=view.x+(px-old.w/2)/old.scale,wy=view.y+(py-old.h/2)/old.scale;
-    view.z=bound(view.z*factor,exercise.world?.025:.15,4.5);const next=metrics();
+    view.z=bound(view.z*factor,minZoom,maxZoom);const next=metrics();
     view.x=wx-(px-next.w/2)/next.scale;view.y=wy-(py-next.h/2)/next.scale;render();
   }
   const coords=e=>{const b=map.getBoundingClientRect();return {x:e.clientX-b.left,y:e.clientY-b.top};};
