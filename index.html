@@ -2,14 +2,66 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#202c27"><meta name="description" content="WarTable · An offline European theater combat playtest.">
-<title>WarTable · European Fronts</title>
+<meta name="theme-color" content="#202c27"><meta name="description" content="WarTable · Global 1940 Second Edition and local playtest exercises.">
+<title>WarTable · Global 1940</title>
 <link rel="icon" href="./assets/icon-192.png"><link rel="manifest" href="./manifest.webmanifest">
 <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-<header><div class="brand"><span aria-hidden="true" class="mark">✥</span> WarTable</div><span class="divider"></span><h1 class="theater">Western Front</h1><div class="head-end"><span class="local" id="storage">Local playtest</span><button id="chooseFront" class="header-button">Fronts</button><button id="journal" class="header-button">Review</button><button id="help" class="header-button" aria-label="Playtest guide">Guide</button></div></header>
-<main>
+<section id="launcher" class="launcher" aria-label="Main menu">
+  <div class="menu-chart"><img src="./assets/world-chart.webp" alt=""></div>
+  <div class="menu-paper">
+    <div id="modeChoices">
+      <h1>WarTable</h1><p class="edition">Global 1940 · Second Edition</p>
+      <nav class="mode-list" aria-label="Game modes">
+        <a href="#global" class="mode major-mode"><span><strong>Full Game</strong><small id="globalSubtitle">Start a nine-power match</small></span><span aria-hidden="true">→</span></a>
+        <a href="#exercises" class="mode"><span><strong>Small Exercise</strong><small>Test combat on a single front</small></span><span aria-hidden="true">→</span></a>
+      </nav>
+    </div>
+    <div id="exerciseChoices" hidden>
+      <a class="back-link" href="#">← Main menu</a>
+      <h1>Small Exercise</h1><p class="edition">Choose a front for testing</p>
+      <nav class="mode-list" id="frontList" aria-label="Exercises"></nav>
+    </div>
+  </div>
+</section>
+<section id="globalScreen" class="global-screen" aria-label="Full game" hidden>
+  <div class="global-bar"><a href="#">← Main menu</a><strong>WarTable</strong></div>
+  <div class="global-page">
+    <div class="chart-heading"><img src="./assets/world-chart.webp" alt=""><h1>Global 1940</h1></div>
+    <div class="global-body">
+      <div id="globalSetup" hidden>
+        <h2>Match setup</h2><p>Start with Germany’s first turn. Play on this device, solo or pass and play.</p>
+        <details class="assignments"><summary>Assign the nine powers</summary><div id="controllers"></div></details>
+        <p class="hint">Player 1 controls every power by default.</p>
+        <button class="primary" id="beginGlobal">Start full game</button>
+      </div>
+      <div id="matchDesk" hidden>
+        <h2 id="turnTitle"></h2><p id="turnInfo" class="edition"></p>
+        <div class="desk-tabs"><button data-global-tab="orders">Orders</button><button data-global-tab="board">World board</button></div>
+        <section id="globalOrders" aria-label="Orders">
+          <h3 id="cash"></h3><p id="stageNote"></p><div id="mobilization"></div>
+          <div id="purchases"></div><div class="purchase-actions"><button id="confirmOrder" class="primary"></button><button id="editOrder" hidden>Revise order</button></div>
+        </section>
+        <section id="globalBoard" aria-label="World board" hidden>
+          <div class="world-overview" aria-label="World overview">
+            <img src="./assets/world-chart.webp" alt="World overview with shortcuts to five starting territories">
+            <button data-region="Eastern United States" style="left:28%;top:31%">Washington</button>
+            <button data-region="Germany" style="left:54%;top:22%">Berlin</button>
+            <button data-region="Egypt" style="left:59%;top:38%">Cairo</button>
+            <button data-region="Japan" style="left:88%;top:34%">Tokyo</button>
+            <button data-region="New South Wales" style="left:91%;top:80%">Sydney</button>
+          </div>
+          <label for="globalArea">Territory or sea zone</label><select id="globalArea"></select>
+          <div id="areaInfo" aria-live="polite"></div>
+        </section>
+      </div>
+      <p id="globalStatus" role="status"></p>
+    </div>
+  </div>
+</section>
+<header id="exerciseHeader" hidden><div class="brand"><span aria-hidden="true" class="mark">✥</span> WarTable</div><span class="divider"></span><h1 class="theater">Western Front</h1><div class="head-end"><span class="local" id="storage">Local playtest</span><button id="exerciseMenu" class="header-button" aria-label="Main menu">Menu</button><button id="journal" class="header-button">Review</button><button id="help" class="header-button" aria-label="Playtest guide">Guide</button></div></header>
+<main id="exerciseBoard" hidden>
 <section class="board" aria-label="European staff map">
 <svg id="map" role="group" aria-label="Pan or pinch the map. Select a German force and a French destination." tabindex="0">
 <defs>
@@ -46,5 +98,5 @@
 <div class="dialog-head"><h2 id="dialogTitle"></h2><button id="closeDialog" aria-label="Close">×</button></div>
 <div id="dialogBody"></div>
 </dialog>
-<script type="module" src="./app.js"></script>
+<script type="module" src="./menu.js"></script>
 </body></html>

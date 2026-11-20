@@ -2,12 +2,7 @@ import {places,stats,types,exercises,adjectives,newGame,count,describe,available
 import {drawFormationNames} from './formation-names.js';
 import {atlas} from './map.js';
 const $=id=>document.getElementById(id);
-const lastExerciseKey='wartable.active-exercise.v1';
-let exerciseId='west';
-try{
-  const last=localStorage.getItem(lastExerciseKey);
-  if(Object.hasOwn(exercises,last))exerciseId=last;
-}catch{}
+const exerciseId=location.hash.slice('#exercise/'.length);
 const key=exerciseId==='west'?'wartable.western-front.v1':'wartable.exercise.'+exerciseId+'.v1';
 const exercise=exercises[exerciseId],{attacker,defender}=exercise;
 const exercisePlaces=Object.fromEntries(Object.keys(exercise.forces).map(id=>[id,places[id]]));
@@ -339,21 +334,7 @@ document.addEventListener('click',e=>{
     }
   });
 });
-$('chooseFront').onclick=()=>showDialog('Choose a front',Object.entries(exercises).map(([id,front])=>
-  '<button class="battle-choice front-choice" data-front="'+id+'" '+(id===exerciseId?'disabled':'')+'><strong>'+front.name+'</strong><small>'+
-  front.attacker+' vs '+front.defender+' · '+Object.keys(front.forces).length+' territories'+(id===exerciseId?' · Current':'')+'</small></button>'
-).join('')+'<p class="hint">Each front saves separately on this device.</p>');
-$('dialogBody').addEventListener('click',event=>{
-  const id=event.target.closest('[data-front]')?.dataset.front;
-  if(!Object.hasOwn(exercises,id)||id===exerciseId)return;
-  try{
-    localStorage.setItem(key,JSON.stringify({game:s,ui,view,layoutSeed}));
-    localStorage.setItem(lastExerciseKey,id);
-    location.reload();
-  }catch{
-    $('dialogBody').querySelector('.hint').textContent='Device storage is unavailable. This exercise is still open.';
-  }
-});
+$('exerciseMenu').onclick=()=>{location.hash='';};
 document.querySelector('.theater').textContent=exercise.name;
 document.querySelector('.power-tab').textContent=attacker;
 $('map').setAttribute('aria-label','Pan or pinch the map. Select a unit from '+attacker+' and a destination controlled by '+defender+'.');
@@ -431,6 +412,3 @@ function setupOrdersPanel(){
 setupOrdersPanel();
 render();
 try{draw=await atlas(pick,v=>{view=v;save();},view,exercise);render();save();}catch{message='The map could not load. Reopen the playtest while online to finish the download.';render();}
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('./sw.js').catch(()=>{$('storage').textContent='Offline install unavailable';});
-}
