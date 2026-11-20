@@ -105,8 +105,8 @@ a=np.asarray(im,dtype=float)
 shade=np.clip((255-a)*.40,0,118).astype('uint8')
 overlay=Image.new('RGBA',(width,height),(83,72,47,0))
 overlay.putalpha(Image.fromarray(shade))
-overlay.save(assets/'relief.webp',lossless=True)
-# SVG images loaded as <image> cannot load external images; relief is a sibling in the map.
+overlay.save(Path(__file__).parent/'art'/'relief.webp',lossless=True)
+# The raster painter consumes the geography plate and its registered relief separately.
 out.append('</svg>')
-(assets/'atlas.svg').write_text(''.join(out))
+(Path(__file__).parent/'art'/'geography.svg').write_text(''.join(out))
 (assets/'territories.json').write_text(json.dumps({key:path(g) for key,g in areas.items()},separators=(',',':')))

@@ -27,6 +27,12 @@ python3 -m http.server 8080
 
 Open `http://localhost:8080/` on that machine. Service workers require HTTPS or localhost. For rules tests run `node --test tests/*.test.js` in this directory. To package a release, run `python3 tools/package.py /tmp/wartable-release`. Its `site/` directory can be hosted under any HTTPS path. `WarTable-PWA.zip` and `WarTable-Playtest.html` are the release downloads. Bump the cache version in `sw.js` when publishing a revised site.
 
+## Staff Map artwork
+
+The board displays one offline WebP painting in the same 2006 × 1716 coordinate space as the interactive territories. Its 4012 × 3432 pixels carry pigment detail into close zoom. Territory hit areas, labels, counters, routes and selection colors are separate layers. Fields, woodland and settlement marks are illustrative; the coastlines, waterways and shaded relief use Natural Earth geography.
+
+To rebuild the painting, run `python3 tools/paint-staff-map.py` with Inkscape, Pillow, SciPy and NumPy installed. The original AI-generated ink and watercolor swatches, geographic linework and relief plate are in `tools/art/`. Only the finished painting ships with the game.
+
 ## Rules and map sources
 
 The exercise uses a deliberately arranged position with adjacent land combat only. Infantry attack on 1 and defend on 1–2. Tanks hit on 1–3. Casualties return fire in their round. All retreating attackers withdraw together to one eligible origin. Move legality uses the playable territories' adjacency graph. Physical coastlines and the broader atlas provide geographic context; the four depicted territory outlines are original approximations. Capital treasury, national income, facilities, air and naval rules, noncombat, AI and multiplayer are later scope. This exercise makes no claim to full rules coverage.

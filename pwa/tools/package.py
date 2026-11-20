@@ -22,7 +22,7 @@ def uri(name, mime):
 page = (site / 'index.html').read_text()
 page = page.replace('<link rel="manifest" href="./manifest.webmanifest">', '')
 page = page.replace('<link rel="stylesheet" href="./style.css">', '<style>'+(site/'style.css').read_text()+'</style>')
-for name,mime in [('atlas.svg','image/svg+xml'),('relief.webp','image/webp'),('icon-192.png','image/png')]:
+for name,mime in [('staff-map.webp','image/webp'),('icon-192.png','image/png')]:
     page=page.replace('./assets/'+name,uri('assets/'+name,mime))
 code=[]
 for module in ['rules.js','map.js','app.js']:
