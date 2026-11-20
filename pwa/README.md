@@ -29,7 +29,7 @@ Open `http://localhost:8080/` on that machine. Service workers require HTTPS or 
 
 ## Reading the board
 
-The two combat-header columns show each side’s surviving units. German hits mark French casualties automatically. German casualty selections preview the remaining attacking force until confirmed. All defenders eligible at the start of the round still roll.
+Planned attacks group by destination, with an editable order for each origin. The battle picker shows both forces and flags victory cities. The two combat-header columns show the forces rolling this round. Confirming casualties or resolving a round applies both sides’ losses together. In the review, expand a battle round to see losses by side and the recorded dice.
 
 The atlas marks victory cities that are power capitals with an ochre star, and the other victory cities with a green diamond. Each counts as one victory city. See pages 6 and 34 of the [Europe 1940 Second Edition rulebook](https://www.axisandallies.org/files/rules/Axis-Allies-Europe-1940-Second-Edition.pdf).
 

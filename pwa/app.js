@@ -1,4 +1,4 @@
-import {places,stats,types,newGame,count,available,plan,commit,chooseBattle,currentBattle,rollAttack,rollDefense,casualties,retreat,theaterVictoryCities,defenderLosses} from './rules.js';
+import {places,stats,types,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,rollAttack,rollDefense,casualties,retreat,theaterVictoryCities} from './rules.js';
 import {atlas} from './map.js';
 const $=id=>document.getElementById(id), key='wartable.western-front.v1';
 const newLayoutSeed=()=>crypto.getRandomValues(new Uint32Array(1))[0];
@@ -93,6 +93,21 @@ function forceRoster(id){
   });
   return block(places[id].name)+(stacks.length?'<div class="roster">'+stacks.join('')+'</div>':'<p class="hint">All units assigned.</p>');
 }
+function plannedAttacks(){
+  const destinations=new Map();
+  s.orders.forEach((order,index)=>{
+    if(!destinations.has(order.to))destinations.set(order.to,[]);
+    const label='Edit attack from '+places[order.from].name+' into '+places[order.to].name+', '+describe(order.units);
+    destinations.get(order.to).push('<button class="origin-order" data-act="edit" data-id="'+index+'" aria-label="'+label+'">'+
+      '<span>'+places[order.from].name+'</span><span>'+unitLine(order.units,s.owners[order.from])+'</span>'+
+      '<span class="end" aria-hidden="true">›</span></button>');
+  });
+  let html=block('Planned attacks · '+destinations.size);
+  for(const [to,rows] of destinations){
+    html+='<section class="planned-target"><strong>'+places[to].name+'</strong>'+rows.join('')+'</section>';
+  }
+  return html;
+}
 function planPanel(){
   let html=title('Combat move','Select a stack here or on the map, then choose how many units to send.');
   if(ui.to){
@@ -111,9 +126,7 @@ function planPanel(){
     html+=origins.map(forceRoster).join('');
     if(ui.from)html+=btn('All forces','clear');
   }
-  if(!ui.to&&s.orders.length){
-    html+=block('Planned attacks · '+s.orders.length)+s.orders.map((o,i)=>opt(String(i),places[o.to].name,places[o.from].name+' · '+unitLine(o.units,s.owners[o.from]),'↗','edit')).join('');
-  }
+  if(!ui.to&&s.orders.length)html+=plannedAttacks();
   $('action').innerHTML=!ui.to&&!ui.stack?'<button class="primary" id="hold" '+(s.orders.length?'':'disabled')+'>Hold to commit attacks</button>':'';
   return html;
 }
@@ -175,7 +188,6 @@ function advanceRoll(){
   }
   const card=$('panel').querySelector('.roll-card[data-side="'+play.side+'"]');
   card.outerHTML=rollCard(play.rolls,play.side,play);
-  if(play.side==='attack'&&play.stage==='marked')updateBattleForces();
   if((play.frame===0||play.index===0&&play.frame===1)&&play.stage==='rolling'){
     $('panel').querySelector('[data-side="'+play.side+'"] [data-unit="'+play.types[play.index]+'"]').scrollIntoView({block:'nearest'});
   }
@@ -185,42 +197,45 @@ function advanceRoll(){
   if($('rollStatus').textContent!==note)$('rollStatus').textContent=note;
   rollTimer=setTimeout(advanceRoll,delay);
 }
+function forceColumns(attack,defense,defendingNation,metric='total'){
+  function column(role,nation,units){
+    const icons=types.filter(k=>units[k]>0).map(k=>unitCounter(k,units[k],nation)).join(' ');
+    return '<span class="battle-column"><span class="force-heading"><small>'+role+'</small> <strong>'+nation+'</strong></span>'+
+      '<span class="force-strength">'+icons+'<span class="force-total">'+count(units)+' '+metric+'</span></span></span>';
+  }
+  return column('Attacking','Germany',attack)+column('Defending',defendingNation,defense);
+}
 function updateBattleForces(){
   const b=currentBattle(s),header=$('battleForces');
   if(!b){header.replaceChildren();return;}
-  const defenders=s.units[b.to];
-  const pending=b.step==='defense'||b.step==='losses';
-  let rolls=pending?b.dice.attack:[];
-  if(playback?.side==='attack'){
-    const shown=playback.types.slice(0,playback.index+(playback.stage==='marked'?1:0));
-    rolls=rolls.filter(d=>shown.includes(d.type));
-  }
-  const lost=defenderLosses(defenders,rolls.filter(d=>d.hit).length);
-  function column(role,nation,units,losses){
-    const icons=types.filter(k=>units[k]>0).map(k=>unitCounter(k,units[k]-(losses?.[k]||0),nation)).join(' ');
-    return '<div class="battle-column"><div class="force-heading"><small>'+role+'</small> <strong>'+nation+'</strong></div>'+
-      '<div class="force-strength">'+icons+'<span class="force-total">'+(count(units)-(losses?count(losses):0))+' total</span></div></div>';
-  }
-  header.innerHTML=column('Attacking','Germany',b.attack,b.step==='losses'?ui.losses:null)+
-    column('Defending',s.owners[b.to],defenders,lost);
+  header.innerHTML=forceColumns(b.attack,s.units[b.to],s.owners[b.to]);
+}
+function cityObjective(territory){
+  const city=theaterVictoryCities.find(c=>c.territory===territory);
+  if(!city)return '';
+  return '<span class="objective"><span aria-hidden="true">'+(city.capitalOf?'★':'◆')+'</span> '+city.name+
+    ' · Victory city'+(city.capitalOf?' · '+city.capitalOf+'’s capital':'')+'</span>';
+}
+function battleChoice(b){
+  if(b.resolved)return '<div class="review-item"><strong>'+places[b.to].name+'</strong><p>'+reviewDetail(b.result)+'</p></div>';
+  return '<button class="battle-choice" data-act="battle" data-id="'+b.to+'">'+
+    '<span class="battle-choice-title"><strong>'+places[b.to].name+'</strong><span class="end" aria-hidden="true">›</span></span>'+
+    cityObjective(b.to)+'<span class="force-columns">'+forceColumns(b.attack,s.units[b.to],s.owners[b.to])+'</span></button>';
 }
 function battlePanel(){
   const b=currentBattle(s);
   if(!b){
-    return title('Conduct combat','Choose the next battle to resolve.')+block('Battle order')+
-      s.battles.map(b=>b.resolved?'<div class="review-item"><strong>'+places[b.to].name+'</strong><p>'+reviewDetail(b.result)+'</p></div>':opt(b.to,places[b.to].name,unitLine(b.attack,'Germany')+' attacking','⚑','battle')).join('');
+    return title('Conduct combat','Choose the next battle to resolve.')+block('Battle order')+s.battles.map(battleChoice).join('');
   }
-  const city=theaterVictoryCities.find(c=>c.territory===b.to);
-  const cityNote=city&&!b.round?'<p class="objective"><span aria-hidden="true">'+(city.capitalOf?'★':'◆')+'</span> '+city.name+
-    ' · Victory city'+(city.capitalOf?' · '+city.capitalOf+'’s capital':'')+'</p>':'';
-  const info='<h2>'+places[b.to].name+'</h2>'+block(b.round?'Battle round '+b.round:'Land battle')+cityNote+rollsBox(b.dice,playback);
+  const info='<h2>'+places[b.to].name+'</h2>'+block(b.round?'Battle round '+b.round:'Land battle')+
+    (b.round?'':cityObjective(b.to))+rollsBox(b.dice,playback);
   if(playback){
     $('action').innerHTML='<div class="roll-progress" id="rollStatus" role="status">Rolling '+stats[playback.types[playback.index]].name.toLowerCase()+'…</div>';
     return info;
   }
   if(b.step==='defense'){
     $('action').innerHTML=btn('Roll French defense','defend','primary');
-    return info+'<p class="hint">The header counts survivors. All defenders return fire this round, including marked casualties.</p>';
+    return info+'<p class="hint">All defenders return fire this round, including marked casualties.</p>';
   }
   if(b.step==='losses' && !b.hits){
     $('action').innerHTML=btn('Resolve round','loss','primary');
@@ -230,7 +245,7 @@ function battlePanel(){
     const limits={};
     for(const k of types)limits[k]=Math.min(b.attack[k],ui.losses[k]+b.hits-count(ui.losses));
     $('action').innerHTML=btn('Confirm casualties','loss','primary',count(ui.losses)===b.hits?'':'disabled');
-    return info+'<h3>Choose your casualties</h3><p class="hint">Assign '+b.hits+' German '+(b.hits===1?'loss':'losses')+'. The header previews your selections.</p>'+stepper('casualty',ui.losses,limits);
+    return info+'<h3>Choose your casualties</h3><p class="hint">Assign '+b.hits+' German '+(b.hits===1?'loss':'losses')+'. Confirm to apply both sides’ losses.</p>'+stepper('casualty',ui.losses,limits);
   }
   $('action').innerHTML=btn(b.round?'Continue · roll German attack':'Roll German attack','roll','primary');
   if(b.step==='decision'){
@@ -238,8 +253,27 @@ function battlePanel(){
   }
   return info;
 }
+// Earlier saved rounds recorded losses as a sentence, without separate unit counts.
+function savedRoundLosses(entry){
+  if(entry.losses)return entry.losses;
+  const sides=/^Losses — Germany: (.+); France: (.+)\.$/.exec(entry.detail);
+  if(!sides)return null;
+  function readUnits(text){
+    const units={inf:0,tank:0};
+    for(const [,n,name] of text.matchAll(/(\d+) (infantry|tanks?)\b/g))units[name==='infantry'?'inf':'tank']=Number(n);
+    return units;
+  }
+  return {attack:readUnits(sides[1]),defense:readUnits(sides[2])};
+}
 function timeline(){
-  return s.record.map(e=>'<div class="review-item"><strong>'+esc(e.title)+'</strong><p>'+reviewDetail(e.detail)+'</p>'+rollsBox(e.dice)+'</div>').join('');
+  return s.record.map(e=>{
+    const heading=esc(e.title);
+    if(!e.dice)return '<div class="review-item"><strong>'+heading+'</strong><p>'+reviewDetail(e.detail)+'</p></div>';
+    const losses=savedRoundLosses(e);
+    const breakdown=losses?'<div class="force-columns">'+forceColumns(losses.attack,losses.defense,'France','lost')+'</div>':
+      '<p>'+reviewDetail(e.detail)+'</p>';
+    return '<details class="review-item review-round"><summary>'+heading+'</summary>'+breakdown+rollsBox(e.dice)+'</details>';
+  }).join('');
 }
 let stopHold=()=>{};
 function bindHold(){
