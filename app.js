@@ -1,14 +1,16 @@
 import {places,stats,types,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,rollAttack,rollDefense,casualties,retreat} from './rules.js';
 import {atlas} from './map.js';
 const $=id=>document.getElementById(id), key='wartable.western-front.v1';
+const newLayoutSeed=()=>crypto.getRandomValues(new Uint32Array(1))[0];
+let layoutSeed=newLayoutSeed();
 const freshUI=()=>({from:null,to:null,stack:null,quantity:1,units:{inf:0,tank:0},losses:{inf:0,tank:0}});
 let s=newGame(),ui=freshUI(),view=null,draw=()=>{},message='';
 try{
   const saved=JSON.parse(localStorage.getItem(key)||'null');
-  if(saved?.game?.version===1){s=saved.game;ui={...freshUI(),...saved.ui};view=saved.view;}
+  if(saved?.game?.version===1){s=saved.game;ui={...freshUI(),...saved.ui};view=saved.view;layoutSeed=saved.layoutSeed??0;}
 }catch{message='The saved exercise could not be read. A new exercise is open.';}
 function save(){
-  try{localStorage.setItem(key,JSON.stringify({game:s,ui,view}));}
+  try{localStorage.setItem(key,JSON.stringify({game:s,ui,view,layoutSeed}));}
   catch{$('storage').textContent='Saving unavailable';}
 }
 function selectOrigin(id){ui.from=id;ui.to=null;ui.stack=null;message='';}
@@ -157,7 +159,7 @@ function render(){
     $('panel').innerHTML=title('Exercise review','Committed attacks and resolved outcomes.')+timeline();
     $('action').innerHTML=btn('Start another exercise','reset');
   }
-  $('notice').textContent=message;draw(s,ui.from,ui.to,ui.stack);bindHold();
+  $('notice').textContent=message;draw(s,ui.from,ui.to,ui.stack,layoutSeed);bindHold();
 }
 function showDialog(html){$('dialogBody').innerHTML=html;if(!$('dialog').open)$('dialog').showModal();}
 document.addEventListener('click',e=>{
@@ -181,7 +183,7 @@ document.addEventListener('click',e=>{
       case 'loss': casualties(s,ui.losses);ui.losses={inf:0,tank:0};break;
       case 'retreat': retreat(s,id);break;
       case 'reset': showDialog('<h2>Restart exercise?</h2><p>This replaces the position and its local review on this device.</p>'+btn('Restart exercise','confirm-reset','danger'));break;
-      case 'confirm-reset': s=newGame();ui=freshUI();$('dialog').close();$('recenter').click();break;
+      case 'confirm-reset': s=newGame();layoutSeed=newLayoutSeed();ui=freshUI();$('dialog').close();$('recenter').click();break;
     }
   });
 });
@@ -189,7 +191,7 @@ $('closeDialog').onclick=()=>$('dialog').close();
 $('journal').onclick=()=>showDialog('<h2>Exercise review</h2>'+(s.phase==='review'?timeline():'<p>The record opens after the last battle. It includes committed attacks, dice, casualties, retreats, and control of each territory.</p>'));
 $('help').onclick=()=>showDialog('<h2>Field guide</h2><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater.</p><p>The narrow olive hatch marks German control and the blue hatch marks French control. Tap a territory to read its controller. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><p>German counters use crossed lines for infantry and an ellipse for armor. Adjust the quantity, then tap a highlighted French territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><p>This local exercise covers adjacent land attacks with infantry and tanks. The starting forces are arranged for testing. The surrounding atlas is for exploration.</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+btn('Restart exercise','reset','danger'));
 render();
-try{draw=await atlas(pick,v=>{view=v;save();},view);render();}catch{message='The map could not load. Reopen the playtest while online to finish the download.';render();}
+try{draw=await atlas(pick,v=>{view=v;save();},view);render();save();}catch{message='The map could not load. Reopen the playtest while online to finish the download.';render();}
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('./sw.js').catch(()=>{$('storage').textContent='Offline install unavailable';});
 }
