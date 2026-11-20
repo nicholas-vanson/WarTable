@@ -38,8 +38,8 @@ aside{min-height:0;overflow:auto;display:flex;flex-direction:column;border-left:
 <main>
 <section class="board" aria-label="European staff map">
 <svg id="map" role="group" aria-label="Pan or pinch the map. Select a German force and a French destination." tabindex="0">
-<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0 10 5 0 10 2 5Z" fill="#9b422e"/></marker>
-<filter id="pencil-grain" filterUnits="userSpaceOnUse" x="-35" y="-24" width="70" height="48" color-interpolation-filters="sRGB">
+<defs>
+<filter id="pencil-grain" filterUnits="userSpaceOnUse" x="-49" y="-24" width="98" height="48" color-interpolation-filters="sRGB">
 <feTurbulence type="fractalNoise" baseFrequency=".75 .95" numOctaves="2" seed="17"/>
 <feColorMatrix result="grain" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  3.1 0 0 0 -.8"/>
 <feComposite in="SourceGraphic" in2="grain" operator="in"/>
@@ -226,6 +226,45 @@ function movementArc(from,to,type,spread,tokenScale,offsets){
   return 'M'+tail.join(' ')+' C'+[...handles,tip].map(p=>p.join(' ')).join(' ');
 }
 
+// Sample the surveyed curve by distance so the shoulders and arrowhead keep their shape
+// on both the short French approach and the long, two-bend route to Normandy.
+function attackArrow(order,type,spread,tokenScale,offsets,planned){
+  const {from,to,units}=order;
+  const centerline=node('path',{d:movementArc(from,to,type,spread,tokenScale,offsets)});
+  const length=centerline.getTotalLength();
+  const baseWidth=Math.min(length*.082,4.8*tokenScale*bound(.83+length/570,.94,1.32));
+  const width=baseWidth*(1+.5*Math.log2(units[type]));
+  const headLength=Math.min(length*.28,width*2.25+2*tokenScale);
+  const neck=length-headLength;
+  const left=[],right=[],stripe=[];
+  const point=(p)=>p.map(v=>Number(v.toFixed(2))).join(' ');
+  function edges(distance,radius){
+    const p=centerline.getPointAtLength(distance);
+    const a=centerline.getPointAtLength(Math.max(0,distance-.65));
+    const b=centerline.getPointAtLength(Math.min(length,distance+.65));
+    const normal=Math.hypot(b.x-a.x,b.y-a.y);
+    const nx=(a.y-b.y)/normal,ny=(b.x-a.x)/normal;
+    return [[p.x+radius*nx,p.y+radius*ny],[p.x-radius*nx,p.y-radius*ny]];
+  }
+  const steps=Math.max(12,Math.ceil(neck/5));
+  for(let i=0;i<=steps;i++){
+    const u=i/steps;
+    const [l,r]=edges(neck*u,width*(.12+.38*Math.sin(u*Math.PI/2)));
+    left.push(point(l));right.push(point(r));
+    if(i>1&&i<steps)stripe.push(point([(l[0]+r[0])/2,(l[1]+r[1])/2]));
+  }
+  const [shoulderL,shoulderR]=edges(neck,width*.95);
+  const tip=centerline.getPointAtLength(length);
+  const outline=[...left,point(shoulderL),point([tip.x,tip.y]),point(shoulderR),...right.reverse()];
+  const group=node('g',{'data-from':from,'data-to':to,'data-unit':type,'clip-path':'url(#route-'+from+'-'+to+')'});
+  group.append(node('path',{d:'M'+outline.join(' L')+' Z',fill:planned?'#ad4535':'#953728',
+    stroke:'#f3deaa','stroke-width':.95*tokenScale,'stroke-linejoin':'round'}));
+  if(planned)group.append(node('path',{d:'M'+stripe.join(' L'),fill:'none',stroke:'#ffe3af',
+    'stroke-width':Math.min(width*.22,1.5*tokenScale),'stroke-dasharray':5*tokenScale+' '+6*tokenScale,
+    'stroke-linecap':'round'}));
+  return group;
+}
+
 // Battles pool casualties by type. Apportion the surviving counters to their committed
 // approaches for display, preserving the exact total without assigning a new game rule.
 function arrivals(game,to){
@@ -258,29 +297,61 @@ function pencilMark(){
     node('path',{d:pencilLine,transform:'translate(-.5 .2) scale(1.04 1.04)','stroke-width':.65,opacity:.52,'stroke-dasharray':'.2 1.1 .5 1.7'}));
   return g;
 }
-// The Situation Map front is a shallow pencil arc with short strokes facing the attackers.
-// Draw it in local coordinates so an existing annotation can follow the counters without replaying.
+// Keep the entire pencil curve anchored. A moving clip reveals fresh spine at either
+// end, while each hatch gets its own pencil stroke when the front reaches it.
 function drawFront(from,to){
+  const id='front-reveal-'+from+'-'+to;
   const group=node('g',{'data-from':from,'data-to':to,'clip-path':'url(#inside-'+to+')'});
-  const ink=node('g',{fill:'none',stroke:'#ae3835','stroke-linecap':'round','stroke-linejoin':'round',
+  const ink=node('g',{fill:'none',stroke:'#ad302d','stroke-linecap':'round','stroke-linejoin':'round',
     filter:'url(#pencil-grain)'});
-  const spine='M-30 -2 Q-28 -1 -25 -.4 Q-20 .4 -15 1 Q-10 2 -5 1.6 Q0 1 5 1.4 Q11 2 15 1.1 Q21 .5 25 -.6 Q28 -1.1 30 -2.3';
-  const animate=!window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const stroke=(d,width,delay,duration,attrs={})=>{
-    const line=node('path',{d,'stroke-width':width,pathLength:1,'stroke-dasharray':'1 1',...attrs});
-    ink.append(line);
-    if(animate)
-      line.animate([{strokeDashoffset:1},{strokeDashoffset:0}],{duration,delay,fill:'backwards'});
-  };
-  stroke(spine,2.1,0,540);
-  stroke(spine,.7,40,545,{transform:'translate(.25 .8)',opacity:.66});
-  const ticks=[[-25,-.4,-1.5,5.3],[-15,1,-1,6.1],[-5,1.6,-.6,5.1],
-    [5,1.4,.3,6.4],[15,1.1,.8,5.5],[25,-.6,1.4,5]];
-  for(const [x,y,lean,height] of ticks){
-    stroke('M'+x+' '+y+' q'+(lean*.25)+' 2.4 '+lean+' '+height,1.55,(x+30)*9,115);
+  const clip=node('clipPath',{id}),windowRect=node('rect',{x:0,y:-20,width:0,height:40});
+  clip.append(windowRect);
+  const spine=node('g',{'clip-path':'url(#'+id+')'});
+  const curve='M-43 -3 Q-32 -1 -24 .1 T-7 1.8 Q0 2.5 7 1.7 T23 .3 Q34 -.7 43 -3';
+  spine.append(node('path',{d:curve,'stroke-width':2.9,'vector-effect':'non-scaling-stroke'}),
+    node('path',{d:curve,transform:'translate(.3 1)',opacity:.55,'stroke-width':1,'vector-effect':'non-scaling-stroke'}));
+  ink.append(clip,spine);
+  const ticks=[];
+  const step=to==='nb'?12:9;
+  for(let x=-Math.floor(40/step)*step;x<=40;x+=step){
+    const y=2-5*(x/43)**2,lean=x/18,height=8.6+Math.cos(x)*1.1;
+    const path=node('path',{d:'M'+x+' '+y+' q'+(lean*.25)+' 3.5 '+lean+' '+height,
+      'stroke-width':2.1,'vector-effect':'non-scaling-stroke',pathLength:1,'stroke-dasharray':'1 1',display:'none'});
+    ink.append(path);ticks.push({x,path});
   }
   group.append(ink);
-  return group;
+  return {group,ink,windowRect,ticks,left:null,right:null};
+}
+function updateFront(mark,units){
+  const {windowRect,ticks}=mark;
+  const left=units.inf?-25-4*(units.inf-1):-7-1.5*(units.tank-1);
+  const right=units.tank?25+4*(units.tank-1):7+1.5*(units.inf-1);
+  if(left===mark.left&&right===mark.right)return;
+  const fresh=mark.left===null;
+  const growing=fresh||left<mark.left||right>mark.right;
+  const animate=growing&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Read the visible extent before interrupting a quick succession of reinforcements.
+  const style=getComputedStyle(windowRect);
+  const start=fresh?(units.inf?left:right):parseFloat(style.x);
+  const end=fresh?start:start+parseFloat(style.width);
+  windowRect.getAnimations().forEach(a=>a.cancel());
+  windowRect.setAttribute('x',left);windowRect.setAttribute('width',right-left);
+  const duration=fresh?480:410;
+  if(animate)windowRect.animate([
+    {x:start+'px',width:(end-start)+'px'},{x:left+'px',width:(right-left)+'px'}
+  ],{duration});
+  for(const {x,path} of ticks){
+    const visible=x>=left&&x<=right;
+    const wasVisible=path.getAttribute('display')==='inline';
+    if(wasVisible===visible)continue;
+    path.getAnimations().forEach(a=>a.cancel());
+    path.setAttribute('display',visible?'inline':'none');
+    if(visible&&animate){
+      const fraction=x<start?(start-x)/(start-left):x>end?(x-end)/(right-end):0;
+      path.animate([{strokeDashoffset:1},{strokeDashoffset:0}],{duration:145,delay:fraction*duration,fill:'backwards'});
+    }
+  }
+  mark.left=left;mark.right=right;
 }
 // Centerlines follow the open corridors between the hand-spaced formations. Infantry
 // and armor occupy successive stretches of each line, as they do in the arrival seats.
@@ -292,13 +363,11 @@ const frontLines={
 function frontTransform(to,group,spread,tokenScale){
   const [start,end]=frontLines[group.from+'-'+to],center=position(to);
   const dx=end[0]-start[0],dy=end[1]-start[1],length=Math.hypot(dx,dy);
-  const first=group.units.inf?0:.48,last=group.units.tank?1:.52;
-  const mid=(first+last)/2;
-  const x=center[0]+spread*(start[0]+mid*dx-center[0]);
-  const y=center[1]+spread*(start[1]+mid*dy-center[1]);
-  const attacker=formations[to][group.from][group.units.inf?'inf':'tank'];
+  const x=center[0]+spread*((start[0]+end[0])/2-center[0]);
+  const y=center[1]+spread*((start[1]+end[1])/2-center[1]);
+  const attacker=formations[to][group.from].inf;
   const side=Math.sign(dy*(attacker[0]-start[0])-dx*(attacker[1]-start[1]));
-  const along=spread*(last-first)/60,across=side*tokenScale/length;
+  const along=spread/57,across=side*tokenScale/length;
   return 'matrix('+[dx*along,dy*along,dy*across,-dx*across,x,y].join(' ')+')';
 }
 function drawStack(parent,id,type,number,nation,role,at,tokenScale,detailed,selected,origin){
@@ -397,6 +466,13 @@ function buildControlBands(map,shapes,regions){
     region.append(node('title',{}));regions.append(region);
     bands[id]={band,region};
   }
+  for(const [from,{targets}] of Object.entries(places)){
+    for(const to of targets){
+      const clip=node('clipPath',{id:'route-'+from+'-'+to});
+      clip.append(node('use',{href:'#territory-'+from}),node('use',{href:'#territory-'+to}));
+      defs.append(clip);
+    }
+  }
   return bands;
 }
 function buildSeaZones(map,chart){
@@ -447,7 +523,7 @@ async function atlas(onPick,onView,initial) {
   const selection=map.querySelector('#selection'),reveal=map.querySelector('#pencil-stroke');
   reveal.setAttribute('d',pencilLine);
   const fronts=map.querySelector('#fronts'), frontMarks=new Map();
-  let selectionKey='',layoutSeed,offsets;
+  let selectionKey='',routeKey='',layoutSeed,offsets;
   function showSelection(key,at,tokenScale){
     if(key!==selectionKey){
       selection.replaceChildren();
@@ -510,7 +586,7 @@ async function atlas(onPick,onView,initial) {
     const info=inspectedSea?'Sea zone '+inspectedSea+' · Adjacent '+zones.get(inspectedSea).neighbors.join(', '):
       inspectedPlace?places[inspectedPlace].name+' · '+game.owners[inspectedPlace]+' control':'';
     if(intel.textContent!==info)intel.textContent=info;
-    routes.replaceChildren();forces.replaceChildren();
+    forces.replaceChildren();
     for(const region of regions.children){
       const id=region.dataset.place;
       const legal=game.phase==='plan'&&places[focus]?.targets.includes(id);
@@ -523,13 +599,15 @@ async function atlas(onPick,onView,initial) {
     // while panning, and tighten their spacing at close zoom.
     const tokenScale=Math.min(1/scale,1.2);
     const spread=bound(1/(1.2*scale),.66,1);
-    for(const order of game.orders){
-      for(const type of types.filter(type=>order.units[type]>0)){
-        routes.append(node('path',{d:movementArc(order.from,order.to,type,spread,tokenScale,offsets),
-          'data-from':order.from,'data-to':order.to,'data-unit':type,
-          stroke:'#99432e','stroke-width':2.55/scale,'stroke-linecap':'round',
-          'stroke-dasharray':game.phase==='plan'?(6/scale)+' '+(4/scale):'none','marker-end':'url(#arrow)',fill:'none'}));
+    const nextRouteKey=[scale,layoutSeed,game.phase,JSON.stringify(game.orders)].join('|');
+    if(routeKey!==nextRouteKey){
+      routes.replaceChildren();
+      for(const order of game.orders){
+        for(const type of types.filter(t=>order.units[t]>0)){
+          routes.append(attackArrow(order,type,spread,tokenScale,offsets,game.phase==='plan'));
+        }
       }
+      routeKey=nextRouteKey;
     }
     const activeFronts=new Set();
     let selectedAt=null;
@@ -542,9 +620,10 @@ async function atlas(onPick,onView,initial) {
         activeFronts.add(key);
         if(!frontMarks.has(key)){
           const mark=drawFront(group.from,id);
-          fronts.append(mark);frontMarks.set(key,mark);
+          fronts.append(mark.group);frontMarks.set(key,mark);
         }
-        const ink=frontMarks.get(key).firstChild;
+        const mark=frontMarks.get(key),ink=mark.ink;
+        updateFront(mark,group.units);
         const transform=frontTransform(id,group,spread,tokenScale);
         if(ink.getAttribute('transform')!==transform)ink.setAttribute('transform',transform);
       }
@@ -567,7 +646,7 @@ async function atlas(onPick,onView,initial) {
       }
     }
     for(const [key,mark] of frontMarks){
-      if(!activeFronts.has(key)){mark.remove();frontMarks.delete(key);}
+      if(!activeFronts.has(key)){mark.group.remove();frontMarks.delete(key);}
     }
     // The overlay survives frequent force-layer redraws, so pan or quantity changes
     // reposition the mark without restarting the pencil.
