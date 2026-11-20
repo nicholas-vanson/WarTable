@@ -57,42 +57,80 @@ function movementArc(from,to,type,spread,tokenScale,offsets){
   return 'M'+tail.join(' ')+' C'+[...handles,tip].map(p=>p.join(' ')).join(' ');
 }
 
-// Sample the surveyed curve by distance so the shoulders and arrowhead keep their shape
-// on both the short French approach and the long, two-bend route to Normandy.
-function attackArrow(order,type,spread,tokenScale,offsets,planned){
+// Measure each curved stroke from its broad departure end. Segment count follows
+// the route on the board, so a pinch never adds or removes a break.
+function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed){
   const {from,to,units}=order;
   const centerline=node('path',{d:movementArc(from,to,type,spread,tokenScale,offsets)});
   const length=centerline.getTotalLength();
-  const baseWidth=Math.min(length*.082,4.8*tokenScale*bound(.83+length/570,.94,1.32));
+  const baseWidth=Math.min(length*.09,6.8*tokenScale*bound(.83+length/570,.94,1.32));
   const width=baseWidth*(1+.5*Math.log2(units[type]));
-  const headLength=Math.min(length*.28,width*2.25+2*tokenScale);
+  const departure=formations[from].home[type],arrival=formations[to][from][type];
+  const distance=Math.hypot(arrival[0]-departure[0],arrival[1]-departure[1]);
+  const segments=1+Math.floor(distance/125);
+  const gap=Math.min(6.2*tokenScale,length/segments*.12);
+  const headLength=Math.min(length*.17,4.4*tokenScale+width*.56);
   const neck=length-headLength;
-  const left=[],right=[],stripe=[];
-  const point=(p)=>p.map(v=>Number(v.toFixed(2))).join(' ');
-  function edges(distance,radius){
-    const p=centerline.getPointAtLength(distance);
-    const a=centerline.getPointAtLength(Math.max(0,distance-.65));
-    const b=centerline.getPointAtLength(Math.min(length,distance+.65));
-    const normal=Math.hypot(b.x-a.x,b.y-a.y);
-    const nx=(a.y-b.y)/normal,ny=(b.x-a.x)/normal;
-    return [[p.x+radius*nx,p.y+radius*ny],[p.x-radius*nx,p.y-radius*ny]];
+  const bodies=[],leads=[],glints=[],pencilLanes=[-.62,-.13,.49];
+  function section(at){
+    const p=centerline.getPointAtLength(at);
+    const a=centerline.getPointAtLength(Math.max(0,at-.65)),b=centerline.getPointAtLength(Math.min(length,at+.65));
+    const span=Math.hypot(b.x-a.x,b.y-a.y);
+    const nx=(a.y-b.y)/span,ny=(b.x-a.x)/span;
+    const fraction=at/length;
+    const radius=width*(.50-.394*fraction);
+    // Fixed, low-amplitude deviations leave the edges as steady as marks on paper.
+    const wobble=.16*tokenScale*Math.sin(at*.43)*Math.sin(Math.PI*fraction);
+    return (across,along=0)=>{
+      const offset=across*radius+wobble;
+      return [p.x+offset*nx+along*ny,p.y+offset*ny-along*nx].map(n=>Number(n.toFixed(2))).join(' ');
+    };
   }
-  const steps=Math.max(12,Math.ceil(neck/5));
-  for(let i=0;i<=steps;i++){
-    const u=i/steps;
-    const [l,r]=edges(neck*u,width*(.12+.38*Math.sin(u*Math.PI/2)));
-    left.push(point(l));right.push(point(r));
-    if(i>1&&i<steps)stripe.push(point([(l[0]+r[0])/2,(l[1]+r[1])/2]));
+  for(let part=0;part<segments;part++){
+    const start=part===0?0:length*part/segments+gap/2;
+    const final=part===segments-1;
+    const end=final?neck:length*(part+1)/segments-gap/2;
+    const edges=[[],[]],strokes=[[],[],[]];
+    const steps=Math.max(5,Math.ceil((end-start)/4));
+    for(let i=0;i<=steps;i++){
+      const at=start+(end-start)*i/steps,point=section(at);
+      // Matching oblique ends suggest a pencil lifted briefly along the same arc.
+      const cut=(i===0&&part>0||i===steps&&!final)?Math.min(gap*.23,width*.16):0;
+      edges[0].push(point(1,cut));edges[1].push(point(-1,-cut));
+      for(const [j,lane] of pencilLanes.entries()){
+        strokes[j].push(point(lane+.045*Math.sin(at*.26+j),lane*cut));
+      }
+    }
+    const [outline,opposite]=edges;
+    if(final){
+      const shoulder=section(neck);
+      const ratio=.32/(.50-.394*neck/length);
+      outline.push(shoulder(ratio),section(length)(0),shoulder(-ratio));
+    }
+    bodies.push('M'+outline.concat(opposite.reverse()).join(' L')+' Z');
+    leads.push(...strokes.filter((_,i)=>i!==1).map(line=>'M'+line.join(' L')));
+    glints.push('M'+strokes[1].join(' L'));
   }
-  const [shoulderL,shoulderR]=edges(neck,width*.95);
-  const tip=centerline.getPointAtLength(length);
-  const outline=[...left,point(shoulderL),point([tip.x,tip.y]),point(shoulderR),...right.reverse()];
   const group=node('g',{'data-from':from,'data-to':to,'data-unit':type,'clip-path':'url(#route-'+from+'-'+to+')'});
-  group.append(node('path',{d:'M'+outline.join(' L')+' Z',fill:planned?'#ad4535':'#953728',
-    stroke:'#f3deaa','stroke-width':.95*tokenScale,'stroke-linejoin':'round'}));
-  if(planned)group.append(node('path',{d:'M'+stripe.join(' L'),fill:'none',stroke:'#ffe3af',
-    'stroke-width':Math.min(width*.22,1.5*tokenScale),'stroke-dasharray':5*tokenScale+' '+6*tokenScale,
-    'stroke-linecap':'round'}));
+  const ink=node('g',{filter:'url(#route-grain)','stroke-linecap':'round','stroke-linejoin':'round'});
+  ink.append(node('path',{d:bodies.join(' '),fill:planned?'#ad5540':'#943d2e','fill-opacity':planned?.60:.79,
+    stroke:'#833929','stroke-width':1.15*tokenScale}),
+    node('path',{d:leads.join(' '),fill:'none',stroke:'#8b3529','stroke-width':.75*tokenScale,opacity:.79}),
+    node('path',{d:glints.join(' '),fill:'none',stroke:planned?'#f5ddab':'#9b4733','stroke-width':.85*tokenScale,
+      'stroke-dasharray':planned?4.5*tokenScale+' '+5.5*tokenScale:'none',opacity:.84}));
+  group.append(ink);
+  const duration=320+90*segments;
+  if(elapsed<duration&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+    const id='pencil-route-'+from+'-'+to+'-'+type;
+    const mask=node('mask',{id,maskContentUnits:'userSpaceOnUse'});
+    centerline.setAttribute('pathLength',1);
+    centerline.setAttribute('fill','none');centerline.setAttribute('stroke','white');
+    centerline.setAttribute('stroke-width',width+4*tokenScale);centerline.setAttribute('stroke-dasharray','1 1');
+    mask.append(centerline);group.append(mask);ink.setAttribute('mask','url(#'+id+')');
+    const reveal=centerline.animate([{strokeDashoffset:1},{strokeDashoffset:0}],{duration});
+    reveal.currentTime=elapsed;
+    reveal.onfinish=()=>{ink.removeAttribute('mask');mask.remove();};
+  }
   return group;
 }
 
@@ -354,6 +392,7 @@ export async function atlas(onPick,onView,initial) {
   reveal.setAttribute('d',pencilLine);
   const fronts=map.querySelector('#fronts'), frontMarks=new Map();
   let selectionKey='',routeKey='',layoutSeed,offsets;
+  let routeStarts=new Map();
   function showSelection(key,at,tokenScale){
     if(key!==selectionKey){
       selection.replaceChildren();
@@ -431,13 +470,18 @@ export async function atlas(onPick,onView,initial) {
     const spread=bound(1/(1.2*scale),.66,1);
     const nextRouteKey=[scale,layoutSeed,game.phase,JSON.stringify(game.orders)].join('|');
     if(routeKey!==nextRouteKey){
+      const nextStarts=new Map(),now=performance.now();
       routes.replaceChildren();
       for(const order of game.orders){
         for(const type of types.filter(t=>order.units[t]>0)){
-          routes.append(attackArrow(order,type,spread,tokenScale,offsets,game.phase==='plan'));
+          const key=order.from+'-'+order.to+'-'+type;
+          const start=routeStarts.get(key)??(routeKey?now:-Infinity);
+          nextStarts.set(key,start);
+          const planned=game.phase==='plan';
+          routes.append(attackArrow(order,type,spread,tokenScale,offsets,planned,planned?now-start:Infinity));
         }
       }
-      routeKey=nextRouteKey;
+      routeStarts=nextStarts;routeKey=nextRouteKey;
     }
     const activeFronts=new Set();
     let selectedAt=null;
