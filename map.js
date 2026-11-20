@@ -1,4 +1,4 @@
-import {places,types,available} from './rules.js';
+import {places,types,available,theaterVictoryCities} from './rules.js';
 const ns='http://www.w3.org/2000/svg';
 function node(tag,attrs,text=''){
   const el=document.createElementNS(ns,tag);
@@ -263,7 +263,7 @@ function drawStack(parent,id,type,number,nation,role,at,tokenScale,detailed,sele
 const labels=[
   ['NORTH SEA',1,55.2,'water'],['BALTIC SEA',19.7,57.3,'water'],['ATLANTIC OCEAN',-8,47.5,'water'],['MEDITERRANEAN SEA',7.3,38,'water'],['BLACK SEA',33.3,43.4,'water'],['NORWEGIAN SEA',.5,66,'water'],
   ['English Channel',-2.4,50.15,'water'],['Bay of Biscay',-4.3,45.3,'water'],['Adriatic Sea',15,43,'water'],
-  ['Lille',3.06,50.63,'city'],['Brussels',4.35,50.85,'city'],['Lyon',4.84,45.76,'city'],['Köln',6.96,50.94,'city'],['Vienna',16.37,48.21,'city'],['London',-.12,51.51,'city'],['Paris',2.35,48.86,'city'],['Bordeaux',-.58,44.84,'city'],['Berlin',13.41,52.52,'city'],['Copenhagen',12.57,55.68,'city'],['Rome',12.5,41.9,'city'],['Warsaw',21.01,52.23,'city'],['Moscow',37.62,55.75,'city'],['Madrid',-3.7,40.42,'city'],['Stockholm',18.06,59.33,'city'],['Amsterdam',4.9,52.36,'city'],['Brest',-4.49,48.39,'city']
+  ['Lille',3.06,50.63,'city'],['Brussels',4.35,50.85,'city'],['Lyon',4.84,45.76,'city'],['Köln',6.96,50.94,'city'],['Vienna',16.37,48.21,'city'],['Bordeaux',-.58,44.84,'city'],['Copenhagen',12.57,55.68,'city'],['Madrid',-3.7,40.42,'city'],['Stockholm',18.06,59.33,'city'],['Amsterdam',4.9,52.36,'city'],['Brest',-4.49,48.39,'city']
 ];
 // Curved baselines in the atlas projection. Each span fits the interior of its region.
 const landNames=[
@@ -386,6 +386,19 @@ export async function atlas(onPick,onView,initial) {
       fill:kind==='water'?'#506b6c':'#535747','font-family':kind==='city'?'Arial, sans-serif':'Georgia,serif','font-weight':kind==='city'?600:400,'font-size':kind==='city'?7.2:kind==='water'?15:13,'letter-spacing':kind==='city'?0:kind==='water'?2:1.8,'font-style':kind==='water'?'italic':'normal',
       'paint-order':'stroke','stroke-width':1.8,stroke:kind==='water'?'#bacbcc':'#dcd9c1'},name));
   }
+  const cityMarks=theaterVictoryCities.map(city=>{
+    const [x,y]=project(city.lon,city.lat),capital=Boolean(city.capitalOf);
+    const caption=city.name+' · Victory city'+(capital?' · Capital of '+city.capitalOf:'');
+    const mark=node('g',{'data-victory-city':city.name,role:'img','aria-label':caption});
+    const left=city.name==='Paris'||city.name==='Stalingrad';
+    mark.append(node('title',{},caption),node('circle',{r:6.1,fill:'#f6efda',stroke:capital?'#84462e':'#526051','stroke-width':.9}),
+      node('path',{d:capital?'M0 -5 1.4 -1.6 5 -1.5 2.1 1 3 4.4 0 2.7 -3 4.4 -2.1 1 -5 -1.5 -1.4 -1.6Z':'M0 -4.4 3.8 0 0 4.4 -3.8 0Z',
+        fill:capital?'#85452d':'#465747'}));
+    const name=node('text',{x:left?-8:8,y:3,'text-anchor':left?'end':'start',fill:'#443c30',
+      'font-family':'Georgia,serif','font-size':9,'font-weight':700,stroke:'#f3ecd7','stroke-width':2,'paint-order':'stroke'},city.name);
+    mark.append(name);labelGroup.append(mark);
+    return {mark,name,x,y};
+  });
   const detailPlate=map.querySelector('#detailPlate');
   const landLabels=buildLandLabels(map,labelGroup);
   const selection=map.querySelector('#selection'),reveal=map.querySelector('#pencil-stroke');
@@ -429,6 +442,10 @@ export async function atlas(onPick,onView,initial) {
       text.style.display=view.z>=1.05 && size*scale>=9?'':'none';
     }
     if(scale!==lastScale){
+      for(const {mark,name,x,y} of cityMarks){
+        mark.setAttribute('transform','translate('+x+' '+y+') scale('+bound(1/scale,.52,3.5)+')');
+        name.style.display=scale<.35?'none':'';
+      }
       const width=bound(10/scale,3.2,16);
       for(const {hatch,angle} of Object.values(ownerStyle)){
         document.getElementById(hatch).setAttribute('patternTransform','rotate('+angle+') scale('+bound(1/scale,.25,1.4)+')');

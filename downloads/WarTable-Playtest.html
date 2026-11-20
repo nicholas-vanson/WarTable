@@ -164,6 +164,19 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
   #openPanel{top:auto;bottom:max(27px,env(safe-area-inset-bottom))}
   .panel-closed .navbox{bottom:calc(56px + max(27px,env(safe-area-inset-bottom)))}
 }
+
+#battleForces:empty{display:none}
+#battleForces{flex:none;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin:0 var(--gutter);border-bottom:1px solid var(--sheet-rule)}
+.battle-column{min-width:0;padding:4px 2px}
+.battle-column+.battle-column{border-left:1px solid var(--sheet-rule);padding-left:6px}
+.force-heading,.force-strength{display:flex;align-items:center;flex-wrap:wrap;gap:2px 4px}
+.force-heading{font-size:12px;margin-bottom:2px}
+.force-heading small{font-size:10px;color:#505949}
+.force-strength .counter-face{min-width:28px;height:19px;gap:2px}
+.force-strength .symbol{width:13px;height:9px}
+.force-total{font:10px var(--typewriter);color:#4c5548;white-space:nowrap}
+.objective{font:13px/1.4 Georgia,serif;color:#614331}
+.objective span{color:#85452d}
 </style>
 </head>
 <body>
@@ -196,6 +209,7 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
 <aside id="ordersPanel" aria-label="Operations panel">
 <div id="resizePanel" tabindex="0" role="separator" aria-controls="ordersPanel" aria-label="Resize orders panel" title="Drag to resize orders panel"></div>
 <div class="panelhead"><span class="power-tab">Germany</span><button id="hidePanel" aria-controls="ordersPanel" aria-expanded="true">Hide orders</button></div>
+<section id="battleForces" aria-label="Remaining forces"></section>
 <div class="panel-scroll"><div id="panel"></div></div>
 <div id="notice" role="status" aria-live="polite"></div><div id="action"></div>
 </aside>
@@ -211,6 +225,17 @@ const places = {
   nb: {name:'Normandy Bordeaux', owner:'France', targets:[], lon:-.8, lat:47.45},
   fr: {name:'France', owner:'France', targets:[], lon:2.65, lat:48.45}
 };
+// Victory cities within this atlas, from Europe 1940 Second Edition, pp. 6 and 34.
+const theaterVictoryCities=[
+  {name:'London',lon:-.12,lat:51.51,capitalOf:'United Kingdom'},
+  {name:'Paris',lon:2.35,lat:48.86,capitalOf:'France',territory:'fr'},
+  {name:'Berlin',lon:13.41,lat:52.52,capitalOf:'Germany'},
+  {name:'Rome',lon:12.5,lat:41.9,capitalOf:'Italy'},
+  {name:'Moscow',lon:37.62,lat:55.75,capitalOf:'Soviet Union'},
+  {name:'Warsaw',lon:21.01,lat:52.23},
+  {name:'Leningrad',lon:30.32,lat:59.94},
+  {name:'Stalingrad',lon:44.51,lat:48.71}
+];
 const types = ['inf','tank'];
 const stats = {
   inf:{name:'Infantry',attack:1,defense:2,cost:3},
@@ -274,12 +299,16 @@ function finishBattle(s,b,result){
   s.record.push({title:places[b.to].name,detail:result});
   if(s.battles.every(b=>b.resolved))s.phase='review';
 }
+function defenderLosses(force,hits){
+  const lost=empty();
+  for(const k of types){lost[k]=Math.min(force[k],hits);hits-=lost[k];}
+  return lost;
+}
 function applyLosses(s,b,losses){
   for(const k of types)b.attack[k]-=losses[k];
   const defenders=s.units[b.to];
-  let hits=b.dice.attack.filter(d=>d.hit).length;
-  const lost=empty();
-  for(const k of types){lost[k]=Math.min(defenders[k],hits);defenders[k]-=lost[k];hits-=lost[k];}
+  const lost=defenderLosses(defenders,b.dice.attack.filter(d=>d.hit).length);
+  for(const k of types)defenders[k]-=lost[k];
   s.record.push({title:places[b.to].name+' · round '+b.round,dice:b.dice,
     detail:'Losses — Germany: '+describe(losses)+'; France: '+describe(lost)+'.'});
   if(!count(defenders)&&count(b.attack)){
@@ -579,7 +608,7 @@ function drawStack(parent,id,type,number,nation,role,at,tokenScale,detailed,sele
 const labels=[
   ['NORTH SEA',1,55.2,'water'],['BALTIC SEA',19.7,57.3,'water'],['ATLANTIC OCEAN',-8,47.5,'water'],['MEDITERRANEAN SEA',7.3,38,'water'],['BLACK SEA',33.3,43.4,'water'],['NORWEGIAN SEA',.5,66,'water'],
   ['English Channel',-2.4,50.15,'water'],['Bay of Biscay',-4.3,45.3,'water'],['Adriatic Sea',15,43,'water'],
-  ['Lille',3.06,50.63,'city'],['Brussels',4.35,50.85,'city'],['Lyon',4.84,45.76,'city'],['Köln',6.96,50.94,'city'],['Vienna',16.37,48.21,'city'],['London',-.12,51.51,'city'],['Paris',2.35,48.86,'city'],['Bordeaux',-.58,44.84,'city'],['Berlin',13.41,52.52,'city'],['Copenhagen',12.57,55.68,'city'],['Rome',12.5,41.9,'city'],['Warsaw',21.01,52.23,'city'],['Moscow',37.62,55.75,'city'],['Madrid',-3.7,40.42,'city'],['Stockholm',18.06,59.33,'city'],['Amsterdam',4.9,52.36,'city'],['Brest',-4.49,48.39,'city']
+  ['Lille',3.06,50.63,'city'],['Brussels',4.35,50.85,'city'],['Lyon',4.84,45.76,'city'],['Köln',6.96,50.94,'city'],['Vienna',16.37,48.21,'city'],['Bordeaux',-.58,44.84,'city'],['Copenhagen',12.57,55.68,'city'],['Madrid',-3.7,40.42,'city'],['Stockholm',18.06,59.33,'city'],['Amsterdam',4.9,52.36,'city'],['Brest',-4.49,48.39,'city']
 ];
 // Curved baselines in the atlas projection. Each span fits the interior of its region.
 const landNames=[
@@ -703,6 +732,19 @@ async function atlas(onPick,onView,initial) {
       fill:kind==='water'?'#506b6c':'#535747','font-family':kind==='city'?'Arial, sans-serif':'Georgia,serif','font-weight':kind==='city'?600:400,'font-size':kind==='city'?7.2:kind==='water'?15:13,'letter-spacing':kind==='city'?0:kind==='water'?2:1.8,'font-style':kind==='water'?'italic':'normal',
       'paint-order':'stroke','stroke-width':1.8,stroke:kind==='water'?'#bacbcc':'#dcd9c1'},name));
   }
+  const cityMarks=theaterVictoryCities.map(city=>{
+    const [x,y]=project(city.lon,city.lat),capital=Boolean(city.capitalOf);
+    const caption=city.name+' · Victory city'+(capital?' · Capital of '+city.capitalOf:'');
+    const mark=node('g',{'data-victory-city':city.name,role:'img','aria-label':caption});
+    const left=city.name==='Paris'||city.name==='Stalingrad';
+    mark.append(node('title',{},caption),node('circle',{r:6.1,fill:'#f6efda',stroke:capital?'#84462e':'#526051','stroke-width':.9}),
+      node('path',{d:capital?'M0 -5 1.4 -1.6 5 -1.5 2.1 1 3 4.4 0 2.7 -3 4.4 -2.1 1 -5 -1.5 -1.4 -1.6Z':'M0 -4.4 3.8 0 0 4.4 -3.8 0Z',
+        fill:capital?'#85452d':'#465747'}));
+    const name=node('text',{x:left?-8:8,y:3,'text-anchor':left?'end':'start',fill:'#443c30',
+      'font-family':'Georgia,serif','font-size':9,'font-weight':700,stroke:'#f3ecd7','stroke-width':2,'paint-order':'stroke'},city.name);
+    mark.append(name);labelGroup.append(mark);
+    return {mark,name,x,y};
+  });
   const detailPlate=map.querySelector('#detailPlate');
   const landLabels=buildLandLabels(map,labelGroup);
   const selection=map.querySelector('#selection'),reveal=map.querySelector('#pencil-stroke');
@@ -746,6 +788,10 @@ async function atlas(onPick,onView,initial) {
       text.style.display=view.z>=1.05 && size*scale>=9?'':'none';
     }
     if(scale!==lastScale){
+      for(const {mark,name,x,y} of cityMarks){
+        mark.setAttribute('transform','translate('+x+' '+y+') scale('+bound(1/scale,.52,3.5)+')');
+        name.style.display=scale<.35?'none':'';
+      }
       const width=bound(10/scale,3.2,16);
       for(const {hatch,angle} of Object.values(ownerStyle)){
         document.getElementById(hatch).setAttribute('patternTransform','rotate('+angle+') scale('+bound(1/scale,.25,1.4)+')');
@@ -1088,6 +1134,7 @@ function advanceRoll(){
   }
   const card=$('panel').querySelector('.roll-card[data-side="'+play.side+'"]');
   card.outerHTML=rollCard(play.rolls,play.side,play);
+  if(play.side==='attack'&&play.stage==='marked')updateBattleForces();
   if((play.frame===0||play.index===0&&play.frame===1)&&play.stage==='rolling'){
     $('panel').querySelector('[data-side="'+play.side+'"] [data-unit="'+play.types[play.index]+'"]').scrollIntoView({block:'nearest'});
   }
@@ -1097,20 +1144,42 @@ function advanceRoll(){
   if($('rollStatus').textContent!==note)$('rollStatus').textContent=note;
   rollTimer=setTimeout(advanceRoll,delay);
 }
+function updateBattleForces(){
+  const b=currentBattle(s),header=$('battleForces');
+  if(!b){header.replaceChildren();return;}
+  const defenders=s.units[b.to];
+  const pending=b.step==='defense'||b.step==='losses';
+  let rolls=pending?b.dice.attack:[];
+  if(playback?.side==='attack'){
+    const shown=playback.types.slice(0,playback.index+(playback.stage==='marked'?1:0));
+    rolls=rolls.filter(d=>shown.includes(d.type));
+  }
+  const lost=defenderLosses(defenders,rolls.filter(d=>d.hit).length);
+  function column(role,nation,units,losses){
+    const icons=types.filter(k=>units[k]>0).map(k=>unitCounter(k,units[k]-(losses?.[k]||0),nation)).join(' ');
+    return '<div class="battle-column"><div class="force-heading"><small>'+role+'</small> <strong>'+nation+'</strong></div>'+
+      '<div class="force-strength">'+icons+'<span class="force-total">'+(count(units)-(losses?count(losses):0))+' total</span></div></div>';
+  }
+  header.innerHTML=column('Attacking','Germany',b.attack,b.step==='losses'?ui.losses:null)+
+    column('Defending',s.owners[b.to],defenders,lost);
+}
 function battlePanel(){
   const b=currentBattle(s);
   if(!b){
     return title('Conduct combat','Choose the next battle to resolve.')+block('Battle order')+
       s.battles.map(b=>b.resolved?'<div class="review-item"><strong>'+places[b.to].name+'</strong><p>'+reviewDetail(b.result)+'</p></div>':opt(b.to,places[b.to].name,unitLine(b.attack,'Germany')+' attacking','⚑','battle')).join('');
   }
-  const info=title(places[b.to].name,'Germany · '+unitLine(b.attack,'Germany')+'<br>France · '+unitLine(s.units[b.to],s.owners[b.to]))+block(b.round?'Battle round '+b.round:'Land battle')+rollsBox(b.dice,playback);
+  const city=theaterVictoryCities.find(c=>c.territory===b.to);
+  const cityNote=city&&!b.round?'<p class="objective"><span aria-hidden="true">'+(city.capitalOf?'★':'◆')+'</span> '+city.name+
+    ' · Victory city'+(city.capitalOf?' · '+city.capitalOf+'’s capital':'')+'</p>':'';
+  const info='<h2>'+places[b.to].name+'</h2>'+block(b.round?'Battle round '+b.round:'Land battle')+cityNote+rollsBox(b.dice,playback);
   if(playback){
     $('action').innerHTML='<div class="roll-progress" id="rollStatus" role="status">Rolling '+stats[playback.types[playback.index]].name.toLowerCase()+'…</div>';
     return info;
   }
   if(b.step==='defense'){
     $('action').innerHTML=btn('Roll French defense','defend','primary');
-    return info+'<p class="hint">All defending units in this round return fire, including those hit by Germany.</p>';
+    return info+'<p class="hint">The header counts survivors. All defenders return fire this round, including marked casualties.</p>';
   }
   if(b.step==='losses' && !b.hits){
     $('action').innerHTML=btn('Resolve round','loss','primary');
@@ -1120,13 +1189,13 @@ function battlePanel(){
     const limits={};
     for(const k of types)limits[k]=Math.min(b.attack[k],ui.losses[k]+b.hits-count(ui.losses));
     $('action').innerHTML=btn('Confirm casualties','loss','primary',count(ui.losses)===b.hits?'':'disabled');
-    return info+'<h3>Choose your casualties</h3><p class="hint">Assign '+b.hits+' German '+(b.hits===1?'loss':'losses')+'.</p>'+stepper('casualty',ui.losses,limits);
+    return info+'<h3>Choose your casualties</h3><p class="hint">Assign '+b.hits+' German '+(b.hits===1?'loss':'losses')+'. The header previews your selections.</p>'+stepper('casualty',ui.losses,limits);
   }
   $('action').innerHTML=btn(b.round?'Continue · roll German attack':'Roll German attack','roll','primary');
   if(b.step==='decision'){
     return info+'<h3>Continue or retreat?</h3><p class="hint">Retreat all survivors to one origin.</p>'+b.origins.map(id=>btn('Retreat to '+places[id].name,'retreat','secondary','data-id="'+id+'"')).join('');
   }
-  return info+'<p class="hint">'+unitCounter('inf')+' hits on 1 attacking or 1–2 defending. '+unitCounter('tank')+' hits on 1–3.</p>';
+  return info;
 }
 function timeline(){
   return s.record.map(e=>'<div class="review-item"><strong>'+esc(e.title)+'</strong><p>'+reviewDetail(e.detail)+'</p>'+rollsBox(e.dice)+'</div>').join('');
@@ -1158,6 +1227,7 @@ function render(){
     $('panel').innerHTML=title('Exercise review','Committed attacks and resolved outcomes.')+timeline();
     $('action').innerHTML=btn('Start another exercise','reset');
   }
+  updateBattleForces();
   const nextView=[s.phase,s.active,currentBattle(s)?.step,ui.from,ui.to,ui.stack].join('|');
   if(panelView!==nextView)document.querySelector('.panel-scroll').scrollTop=0;
   panelView=nextView;
@@ -1199,7 +1269,7 @@ document.addEventListener('click',e=>{
 });
 $('closeDialog').onclick=()=>$('dialog').close();
 $('journal').onclick=()=>showDialog('Exercise review',(s.phase==='review'?timeline():'<p>The record opens after the last battle. It includes committed attacks, dice, casualties, retreats, and control of each territory.</p>'));
-$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>The narrow olive hatch marks German control and the blue hatch marks French control. Tap a territory to read its controller. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><h3>Plan an attack</h3><p>German counters use '+unitCounter('inf',undefined,'Germany')+' for infantry and '+unitCounter('tank',undefined,'Germany')+' for armor. Adjust the quantity, then tap a highlighted French territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this exercise</h3><p>This local exercise covers adjacent land attacks with infantry and tanks. The starting forces are arranged for testing. The surrounding atlas is for exploration.</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+btn('Restart exercise','reset','danger'));
+$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The narrow olive hatch marks German control and the blue hatch marks French control. Tap a territory to read its controller. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><h3>Plan an attack</h3><p>German counters use '+unitCounter('inf',undefined,'Germany')+' for infantry and '+unitCounter('tank',undefined,'Germany')+' for armor. Adjust the quantity, then tap a highlighted French territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this exercise</h3><p>This local exercise covers adjacent land attacks with infantry and tanks. The starting forces are arranged for testing. The surrounding atlas is for exploration.</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+btn('Restart exercise','reset','danger'));
 // Store the two panel dimensions separately so rotating the phone restores the last fit.
 function setupOrdersPanel(){
   const main=document.querySelector('main'),sheet=$('ordersPanel'),grip=$('resizePanel');
@@ -1214,7 +1284,7 @@ function setupOrdersPanel(){
   function dimensions(){
     const vertical=stacked.matches,axis=vertical?'height':'width';
     const extent=main.getBoundingClientRect()[axis];
-    const max=Math.floor(extent*(vertical?.74:.62)),min=Math.min(max,vertical?162:218);
+    const max=Math.floor(extent*(vertical?.74:.62)),min=Math.min(max,vertical?(currentBattle(s)?232:162):218);
     return {axis,extent,min,max,coordinate:vertical?'clientY':'clientX'};
   }
   function apply(){
@@ -1263,7 +1333,9 @@ function setupOrdersPanel(){
     else return;
     e.preventDefault();persist();
   };
-  apply();new ResizeObserver(apply).observe(main);
+  apply();
+  const layoutObserver=new ResizeObserver(apply);
+  layoutObserver.observe(main);layoutObserver.observe($('battleForces'));
 }
 setupOrdersPanel();
 render();
