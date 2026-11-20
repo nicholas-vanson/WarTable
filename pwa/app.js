@@ -59,33 +59,37 @@ function opt(id,label,sub,code,act,selected=false){
 }
 function title(t,sub){return '<h2>'+t+'</h2><p class="hint">'+sub+'</p>';}
 function block(t){return '<div class="block-title">'+t+'</div>';}
-function unitCounter(type,amount){
+function unitCounter(type,amount,nation){
   const label=amount===undefined?stats[type].name:amount+' '+(type==='inf'?'infantry':amount===1?'tank':'tanks');
-  return '<span class="counter-face" role="img" aria-label="'+label+'" title="'+label+'"><i class="symbol '+type+'"></i>'+
+  return '<span class="counter-face" data-nation="'+(nation||'')+'" role="img" aria-label="'+label+'" title="'+label+'"><i class="symbol '+type+'"></i>'+
     (amount===undefined?'':'<b>'+amount+'</b>')+'</span>';
 }
-function unitLine(units){
-  return types.filter(k=>units[k]>0).map(k=>unitCounter(k,units[k])).join(' ')||'no units';
+function unitLine(units,nation){
+  return types.filter(k=>units[k]>0).map(k=>unitCounter(k,units[k],nation)).join(' ')||'no units';
 }
 // The local journal stores sentences. Render counts in existing saved reviews as counters too.
 function reviewDetail(detail){
-  return esc(detail).replace(/\b(\d+) (infantry|tanks?)\b/g,(_,n,name)=>unitCounter(name==='infantry'?'inf':'tank',Number(n)));
+  return detail.split('; ').map(clause=>{
+    // Historic records identify losses by country within each clause.
+    const nation=/^(France held|France:)/.test(clause)?'France':'Germany';
+    return esc(clause).replace(/\b(\d+) (infantry|tanks?)\b/g,(_,n,name)=>unitCounter(name==='infantry'?'inf':'tank',Number(n),nation));
+  }).join('; ');
 }
 const diePips=[[],[5],[1,9],[1,5,9],[1,3,7,9],[1,3,5,7,9],[1,3,4,6,7,9]];
-function dieFace(d){
-  const label=stats[d.type].name+' rolled '+d.face+', '+(d.hit?'hit':'miss');
-  const pips=diePips[d.face].map(pos=>'<i style="grid-area:'+Math.ceil(pos/3)+' / '+((pos-1)%3+1)+'"></i>').join('');
-  return '<span role="img" aria-label="'+label+'" title="'+label+'" class="die '+(d.hit?'hit':'miss')+'">'+pips+'</span>';
+function dieFace(d,face,stage){
+  const label=stage==='rolling'?'Rolling':stats[d.type].name+' rolled '+face+(stage==='marked'?', '+(d.hit?'hit':'miss'):'');
+  const pips=diePips[face].map(pos=>'<i style="grid-area:'+Math.ceil(pos/3)+' / '+((pos-1)%3+1)+'"></i>').join('');
+  return '<span role="img" aria-label="'+label+'" title="'+label+'" class="die '+(stage==='marked'&&d.hit?'hit':'miss')+'">'+pips+'</span>';
 }
 function stepper(kind,values,limits,keys=types,min=0){
-  return keys.map(k=>'<div class="stepper"><span>'+unitCounter(k)+'</span><button aria-label="Remove one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="-1" '+(values[k]<=min?'disabled':'')+'>−</button><output>'+values[k]+'</output><button aria-label="Add one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="1" '+(values[k]>=limits[k]?'disabled':'')+'>+</button></div>').join('');
+  return keys.map(k=>'<div class="stepper"><span>'+unitCounter(k,undefined,'Germany')+'</span><button aria-label="Remove one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="-1" '+(values[k]<=min?'disabled':'')+'>−</button><output>'+values[k]+'</output><button aria-label="Add one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="1" '+(values[k]>=limits[k]?'disabled':'')+'>+</button></div>').join('');
 }
 function forceRoster(id){
   const free=available(s,id);
   const stacks=types.filter(k=>free[k]).map(k=>{
     const label=stats[k].name+', '+free[k]+' available in '+places[id].name;
     return '<button class="force" data-act="stack" data-id="'+id+'-'+k+'" aria-label="'+label+'">'+
-      unitCounter(k,free[k])+'<span class="end" aria-hidden="true">›</span></button>';
+      unitCounter(k,free[k],s.owners[id])+'<span class="end" aria-hidden="true">›</span></button>';
   });
   return block(places[id].name)+(stacks.length?'<div class="roster">'+stacks.join('')+'</div>':'<p class="hint">All units assigned.</p>');
 }
@@ -97,10 +101,10 @@ function planPanel(){
     '<div class="actions">'+btn('Back','back')+btn(existing?'Update order':'Add order','add','primary',count(ui.units)?'':'disabled')+'</div>';
     if(existing)html+=btn('Cancel this order','remove','danger','style="margin-top:8px"');
   }else if(ui.stack){
-    html=title(unitCounter(ui.stack)+' stack',places[ui.from].name)+block('Units to move')+
+    html=title(unitCounter(ui.stack,undefined,s.owners[ui.from])+' stack',places[ui.from].name)+block('Units to move')+
       stepper('quantity',{[ui.stack]:ui.quantity},available(s,ui.from),[ui.stack],1)+
       block('Tap destination to plan move')+
-      places[ui.from].targets.map(id=>opt(id,places[id].name,unitLine(s.units[id]),'↗','target')).join('')+
+      places[ui.from].targets.map(id=>opt(id,places[id].name,unitLine(s.units[id],s.owners[id]),'↗','target')).join('')+
       '<div class="actions">'+btn('Deselect stack','clear')+'</div>';
   }else{
     const origins=ui.from?[ui.from]:['hb','wg'];
@@ -108,33 +112,89 @@ function planPanel(){
     if(ui.from)html+=btn('All forces','clear');
   }
   if(!ui.to&&s.orders.length){
-    html+=block('Planned attacks · '+s.orders.length)+s.orders.map((o,i)=>opt(String(i),places[o.to].name,places[o.from].name+' · '+unitLine(o.units),'↗','edit')).join('');
+    html+=block('Planned attacks · '+s.orders.length)+s.orders.map((o,i)=>opt(String(i),places[o.to].name,places[o.from].name+' · '+unitLine(o.units,s.owners[o.from]),'↗','edit')).join('');
   }
   $('action').innerHTML=!ui.to&&!ui.stack?'<button class="primary" id="hold" '+(s.orders.length?'':'disabled')+'>Hold to commit attacks</button>':'';
   return html;
 }
-function rollsBox(dice){
-  if(!dice)return '';
-  return ['attack','defense'].filter(side=>dice[side]).map(side=>{
-    const rolls=dice[side], hits=rolls.filter(d=>d.hit).length;
-    const label=side==='attack'?'German attack':'French defense';
-    const groups=types.map(type=>{
-      const group=rolls.filter(d=>d.type===type);
-      if(!group.length)return '';
-      const threshold=stats[type][side];
-      const diceRow=group.map(dieFace).join('');
-      return '<div class="roll-unit">'+unitCounter(type)+'<small>Hits on '+(threshold===1?'1':'1–'+threshold)+'</small><div class="dice-row">'+diceRow+'</div></div>';
+function rollCard(rolls,side,play){
+  const label=side==='attack'?'German attack':'French defense';
+  let hits=0;
+  const groups=types.map(type=>{
+    const group=rolls.filter(d=>d.type===type);
+    if(!group.length)return '';
+    let stage='marked';
+    if(play){
+      const index=play.types.indexOf(type);
+      if(index>play.index)stage='waiting';
+      if(index===play.index)stage=play.stage;
+    }
+    if(stage==='marked')hits+=group.filter(d=>d.hit).length;
+    const dice=group.map((d,i)=>{
+      if(stage==='waiting')return '<span class="die pending" aria-hidden="true"></span>';
+      if(stage==='rolling')return dieFace(d,1+(play.frame+i*2)%6,stage);
+      return dieFace(d,d.face,stage);
     }).join('');
-    return '<section class="roll-card" data-side="'+side+'"><h4>'+label+'<span>'+hits+' '+(hits===1?'hit':'hits')+'</span></h4>'+groups+'</section>';
+    const threshold=stats[type][side];
+    return '<div class="roll-unit" data-unit="'+type+'" data-stage="'+stage+'">'+
+      unitCounter(type,undefined,side==='attack'?'Germany':'France')+'<small>Hits on '+(threshold===1?'1':'1–'+threshold)+
+      '</small><div class="dice-row">'+dice+'</div></div>';
   }).join('');
+  const total=play&&play.index===0&&play.stage!=='marked'?'Rolling…':hits+' '+(hits===1?'hit':'hits');
+  return '<section class="roll-card" data-side="'+side+'"><h4>'+label+'<span>'+total+'</span></h4>'+groups+'</section>';
+}
+function rollsBox(dice,play=null){
+  if(!dice)return '';
+  return ['attack','defense'].filter(side=>dice[side]).map(side=>rollCard(dice[side],side,play?.side===side?play:null)).join('');
+}
+// The game has already rolled and saved. Only the presentation is timed.
+let playback=null,rollTimer;
+function beginRoll(side){
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  const rolls=currentBattle(s).dice[side],unitTypes=types.filter(t=>rolls.some(d=>d.type===t));
+  if(!unitTypes.length)return;
+  playback={side,rolls,types:unitTypes,index:0,stage:'rolling',frame:0};
+  rollTimer=setTimeout(advanceRoll,100);
+}
+function endPlayback(){
+  clearTimeout(rollTimer);
+  playback=null;
+}
+function advanceRoll(){
+  const play=playback;
+  if(!play)return;
+  let delay=110;
+  if(play.stage==='rolling'){
+    play.frame++;
+    if(play.frame===6){play.stage='settled';delay=300;}
+  }else if(play.stage==='settled'){
+    play.stage='marked';delay=1000;
+  }else{
+    if(++play.index===play.types.length){endPlayback();render();return;}
+    play.stage='rolling';play.frame=0;
+  }
+  const card=$('panel').querySelector('.roll-card[data-side="'+play.side+'"]');
+  card.outerHTML=rollCard(play.rolls,play.side,play);
+  if((play.frame===0||play.index===0&&play.frame===1)&&play.stage==='rolling'){
+    $('panel').querySelector('[data-side="'+play.side+'"] [data-unit="'+play.types[play.index]+'"]').scrollIntoView({block:'nearest'});
+  }
+  const name=stats[play.types[play.index]].name;
+  const hits=play.rolls.filter(d=>d.type===play.types[play.index]&&d.hit).length;
+  const note=play.stage==='marked'?name+' · '+hits+(hits===1?' hit':' hits'):'Rolling '+name.toLowerCase()+'…';
+  if($('rollStatus').textContent!==note)$('rollStatus').textContent=note;
+  rollTimer=setTimeout(advanceRoll,delay);
 }
 function battlePanel(){
   const b=currentBattle(s);
   if(!b){
     return title('Conduct combat','Choose the next battle to resolve.')+block('Battle order')+
-      s.battles.map(b=>b.resolved?'<div class="review-item"><strong>'+places[b.to].name+'</strong><p>'+reviewDetail(b.result)+'</p></div>':opt(b.to,places[b.to].name,unitLine(b.attack)+' attacking','⚑','battle')).join('');
+      s.battles.map(b=>b.resolved?'<div class="review-item"><strong>'+places[b.to].name+'</strong><p>'+reviewDetail(b.result)+'</p></div>':opt(b.to,places[b.to].name,unitLine(b.attack,'Germany')+' attacking','⚑','battle')).join('');
   }
-  const info=title(places[b.to].name,'Germany · '+unitLine(b.attack)+'<br>France · '+unitLine(s.units[b.to]))+block(b.round?'Battle round '+b.round:'Land battle')+rollsBox(b.dice);
+  const info=title(places[b.to].name,'Germany · '+unitLine(b.attack,'Germany')+'<br>France · '+unitLine(s.units[b.to],s.owners[b.to]))+block(b.round?'Battle round '+b.round:'Land battle')+rollsBox(b.dice,playback);
+  if(playback){
+    $('action').innerHTML='<div class="roll-progress" id="rollStatus" role="status">Rolling '+stats[playback.types[playback.index]].name.toLowerCase()+'…</div>';
+    return info;
+  }
   if(b.step==='defense'){
     $('action').innerHTML=btn('Roll French defense','defend','primary');
     return info+'<p class="hint">All defending units in this round return fire, including those hit by Germany.</p>';
@@ -173,7 +233,9 @@ function bindHold(){
   button.onkeyup=e=>{if([' ','Enter'].includes(e.key))cancel();};
 }
 window.addEventListener('blur',()=>stopHold());
-document.addEventListener('visibilitychange',()=>{if(document.hidden)stopHold();});
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){stopHold();if(playback){endPlayback();render();}}
+});
 let panelView;
 function render(){
   stopHold();$('action').innerHTML='';
@@ -213,18 +275,18 @@ document.addEventListener('click',e=>{
       case 'add': plan(s,ui.from,ui.to,ui.units);ui=freshUI();break;
       case 'remove': plan(s,ui.from,ui.to,{inf:0,tank:0});ui=freshUI();break;
       case 'battle': chooseBattle(s,id);break;
-      case 'roll': ui.losses={inf:0,tank:0};rollAttack(s);break;
-      case 'defend': rollDefense(s);break;
+      case 'roll': ui.losses={inf:0,tank:0};rollAttack(s);beginRoll('attack');break;
+      case 'defend': rollDefense(s);beginRoll('defense');break;
       case 'loss': casualties(s,ui.losses);ui.losses={inf:0,tank:0};break;
       case 'retreat': retreat(s,id);break;
       case 'reset': showDialog('Restart exercise?','<p>This replaces the position and its local review on this device.</p>'+btn('Restart exercise','confirm-reset','danger'));break;
-      case 'confirm-reset': s=newGame();layoutSeed=newLayoutSeed();ui=freshUI();$('dialog').close();$('recenter').click();break;
+      case 'confirm-reset': endPlayback();s=newGame();layoutSeed=newLayoutSeed();ui=freshUI();$('dialog').close();$('recenter').click();break;
     }
   });
 });
 $('closeDialog').onclick=()=>$('dialog').close();
 $('journal').onclick=()=>showDialog('Exercise review',(s.phase==='review'?timeline():'<p>The record opens after the last battle. It includes committed attacks, dice, casualties, retreats, and control of each territory.</p>'));
-$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>The narrow olive hatch marks German control and the blue hatch marks French control. Tap a territory to read its controller. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><h3>Plan an attack</h3><p>German counters use '+unitCounter('inf')+' for infantry and '+unitCounter('tank')+' for armor. Adjust the quantity, then tap a highlighted French territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this exercise</h3><p>This local exercise covers adjacent land attacks with infantry and tanks. The starting forces are arranged for testing. The surrounding atlas is for exploration.</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+btn('Restart exercise','reset','danger'));
+$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>The narrow olive hatch marks German control and the blue hatch marks French control. Tap a territory to read its controller. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><h3>Plan an attack</h3><p>German counters use '+unitCounter('inf',undefined,'Germany')+' for infantry and '+unitCounter('tank',undefined,'Germany')+' for armor. Adjust the quantity, then tap a highlighted French territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this exercise</h3><p>This local exercise covers adjacent land attacks with infantry and tanks. The starting forces are arranged for testing. The surrounding atlas is for exploration.</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+btn('Restart exercise','reset','danger'));
 // Store the two panel dimensions separately so rotating the phone restores the last fit.
 function setupOrdersPanel(){
   const main=document.querySelector('main'),sheet=$('ordersPanel'),grip=$('resizePanel');
