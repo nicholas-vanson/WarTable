@@ -98,7 +98,7 @@ export async function atlas(onPick,onView,initial) {
     const [x,y]=project(lon,lat);
     if(kind==='city')labelGroup.append(node('circle',{cx:x,cy:y,r:2.4,fill:'#42463a'}));
     labelGroup.append(node('text',{x:kind==='city'?x+5:x,y:kind==='city'?y-4:y,'text-anchor':kind==='city'?'start':'middle',
-      fill:kind==='water'?'#506b6c':'#535747','font-family':'Georgia,serif','font-size':kind==='city'?11:kind==='water'?15:13,'letter-spacing':kind==='city'?0:kind==='water'?2:1.8,'font-style':kind==='city'||kind==='water'?'italic':'normal',
+      fill:kind==='water'?'#506b6c':'#535747','font-family':kind==='city'?'Arial, sans-serif':'Georgia,serif','font-weight':kind==='city'?600:400,'font-size':kind==='city'?7.2:kind==='water'?15:13,'letter-spacing':kind==='city'?0:kind==='water'?2:1.8,'font-style':kind==='water'?'italic':'normal',
       'paint-order':'stroke','stroke-width':1.8,stroke:kind==='water'?'#bacbcc':'#dcd9c1'},name));
   }
   const landLabels=buildLandLabels(map,labelGroup);
