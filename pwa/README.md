@@ -31,6 +31,8 @@ Open `http://localhost:8080/` on that machine. Service workers require HTTPS or 
 
 The border band follows the current controller of each of the four playable territories. Germany uses olive hatching and France uses blue hatching in the opposite direction. Tap a territory to read the controller in the map footer. A capture updates the band when the battle resolves.
 
+Home counters get slightly different positions near each territory’s center in each new exercise. Their arrangement is saved with the local match. Selecting a counter draws a short country-colored pencil loop. Curved order arrows lead to incoming counters on each origin’s approach to the defenders. The combat model pools losses by unit type. When two origins contribute that type, the map distributes its surviving icons proportionally between those approaches.
+
 Tap numbered water to inspect a sea zone and its adjacent zone numbers, including connections beyond the atlas. The dashed dividers and hit areas are original drawings fitted to this coast. The local exercise contains 25 visible zones and supports land combat. Sea-zone numbers and adjacencies follow Global 1940 Second Edition. To regenerate the chart, use Python with Shapely and run `python3 tools/draw-sea-zones.py`. The builder checks shared edges and playable coastal contacts against the project's Global 1940 connection data.
 
 ## Staff Map artwork

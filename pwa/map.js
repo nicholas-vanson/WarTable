@@ -6,28 +6,98 @@ function node(tag,attrs,text=''){
   el.textContent=text;return el;
 }
 const project=(lon,lat)=>[(lon+13)*34,(69-lat)*52];
-const position=id=>project(places[id].lon,places[id].lat);
-// Follow the actual border crossing on the atlas rather than cutting across a third territory.
-const crossings={
-  'hb-nb':[[4.4,51],[3.3,50.8],[2.35,50.24],[1.15,49.65],[.2,48.85]],
-  'wg-fr':[[7.4,49.45],[6.9,49.14]]
+// Hand-spaced seats in the projected territory interiors. Arrival seats fan out from
+// the actual approach to the defenders, with a separate pair for each legal origin.
+const formations={
+  hb:{center:[610,926],home:{inf:[602,952],tank:[616,899]}},
+  wg:{center:[716,932],home:{inf:[703,957],tank:[729,900]}},
+  nb:{center:[421,1100],home:{inf:[387,1094],tank:[427,1150]},
+    hb:{inf:[454,1042],tank:[443,1097]}},
+  fr:{center:[571,1087],home:{inf:[536,1103],tank:[594,1133]},
+    hb:{inf:[549,1021],tank:[609,1038]},wg:{inf:[670,1053],tank:[656,1105]}}
 };
-// Stable geographic positions let a split stack stay in place as its count changes.
-const stackSites = {
-  hb: {home:{inf:[4.4,50.6],tank:[5.5,52.15]}},
-  wg: {home:{inf:[7.55,50.25],tank:[9.3,52.1]}},
-  nb: {home:{inf:[-1.5,48.35],tank:[-.55,46.65]}, incoming:{inf:[.25,48.95],tank:[-1.42,47.57]}},
-  fr: {home:{inf:[2.4,47.95],tank:[5.3,48.78]}, incoming:{inf:[3.45,49.75],tank:[4.1,47.2]}}
+const position=id=>formations[id].center;
+// Bézier handles are surveyed in map coordinates. The two Normandy approaches share
+// a narrow coastal passage, then diverge around the arriving infantry and armor.
+const approaches={
+  'hb-fr':{inf:[[607,982],[575,990]],tank:[[648,935],[640,996]]},
+  'wg-fr':{inf:[[719,987],[719,1025]],tank:[[756,977],[712,1098]]},
+  'hb-nb':{
+    inf:[[580,926],[553,944],[526,971], [506,991],[482,1000]],
+    tank:[[590,922],[543,943],[517,969], [473,1024],[407,1028]]
+  }
 };
-function drawStack(parent,id,type,number,nation,role,scale,detailed,selected){
-  const [x,y]=project(...stackSites[id][role][type]);
+// Each of the eight home counters gets four saved random bits. Keep the small jitter
+// within the tested interior margin. Inbound seats stay open for every approach.
+function homeOffsets(seed){
+  const offsets={};
+  for(const id of Object.keys(formations)){
+    offsets[id]={};
+    for(const type of types){
+      offsets[id][type]=[(seed&3)*8/3-4,((seed>>>2)&3)*8/3-4];
+      seed>>>=4;
+    }
+  }
+  return offsets;
+}
+function seat(id,group,type,spread,offsets){
+  const center=position(id);
+  const shift=group==='home'?offsets[id][type]:[0,0];
+  return formations[id][group][type].map((v,i)=>center[i]+spread*(v+shift[i]-center[i]));
+}
+function movementArc(from,to,type,spread,tokenScale,offsets){
+  const start=seat(from,'home',type,spread,offsets),end=seat(to,from,type,spread,offsets);
+  const handles=approaches[from+'-'+to][type];
+  function atCounterEdge(point,handle){
+    const dx=handle[0]-point[0],dy=handle[1]-point[1];
+    const t=Math.min(.9,1/Math.max(Math.abs(dx)/(22*tokenScale),Math.abs(dy)/(14*tokenScale)));
+    return [point[0]+dx*t,point[1]+dy*t];
+  }
+  const tail=atCounterEdge(start,handles[0]),tip=atCounterEdge(end,handles.at(-1));
+  return 'M'+tail.join(' ')+' C'+[...handles,tip].map(p=>p.join(' ')).join(' ');
+}
+
+// Battles pool casualties by type. Apportion the surviving counters to their committed
+// approaches for display, preserving the exact total without assigning a new game rule.
+function arrivals(game,to){
+  const orders=game.orders.filter(o=>o.to===to);
+  if(game.phase==='plan')return orders;
+  const battle=game.battles.find(b=>b.to===to&&!b.resolved);
+  if(!battle)return [];
+  const groups=orders.map(o=>({from:o.from,units:{}}));
+  for(const type of types){
+    const total=orders.reduce((n,o)=>n+o.units[type],0);
+    if(!total)continue;
+    const shares=orders.map((o,i)=>{
+      const share=battle.attack[type]*o.units[type]/total;
+      groups[i].units[type]=Math.floor(share);
+      return {i,remainder:share-Math.floor(share)};
+    });
+    const assigned=groups.reduce((n,g)=>n+g.units[type],0);
+    shares.sort((a,b)=>b.remainder-a.remainder);
+    for(const {i} of shares.slice(0,battle.attack[type]-assigned))groups[i].units[type]++;
+  }
+  return groups;
+}
+const pencilLine='M-24 -5 C-21 -14 -4 -17 10 -16 C23 -15 30 -8 27 2 C25 12 9 16 -5 15 C-19 15 -29 10 -28 2 C-28 -5 -23 -11 -15 -14';
+function pencilMark(nation){
+  const g=node('g',{'aria-hidden':'true','pointer-events':'none',fill:'none',
+    stroke:nation==='Germany'?'#334334':'#294c60','stroke-linecap':'round',filter:'url(#pencil-grain)',mask:'url(#pencil-reveal)'});
+  g.append(node('path',{d:pencilLine,'stroke-width':1.6,opacity:.84,'stroke-dasharray':'6 .35 2 .3 9 .55'}),
+    node('path',{d:pencilLine,transform:'translate(.45 .5) scale(1.025 .96)','stroke-width':.75,opacity:.66,'stroke-dasharray':'2 .55 .6 .5 5 .9'}),
+    node('path',{d:pencilLine,transform:'translate(-.5 .2) scale(1.04 1.04)','stroke-width':.65,opacity:.52,'stroke-dasharray':'.2 1.1 .5 1.7'}));
+  return g;
+}
+function drawStack(parent,id,type,number,nation,role,at,tokenScale,detailed,selected,origin){
+  const [x,y]=at;
   const unitInk=nation==='Germany'?'#334334':'#294c60';
   const ink=selected?'#fff9df':unitInk;
   const paper=selected?'#a4441b':(nation==='Germany'?'#e6dfbd':'#d8e6e5');
   const name=type==='inf'?'Infantry':'Armor';
-  const label=places[id].name+' · '+nation+' · '+name+' × '+number;
+  const label=places[id].name+' · '+nation+' · '+name+' × '+number+(origin?' from '+places[origin].name:'');
   const stack=node('g',{'data-place':id,'data-unit':type,'data-count':number,'data-role':role,
-    'aria-label':label,cursor:'pointer',transform:'translate('+x+' '+y+') scale('+1/scale+')'});
+    'aria-label':label,cursor:'pointer',transform:'translate('+x+' '+y+') scale('+tokenScale+')'});
+  if(origin)stack.dataset.origin=origin;
   stack.append(node('title',{},label),node('rect',{x:-22,y:-22,width:44,height:44,fill:'transparent'}));
   stack.append(node('rect',{x:-19,y:-11,width:38,height:22,rx:1,fill:paper,stroke:selected?'#753515':unitInk,'stroke-width':1.6}));
   stack.append(node('rect',{x:-15,y:-6,width:16,height:12,fill:'none',stroke:ink,'stroke-width':1.3}));
@@ -160,6 +230,22 @@ export async function atlas(onPick,onView,initial) {
   }
   const detailPlate=map.querySelector('#detailPlate');
   const landLabels=buildLandLabels(map,labelGroup);
+  const selection=map.querySelector('#selection'),reveal=map.querySelector('#pencil-stroke');
+  reveal.setAttribute('d',pencilLine);
+  let selectionKey='',layoutSeed,offsets;
+  function showSelection(key,nation,at,tokenScale){
+    if(key!==selectionKey){
+      selection.replaceChildren();
+      reveal.getAnimations().forEach(animation=>animation.cancel());
+      if(key){
+        selection.append(pencilMark(nation));
+        if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+          reveal.animate([{strokeDashoffset:1},{strokeDashoffset:0}],{duration:480,easing:'ease-out'});
+      }
+      selectionKey=key;
+    }
+    if(key)selection.setAttribute('transform','translate('+at.join(' ')+') scale('+tokenScale+')');
+  }
   let game=null,focus=null,target=null,selectedType=null;
   let view=initial&&[initial.x,initial.y,initial.z].every(Number.isFinite)?{...initial}:{x:590,y:985,z:1};
   const pointers=new Map();let gesture=null;
@@ -217,35 +303,44 @@ export async function atlas(onPick,onView,initial) {
       region.setAttribute('stroke',legal?'#895a31':'none');
       region.setAttribute('stroke-width','2');
     }
+    const compact=view.z<.66;
+    // Taper counter size at the widest tactical scales; keep the interior seats stable
+    // while panning, and tighten their spacing at close zoom.
+    const tokenScale=Math.min(1/scale,1.2);
+    const spread=bound(1/(1.2*scale),.66,1);
     for(const order of game.orders){
-      const via=(crossings[order.from+'-'+order.to]||[]).map(([lon,lat])=>project(lon,lat));
       for(const type of types.filter(type=>order.units[type]>0)){
-        const start=project(...stackSites[order.from].home[type]);
-        const [tx,ty]=project(...stackSites[order.to].incoming[type]);
-        const points=[start,...via];
-        const [lastX,lastY]=points.at(-1);
-        const dx=tx-lastX,dy=ty-lastY,dist=Math.hypot(dx,dy);
-        const trim=Math.min(dist*.25,22/scale);
-        routes.append(node('path',{d:'M'+points.map(pt=>pt.join(' ')).join(' L')+' L'+(tx-dx*trim/dist)+' '+(ty-dy*trim/dist),'stroke':'#99432e','stroke-width':2/scale,'stroke-dasharray':game.phase==='plan'?(6/scale)+' '+(3/scale):'none','marker-end':'url(#arrow)',fill:'none'}));
+        routes.append(node('path',{d:movementArc(order.from,order.to,type,spread,tokenScale,offsets),
+          'data-from':order.from,'data-to':order.to,'data-unit':type,
+          stroke:'#99432e','stroke-width':2/scale,'stroke-linecap':'round',
+          'stroke-dasharray':game.phase==='plan'?(6/scale)+' '+(4/scale):'none','marker-end':'url(#arrow)',fill:'none'}));
       }
     }
-    const compact=view.z<.66;
+    let selectedAt=null;
     for(const id of Object.keys(places)){
-      const [x,y]=position(id),friendly=game.owners[id]==='Germany';
+      const [x,y]=position(id),nation=game.owners[id],friendly=nation==='Germany';
       const units=game.phase==='plan'&&friendly?available(game,id):game.units[id];
-      const color=friendly?'#434f3b':'#3f5964';
       if(compact){
-        forces.append(node('circle',{cx:x,cy:y,r:7/scale,fill:color,stroke:'#f7f2df','stroke-width':1.6/scale,'data-place':id}));
+        forces.append(node('circle',{cx:x,cy:y,r:7/scale,fill:friendly?'#434f3b':'#3f5964',stroke:'#f7f2df','stroke-width':1.6/scale,'data-place':id}));
         continue;
       }
-      const battle=game.battles.find(b=>b.to===id&&!b.resolved);
-      const incoming=game.phase==='plan'?game.orders.filter(o=>o.to===id)
-        .reduce((sum,o)=>({inf:sum.inf+o.units.inf,tank:sum.tank+o.units.tank}),{inf:0,tank:0}):battle?.attack;
+      const detailed=view.z>=1.55;
       for(const type of types){
-        if(units[type])drawStack(forces,id,type,units[type],game.owners[id],'home',scale,view.z>=1.55,id===focus&&type===selectedType);
-        if(incoming?.[type])drawStack(forces,id,type,incoming[type],'Germany','incoming',scale,view.z>=1.55,false);
+        if(!units[type])continue;
+        const at=seat(id,'home',type,spread,offsets),selected=id===focus&&type===selectedType;
+        drawStack(forces,id,type,units[type],nation,'home',at,tokenScale,detailed,selected);
+        if(selected)selectedAt=at;
+      }
+      for(const group of arrivals(game,id)){
+        for(const type of types){
+          if(group.units[type])drawStack(forces,id,type,group.units[type],'Germany','incoming',
+            seat(id,group.from,type,spread,offsets),tokenScale,detailed,false,group.from);
+        }
       }
     }
+    // The overlay survives frequent force-layer redraws, so pan or quantity changes
+    // reposition the mark without restarting the pencil.
+    showSelection(selectedAt?focus+'-'+selectedType:'',game.owners[focus],selectedAt,tokenScale);
   }
   function zoom(factor,px=map.clientWidth/2,py=map.clientHeight/2) {
     const old=metrics();const wx=view.x+(px-old.w/2)/old.scale,wy=view.y+(py-old.h/2)/old.scale;
@@ -260,7 +355,20 @@ export async function atlas(onPick,onView,initial) {
   map.addEventListener('pointerdown',e=>{
     if(e.button!==0)return;
     pointers.set(e.pointerId,coords(e));map.setPointerCapture(e.pointerId);
-    const hit=e.target.closest('[data-place],[data-sea]')?.dataset;
+    let hit=e.target.closest('[data-place],[data-sea]')?.dataset;
+    // At wider zoom the printed faces shrink. Give taps in the surrounding territory
+    // a 44 px target, resolving shared space to the nearest counter of that territory.
+    if(hit?.place&&!hit.unit){
+      let nearest=Infinity;
+      for(const stack of forces.querySelectorAll('g[data-unit]')){
+        if(stack.dataset.place!==hit.place)continue;
+        const {e:x,f:y}=stack.getScreenCTM(),dx=e.clientX-x,dy=e.clientY-y;
+        const distance=dx*dx+dy*dy;
+        if(Math.abs(dx)<=22&&Math.abs(dy)<=22&&distance<nearest){
+          hit=stack.dataset;nearest=distance;
+        }
+      }
+    }
     const v=basis();gesture={...v,firstX:v.x,firstY:v.y,moved:v.n>1,id:hit?.place,type:hit?.unit,sea:hit?.sea};
   });
   map.addEventListener('pointermove',e=>{
@@ -299,5 +407,8 @@ export async function atlas(onPick,onView,initial) {
   button('recenter',()=>{view={x:590,y:985,z:1};});
   button('overview',()=>{const m=metrics();view={x:1003,y:858,z:Math.min(m.w/2006,m.h/1716)/m.base};});
   new ResizeObserver(render).observe(map);
-  return (s,id,to,type)=>{game=s;focus=id;target=to;selectedType=type;render();};
+  return (s,id,to,type,seed)=>{
+    if(seed!==layoutSeed){offsets=homeOffsets(seed);layoutSeed=seed;}
+    game=s;focus=id;target=to;selectedType=type;render();
+  };
 }

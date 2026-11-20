@@ -12,10 +12,18 @@
 <main>
 <section class="board" aria-label="European staff map">
 <svg id="map" role="group" aria-label="Pan or pinch the map. Select a German force and a French destination." tabindex="0">
-<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0 10 5 0 10 2 5Z" fill="#9b422e"/></marker></defs>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0 10 5 0 10 2 5Z" fill="#9b422e"/></marker>
+<filter id="pencil-grain" filterUnits="userSpaceOnUse" x="-35" y="-24" width="70" height="48" color-interpolation-filters="sRGB">
+<feTurbulence type="fractalNoise" baseFrequency=".75 .95" numOctaves="2" seed="17"/>
+<feColorMatrix result="grain" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  3.1 0 0 0 -.8"/>
+<feComposite in="SourceGraphic" in2="grain" operator="in"/>
+</filter>
+<mask id="pencil-reveal" maskUnits="userSpaceOnUse" x="-35" y="-24" width="70" height="48">
+<path id="pencil-stroke" fill="none" stroke="white" stroke-width="7" stroke-linecap="round" pathLength="1" stroke-dasharray="1 1"/>
+</mask></defs>
 <image href="./assets/staff-overview.webp" width="2006" height="1716" pointer-events="none"/>
 <image id="detailPlate" display="none" href="./assets/staff-map.svg" width="2006" height="1716" pointer-events="none"/>
-<g id="seaZones"></g><g id="controlBands" pointer-events="none"></g><g id="regions"></g><g id="labels" pointer-events="none"></g><g id="routes" pointer-events="none"></g><g id="forces"></g>
+<g id="seaZones"></g><g id="controlBands" pointer-events="none"></g><g id="regions"></g><g id="labels" pointer-events="none"></g><g id="routes" pointer-events="none"></g><g id="forces"></g><g id="selection" pointer-events="none"></g>
 </svg>
 <div class="navbox"><button id="zoomIn" aria-label="Zoom in">+</button><button id="zoomOut" aria-label="Zoom out">−</button><button id="recenter" aria-label="Center on the western front">⌖</button><button id="overview" aria-label="Show entire theater">⤢</button></div>
 <div class="map-foot"><span class="north">↑ N</span><span id="scale"></span><span id="controlKey"><i class="ink-de"></i>Germany <i class="ink-fr"></i>France</span><span id="mapIntel" role="status"></span><span id="coordinates"></span></div>
