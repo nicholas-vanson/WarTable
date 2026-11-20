@@ -3,12 +3,15 @@ import base64
 from io import BytesIO
 from pathlib import Path
 import random
+from contextlib import contextmanager
+import shutil
 import xml.etree.ElementTree as ET
 
 import contourpy
 import numpy as np
-from PIL import Image
-from scipy.ndimage import zoom
+from PIL import Image, ImageDraw, ImageOps
+from playwright.sync_api import sync_playwright
+from scipy.ndimage import distance_transform_edt, zoom
 from matplotlib.path import Path as PlotPath
 
 ART = Path(__file__).resolve().parent / 'art'
@@ -28,52 +31,125 @@ def project(lon, lat):
     return (lon+13)*34, (69-lat)*52
 
 
-def bitmap(image):
+def bitmap(image, quality=90, alpha_quality=100):
     data = BytesIO()
-    image.save(data, 'WEBP', quality=90, method=6)
+    image.save(data, 'WEBP', quality=quality, alpha_quality=alpha_quality, method=4)
     return 'data:image/webp;base64,'+base64.b64encode(data.getvalue()).decode()
 
 
-def join_edges(rgb):
-    # Wrap the swatch through a low-contrast seam to preserve parcel shapes and compass direction.
-    height,width,_=rgb.shape
-    overlap=width//6
-    left=rgb[:,:overlap].astype(float)
-    right=rgb[:,width-overlap:].astype(float)
-    cost=np.mean((left-right)**2,axis=2)
-    parents=np.zeros((height,overlap),dtype=int)
-    totals=cost[0].copy()
-    for y in range(1,height):
-        padded=np.pad(totals,(1,1),constant_values=np.inf)
-        choices=np.stack([padded[i:i+overlap] for i in range(3)])
-        parents[y]=choices.argmin(axis=0)-1
-        totals=cost[y]+choices.min(axis=0)
-    x=int(totals.argmin())
-    result=rgb[:,:width-overlap].copy()
-    for y in reversed(range(height)):
-        result[y,:x]=right[y,:x]
-        x+=parents[y,x]
-    return result
+def land_silhouette(path):
+    # Paint the same rings as the vector coast, from continents down to their holes and islands.
+    mask = Image.new('L', (WIDTH, HEIGHT))
+    draw = ImageDraw.Draw(mask)
+    rings = []
+    for ring in path.strip('MZ').split('ZM'):
+        coords = np.fromstring(ring.replace(',', ' '), sep=' ').reshape(-1, 2)
+        x, y = coords.T
+        area = np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))
+        rings.append((area, coords))
+    rings.sort(key=lambda ring: abs(ring[0]), reverse=True)
+    exterior = np.sign(rings[0][0])
+    for area, coords in rings:
+        draw.polygon([tuple(pt) for pt in coords], fill=255 if np.sign(area) == exterior else 0)
+    return mask
 
 
-def texture(name, column, row, pitch, paper, tint, angle):
-    w,h=sheet.size
-    piece=sheet.crop((column*w//2+5,row*h//2+5,(column+1)*w//2-5,(row+1)*h//2-5))
-    piece=Image.blend(piece,Image.new('RGB',piece.size,paper),tint)
-    sample=join_edges(np.asarray(piece))
-    sample=join_edges(sample.transpose(1,0,2)).transpose(1,0,2)
-    pattern=element(defs,'pattern',id=name,patternUnits='userSpaceOnUse',width=pitch,
-                    height=pitch,patternTransform=f'rotate({angle})')
-    if name == 'woods':
-        # Expose the field or upland through gaps in the original painted tree canopy.
-        green = sample[:, :, 1].astype(float)
-        coverage = np.clip((200 - green) / 47, 0, 1)
-        alpha = np.rint(255 * coverage**2 * (3 - 2 * coverage)).astype('uint8')
-        sample = np.dstack((sample, alpha))
-    else:
-        element(pattern,'rect',width=pitch,height=pitch,fill=paper)
-    element(pattern,'image',width=pitch+.03,height=pitch+.03,
-            href=bitmap(Image.fromarray(sample)),preserveAspectRatio='none')
+def scatter(width, height, pitch, spacing, is_water, brush_rng):
+    stride = pitch * spacing
+    stamps = []
+    for row, y in enumerate(np.arange(-stride, height+stride, stride*.87)):
+        for x in np.arange(-stride, width+stride, stride):
+            cx = x + (row % 2)*stride/2 + brush_rng.uniform(-.21, .21)*stride
+            cy = y + brush_rng.uniform(-.21, .21)*stride
+            bearing = brush_rng.uniform(-8, 8) if is_water else brush_rng.uniform(-180, 180)
+            sx = pitch * brush_rng.uniform(.95, 1.25) * brush_rng.choice((-1, 1))
+            sy = pitch * brush_rng.uniform(.95, 1.25)
+            stamps.append((brush_rng.randrange(4), cx, cy, bearing, sx, sy))
+    brush_rng.shuffle(stamps)
+    return stamps
+
+
+def feather(size, phase):
+    v, u = np.mgrid[-1:1:complex(size), -1:1:complex(size)]
+    theta = np.arctan2(v, u)
+    edge = .94 + .035*np.cos(3*theta+phase) + .025*np.sin(5*theta-phase)
+    alpha = np.clip((edge - np.hypot(u, v))/.23, 0, 1)
+    return alpha**2 * (3 - 2*alpha)
+
+
+def paint_material(parent, name, column, row, pitch, paper, tint, footprint, seed):
+    # Quilt small samples at print resolution first. Only the larger patches need drawing on the phone.
+    brush_rng = random.Random(seed)
+    width, height = sheet.size
+    quadrant = sheet.crop((column*width//2+5, row*height//2+5,
+                           (column+1)*width//2-5, (row+1)*height//2-5))
+    quadrant = Image.blend(quadrant, Image.new('RGB', quadrant.size, paper), tint)
+    paper_value = np.asarray(quadrant).mean()
+    size = min(quadrant.size) * 2 // 3
+    brushes = []
+    for _ in range(4):
+        x = brush_rng.randrange(quadrant.width - size + 1)
+        y = brush_rng.randrange(quadrant.height - size + 1)
+        sample = np.asarray(quadrant.crop((x, y, x+size, y+size)))
+        alpha = feather(size, brush_rng.uniform(0, 2*np.pi))
+        if name == 'sea':
+            ink = sample.mean(axis=2) - paper_value
+            alpha *= np.clip(abs(ink)/115, 0, .25)
+            sample = np.where(ink[:, :, None] > 0, [220, 226, 210], [51, 87, 107])
+        brushes.append(Image.fromarray(np.dstack((sample, np.rint(255*alpha))).astype('uint8')))
+
+    # Reuse the pigment, but never tile a square. Both levels vary their crop, scale and bearing.
+    pixels = 1024
+    span = pitch * 3.4
+    for i in range(4):
+        patch = Image.new('RGBA', (pixels, pixels), (0, 0, 0, 0) if name == 'sea' else paper)
+        for j, cx, cy, angle, sx, sy in scatter(pixels, pixels, pixels/3.4, .49, name == 'sea', brush_rng):
+            brush = brushes[j].resize((round(abs(sx)), round(sy)), Image.Resampling.BICUBIC)
+            if sx < 0:
+                brush = ImageOps.mirror(brush)
+            brush = brush.rotate(angle, Image.Resampling.BICUBIC, expand=True)
+            patch.alpha_composite(brush, (round(cx-brush.width/2), round(cy-brush.height/2)))
+        alpha = feather(pixels, brush_rng.uniform(0, 2*np.pi)) * np.asarray(patch.getchannel('A'))
+        if name == 'woods':
+            # Lift the pale gaps in the canopy so the underlying parcels show through.
+            green = np.asarray(patch.getchannel('G'), dtype=float)
+            coverage = np.clip((198 - green)/45, 0, 1)
+            alpha *= coverage**2 * (3 - 2*coverage)
+        patch.putalpha(Image.fromarray(np.rint(alpha).astype('uint8')))
+        element(defs, 'image', id=f'{name}-{i}', x=-.5, y=-.5, width=1, height=1,
+                preserveAspectRatio='none', href=bitmap(patch, quality=78, alpha_quality=64))
+
+    # Cull only distant, invisible patches. The registered vector paths still define exact edges.
+    footprint = footprint.resize(((WIDTH+7)//8, (HEIGHT+7)//8), Image.Resampling.BOX)
+    for i, x, y, bearing, sx, sy in scatter(WIDTH, HEIGHT, span, .70 if name == 'woods' else .47,
+                                            name == 'sea', brush_rng):
+        radius = span*.90
+        if footprint.crop((int((x-radius)//8), int((y-radius)//8),
+                           int((x+radius)//8)+1, int((y+radius)//8)+1)).getbbox():
+            transform = f'translate({x:.1f} {y:.1f}) rotate({bearing:.1f}) scale({sx:.1f} {sy:.1f})'
+            element(parent, 'use', href=f'#{name}-{i}', transform=transform)
+
+
+def sea_plate(ground_mask, heights):
+    # Ground distance ties the nearshore wash to even the smallest vector headlands.
+    depth = np.maximum(-np.asarray(Image.fromarray(heights).resize(
+        (WIDTH, HEIGHT), Image.Resampling.BILINEAR)), 0)
+    offshore = distance_transform_edt(np.asarray(ground_mask) == 0)
+    depth *= 1 - np.exp(-offshore / 4.5)
+    stops = [0, 8, 25, 70, 200, 1000, 4500]
+    inks = np.array([[196,207,188], [178,201,190], [151,186,185], [125,164,178],
+                     [107,148,168], [95,133,156], [82,116,142]])
+    rgb = np.stack([np.interp(depth, stops, channel) for channel in inks.T], axis=2)
+    element(atlas, 'image', width=WIDTH, height=HEIGHT, href=bitmap(Image.fromarray(rgb.astype('uint8'))))
+    paint_material(atlas, 'sea', 1, 1, 74, '#789eb5', .15, ImageOps.invert(ground_mask), 1941)
+
+
+def sea_contours(parent, heights):
+    soundings = smooth_grid(heights)
+    for meters in (20, 50, 100, 200, 1000, 2000):
+        lines = [path_data(line) for line in soundings.lines(-meters) if len(line) >= 12]
+        element(parent, 'path', d=''.join(lines), fill='none', stroke='#557d89',
+                stroke_width=.30, opacity=.38)
 
 
 def path_data(points):
@@ -90,8 +166,48 @@ def smooth_grid(values):
                y=np.linspace(0,HEIGHT,fine.shape[0]),z=fine,fill_type='OuterOffset')
 
 
+@contextmanager
+def rasterize(art):
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=shutil.which('chromium'))
+        page = browser.new_page()
+        svg = 'data:image/svg+xml;base64,' + base64.b64encode(ET.tostring(art)).decode()
+        page.evaluate("""async src => {
+            window.plate = new Image();
+            plate.src = src;
+            await plate.decode();
+        }""", svg)
+
+        def crop(x, y, w, h, scale, quality):
+            return page.evaluate("""([x,y,w,h,scale,quality]) => {
+                const canvas = document.createElement('canvas');
+                canvas.width = w*scale;
+                canvas.height = h*scale;
+                canvas.getContext('2d').drawImage(plate, x,y,w,h, 0,0,canvas.width,canvas.height);
+                return canvas.toDataURL('image/webp', quality);
+            }""", [x, y, w, h, scale, quality])
+
+        yield crop
+        browser.close()
+
+
+def bake_pigment(art):
+    # Paint resolution follows the source brush detail. Separate tiles let the phone draw only
+    # the visible terrain at close zoom. Overlap one map unit to avoid fractional-pixel seams.
+    tiles = []
+    with rasterize(art) as crop:
+        for y in range(0, HEIGHT, 288):
+            for x in range(0, WIDTH, 336):
+                w, h = min(337, WIDTH-x), min(289, HEIGHT-y)
+                tiles.append((x, y, w, h, crop(x, y, w, h, 5, .78)))
+    for layer in list(art):
+        art.remove(layer)
+    for x, y, w, h, data in tiles:
+        element(art, 'image', x=x, y=y, width=w, height=h, href=data)
+
+
 def woodland_mask():
-    # The mask carries only density. Individual crowns keep the resolution of the painted swatch.
+    # Density fades independently from the higher-resolution painted tree crowns.
     xs = np.arange(WIDTH) + .5
     ys = np.arange(HEIGHT) + .5
     noise_rng = np.random.default_rng(1940)
@@ -116,8 +232,7 @@ def woodland_mask():
 
 
 def contours():
-    altitude=np.load(ART/'europe-relief-06m.npz')['half_meters']*.5
-    cg=smooth_grid(altitude)
+    cg=smooth_grid(heights)
     # Regional generalization: fine lowland intervals and fewer lines in the Alps.
     for level in (50,100,200,400,600,1000,1500,2000,2500,3000):
         lines=[line for line in cg.lines(level) if len(line)>=5]
@@ -159,27 +274,36 @@ source=ET.parse(ART/'geography.svg').getroot()
 atlas=ET.Element('{%s}svg'%NS,{'viewBox':f'0 0 {WIDTH} {HEIGHT}','width':str(WIDTH),'height':str(HEIGHT)})
 defs=element(atlas,'defs')
 sheet=Image.open(ART/'staff-swatches.webp').convert('RGB')
-texture('fields',0,0,51,'#efe9d1',.37,-11)
-texture('woods',1,0,40,'#a9b994',.24,7)
-texture('upland',0,1,48,'#d8d6bb',.37,-7)
-texture('sea',1,1,39,'#789eb5',.30,0)
-
 geography=list(source.findall('{%s}path'%NS))
 land_path=next(p.get('d') for p in geography if p.get('fill')=='#e4dec4')
 element(element(defs,'clipPath',id='land'),'path',d=land_path)
-element(atlas,'rect',width=WIDTH,height=HEIGHT,fill='url(#sea)')
-element(atlas,'path',d=land_path,fill='none',stroke='#b8c7b4',stroke_width=4.5,opacity=.80)
+land_mask = land_silhouette(land_path)
+heights = np.load(ART/'europe-relief-06m.npz')['half_meters'].astype('float32') * .5
+sea_plate(land_mask, heights)
+element(atlas,'path',d=land_path,fill='none',stroke='#e1dcc1',stroke_width=1.9,opacity=.92)
 ground=element(atlas,'g',clip_path='url(#land)')
-element(ground,'rect',width=WIDTH,height=HEIGHT,fill='url(#fields)')
-height_data=np.load(ART/'europe-relief-06m.npz')['half_meters']
-uplands=smooth_grid(height_data*.5)
+element(ground,'rect',width=WIDTH,height=HEIGHT,fill='#e7dfc5')
+paint_material(ground, 'fields', 0, 0, 58, '#efe9d1', .37, land_mask, 1942)
+uplands=smooth_grid(heights)
 polygons,cuts=uplands.filled(460,10000)
 upland_paths=[path_data(poly[a:b])+'Z' for poly,offsets in zip(polygons,cuts) for a,b in zip(offsets[:-1],offsets[1:])]
-element(ground,'path',d=''.join(upland_paths),fill='url(#upland)',fill_rule='evenodd')
+element(element(defs, 'clipPath', id='high-ground'), 'path', d=''.join(upland_paths), clip_rule='evenodd')
+high_ground = element(ground, 'g', clip_path='url(#high-ground)')
+element(high_ground, 'rect', width=WIDTH, height=HEIGHT, fill='#d8d6bb')
+hill_mask = Image.fromarray((heights > 430).astype('uint8') * 255).resize((WIDTH, HEIGHT))
+paint_material(high_ground, 'upland', 0, 1, 60, '#d8d6bb', .37, hill_mask, 1943)
 woodland_mask()
-element(ground,'rect',width=WIDTH,height=HEIGHT,fill='url(#woods)',mask='url(#woodland-density)')
+woods = element(ground, 'g', mask='url(#woodland-density)')
+paint_material(woods, 'woods', 1, 0, 51, '#a9b994', .24, land_mask, 1944)
 relief=Image.open(ART/'relief.webp').convert('RGBA')
 element(ground,'image',href=bitmap(relief),width=WIDTH,height=HEIGHT,opacity=.58)
+bake_pigment(atlas)
+defs = element(atlas, 'defs')
+element(element(defs, 'clipPath', id='land'), 'path', d=land_path)
+element(element(defs, 'clipPath', id='water'), 'path',
+        d=f'M0,0H{WIDTH}V{HEIGHT}H0Z'+land_path, clip_rule='evenodd')
+sea_contours(element(atlas, 'g', clip_path='url(#water)'), heights)
+ground = element(atlas, 'g', clip_path='url(#land)')
 label_sites=[]
 contours()
 # Generalized main roads in the western exercise; bends are independent of parcel edges.
@@ -228,3 +352,8 @@ for source_path in geography:
             attrs.update(stroke='#454943',opacity='.93',**{'stroke-width':'1.85','stroke-dasharray':'.36 1.65'})
     ET.SubElement(atlas,'{%s}path'%NS,attrs)
 ET.ElementTree(atlas).write(OUTPUT, encoding='utf-8')
+
+# At overview scale the whole theater fits in a single draw.
+with rasterize(atlas) as crop:
+    overview = crop(0, 0, WIDTH, HEIGHT, 2, .81)
+    OUTPUT.with_name('staff-overview.webp').write_bytes(base64.b64decode(overview.split(',')[1]))

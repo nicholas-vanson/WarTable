@@ -101,6 +101,7 @@ export async function atlas(onPick,onView,initial) {
       fill:kind==='water'?'#506b6c':'#535747','font-family':kind==='city'?'Arial, sans-serif':'Georgia,serif','font-weight':kind==='city'?600:400,'font-size':kind==='city'?7.2:kind==='water'?15:13,'letter-spacing':kind==='city'?0:kind==='water'?2:1.8,'font-style':kind==='water'?'italic':'normal',
       'paint-order':'stroke','stroke-width':1.8,stroke:kind==='water'?'#bacbcc':'#dcd9c1'},name));
   }
+  const detailPlate=map.querySelector('#detailPlate');
   const landLabels=buildLandLabels(map,labelGroup);
   let game=null,focus=null,target=null,selectedType=null;
   let view=initial&&[initial.x,initial.y,initial.z].every(Number.isFinite)?{...initial}:{x:590,y:985,z:1};
@@ -113,6 +114,8 @@ export async function atlas(onPick,onView,initial) {
   }
   function render(){
     const {vw,vh,scale}=metrics();
+    const display=scale*window.devicePixelRatio>2?'inline':'none';
+    if(detailPlate.getAttribute('display')!==display)detailPlate.setAttribute('display',display);
     view.x=vw>=2006?1003:bound(view.x,vw/2,2006-vw/2);
     view.y=vh>=1716?858:bound(view.y,vh/2,1716-vh/2);
     map.setAttribute('viewBox',[view.x-vw/2,view.y-vh/2,vw,vh].join(' '));
