@@ -239,13 +239,16 @@ function frontTransform(to,group,spread,tokenScale){
   const along=spread/57,across=side*tokenScale/length;
   return 'matrix('+[dx*along,dy*along,dy*across,-dx*across,x,y].join(' ')+')';
 }
-function drawStack(parent,id,type,number,nation,role,at,tokenScale,detailed,selected,origin){
+function drawStack(game,parent,id,type,number,nation,role,at,tokenScale,detailed,selected,origin){
   const [x,y]=at;
   const unitInk=nation==='Germany'?'#334334':'#294c60';
   const ink=selected?'#fff9df':unitInk;
   const paper=selected?selectionOrange:(nation==='Germany'?'#e6dfbd':'#d8e6e5');
   const name=type==='inf'?'Infantry':'Armor';
-  const label=places[id].name+' · '+nation+' · '+name+' × '+number+(origin?' from '+places[origin].name:'');
+  // After capture the counter represents the surviving attackers at this destination.
+  const source=origin||(nation!==places[id].owner&&game.orders.find(o=>o.to===id&&o.units[type])?.from)||id;
+  const designation=game.formationNames[source][type];
+  const label=designation+' · '+places[id].name+' · '+nation+' · '+name+' × '+number+(origin?' from '+places[origin].name:'');
   const stack=node('g',{'data-place':id,'data-unit':type,'data-count':number,'data-role':role,
     'aria-label':label,cursor:'pointer',transform:'translate('+x+' '+y+') scale('+tokenScale+')'});
   if(origin)stack.dataset.origin=origin;
@@ -527,7 +530,7 @@ export async function atlas(onPick,onView,initial) {
       for(const type of types){
         if(!units[type])continue;
         const at=seat(id,'home',type,spread,offsets),selected=id===focus&&type===selectedType;
-        const stack=drawStack(forces,id,type,units[type],nation,'home',at,tokenScale,detailed,selected);
+        const stack=drawStack(game,forces,id,type,units[type],nation,'home',at,tokenScale,detailed,selected);
         if(game.phase==='plan'&&friendly){
           stack.setAttribute('role','button');
           stack.setAttribute('tabindex','0');
@@ -537,7 +540,7 @@ export async function atlas(onPick,onView,initial) {
       }
       for(const group of groups){
         for(const type of types){
-          if(group.units[type])drawStack(forces,id,type,group.units[type],'Germany','incoming',
+          if(group.units[type])drawStack(game,forces,id,type,group.units[type],'Germany','incoming',
             seat(id,group.from,type,spread,offsets),tokenScale,detailed,false,group.from);
         }
       }
@@ -576,7 +579,7 @@ export async function atlas(onPick,onView,initial) {
         }
       }
     }
-    const v=basis();gesture={...v,firstX:v.x,firstY:v.y,moved:v.n>1,id:hit?.place,type:hit?.unit,sea:hit?.sea};
+    const v=basis();gesture={...v,firstX:v.x,firstY:v.y,moved:v.n>1,id:hit?.place,type:hit?.unit,origin:hit?.origin,sea:hit?.sea};
   });
   map.addEventListener('pointermove',e=>{
     if(!pointers.has(e.pointerId)||!gesture)return;
@@ -593,7 +596,7 @@ export async function atlas(onPick,onView,initial) {
     if(!pointers.has(e.pointerId))return;
     const tapped=e.type==='pointerup'&&gesture&&!gesture.moved;
     const id=gesture?.id, sea=gesture?.sea;
-    const type=gesture?.type;
+    const type=gesture?.type,origin=gesture?.origin;
     pointers.delete(e.pointerId);
     gesture=pointers.size?{...basis(),moved:true}:null;
     if(tapped){
@@ -601,7 +604,7 @@ export async function atlas(onPick,onView,initial) {
       inspectSea(sea && sea!==inspectedSea ? sea : null);
       if(id){
         if(view.z<.66){[view.x,view.y]=position(id);view.z=1.25;}
-        onPick(id,type);
+        onPick(id,type,origin);
       }
       render();
     }

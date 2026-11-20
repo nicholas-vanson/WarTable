@@ -1,4 +1,5 @@
 import {places,stats,types,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,rollAttack,rollDefense,casualties,retreat,theaterVictoryCities} from './rules.js';
+import {drawFormationNames} from './formation-names.js';
 import {atlas} from './map.js';
 const $=id=>document.getElementById(id), key='wartable.western-front.v1';
 const newLayoutSeed=()=>crypto.getRandomValues(new Uint32Array(1))[0];
@@ -9,6 +10,7 @@ try{
   const saved=JSON.parse(localStorage.getItem(key)||'null');
   if(saved?.game?.version===1){s=saved.game;ui={...freshUI(),...saved.ui};view=saved.view;layoutSeed=saved.layoutSeed??0;}
 }catch{message='The saved exercise could not be read. A new exercise is open.';}
+s.formationNames??=drawFormationNames(places);
 function save(){
   try{localStorage.setItem(key,JSON.stringify({game:s,ui,view,layoutSeed}));}
   catch{$('storage').textContent='Saving unavailable';}
@@ -38,12 +40,12 @@ function selectTarget(id){
   ui.to=id;
   ui.units=order?{...order.units}:{inf:0,tank:0};
 }
-function pick(id,type){
+function pick(id,type,origin){
   if(s.phase==='plan'){run(()=>{
     if(places[id].owner==='Germany'&&type)selectStack(id,type);
     else if(places[id].owner==='Germany')selectOrigin(id);
     else if(ui.stack||ui.to)selectTarget(id);
-    else if(type)throw new Error('Choose an infantry or armor stack first.');
+    else if(type)message=s.formationNames[origin||id][type]+' · '+stats[type].name+' · '+s.owners[origin||id];
   });}
   else if(s.phase==='combat'&&!s.active&&s.battles.some(b=>b.to===id&&!b.resolved))run(()=>chooseBattle(s,id));
 }
@@ -107,7 +109,7 @@ function planPanel(){
     '<div class="actions">'+btn('Back','back')+btn(existing?'Update order':'Add order','add','primary',count(ui.units)?'':'disabled')+'</div>';
     if(existing)html+=btn('Cancel this order','remove','danger','style="margin-top:8px"');
   }else if(ui.stack){
-    html=title(unitCounter(ui.stack,undefined,s.owners[ui.from])+' stack',places[ui.from].name)+block('Units to move')+
+    html=title(unitCounter(ui.stack,undefined,s.owners[ui.from])+' '+esc(s.formationNames[ui.from][ui.stack]),stats[ui.stack].name+' · '+places[ui.from].name)+block('Units to move')+
       stepper('quantity',{[ui.stack]:ui.quantity},available(s,ui.from),[ui.stack],1)+
       block('Tap destination to plan move')+
       places[ui.from].targets.map(id=>opt(id,places[id].name,unitLine(s.units[id],s.owners[id]),'↗','target')).join('')+
@@ -324,7 +326,7 @@ document.addEventListener('click',e=>{
       case 'loss': casualties(s,ui.losses);ui.losses={inf:0,tank:0};break;
       case 'retreat': retreat(s,id);break;
       case 'reset': showDialog('Restart exercise?','<p>This replaces the position and its local review on this device.</p>'+btn('Restart exercise','confirm-reset','danger'));break;
-      case 'confirm-reset': endPlayback();s=newGame();layoutSeed=newLayoutSeed();ui=freshUI();$('dialog').close();$('recenter').click();break;
+      case 'confirm-reset': endPlayback();s=newGame();s.formationNames=drawFormationNames(places);layoutSeed=newLayoutSeed();ui=freshUI();$('dialog').close();$('recenter').click();break;
     }
   });
 });

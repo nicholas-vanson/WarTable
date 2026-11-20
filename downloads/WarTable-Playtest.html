@@ -9,6 +9,9 @@
 *{box-sizing:border-box}body{margin:0;background:var(--paper);height:100dvh;display:flex;flex-direction:column}button,select{font:inherit;color:inherit}button{cursor:pointer;touch-action:manipulation}button:focus-visible,select:focus-visible,svg:focus-visible{outline:3px solid #b36630;outline-offset:-3px}button:disabled{opacity:.42;cursor:default}
 header{height:60px;flex:none;background:var(--ink);color:var(--paper);display:flex;align-items:center;padding:0 clamp(12px,2.4vw,36px);gap:20px;border-bottom:2px solid #ae9261}.brand{font:600 30px Georgia,serif;letter-spacing:-1.2px;display:flex;align-items:center;gap:10px}.mark{font:34px Georgia;color:#d9bd87}.divider{height:24px;border-left:1px solid #5c665b}.theater{margin:0;font:italic 17px Georgia,serif;color:#d6d6c8}.head-end{margin-left:auto;display:flex;align-items:center;gap:12px}.local{font-size:12px;color:#d1d6c8}.local:before{content:'';display:inline-block;width:7px;height:7px;background:#adbf90;border-radius:50%;margin-right:7px}.header-button{background:transparent;border:1px solid #687268;color:#fff9e9;border-radius:3px;min-height:34px;min-width:36px;padding:4px 10px}
 main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) clamp(290px,27vw,385px)}.board{position:relative;overflow:hidden;background:#bdceca;border:7px solid #465148;box-shadow:inset 0 0 0 1px #ece9d2}.board::after{content:'';pointer-events:none;position:absolute;inset:3px;border:1px solid #4c584d6b}#map{display:block;width:100%;height:100%;touch-action:none;user-select:none;cursor:grab}#map:active{cursor:grabbing}
+#map{-webkit-tap-highlight-color:transparent}
+#map:focus:not(:focus-visible),#forces [role="button"]:focus{outline:none}
+#forces [role="button"]:focus-visible:not([aria-pressed="true"])>rect:nth-of-type(2){stroke:#a74d20;stroke-width:3}
 .navbox{position:absolute;right:14px;bottom:43px;display:grid;background:var(--paper);border:1px solid #7d8373;box-shadow:0 2px 6px #35403133;border-radius:3px;overflow:hidden}.navbox button{width:42px;height:40px;background:transparent;border:0;border-bottom:1px solid var(--rule);font-size:23px}.navbox button:last-child{border:0}.map-foot{position:absolute;bottom:0;left:0;right:0;display:flex;align-items:center;gap:14px;padding:5px 12px;background:#eeeadaed;border-top:1px solid #889181;pointer-events:none;color:#434f45;font:10px/1.3 monospace;letter-spacing:.05em}.north{font-weight:bold}#coordinates{margin-left:auto}
 @media(max-height:540px) and (orientation:landscape){header{height:40px}.brand{font-size:23px}.mark{font-size:25px}.header-button{min-height:30px}.board{border-width:4px}main{grid-template-columns:minmax(0,1fr) clamp(245px,31vw,310px)}.navbox{bottom:30px;right:9px}.navbox button{width:38px;height:33px}}
 @media(max-width:650px) and (orientation:portrait){main{display:grid;grid-template-columns:1fr;grid-template-rows:52% minmax(0,1fr)}header{height:46px;gap:9px}.brand{font-size:24px}.theater,.divider{display:none}.board{border-width:4px}.navbox{right:9px;bottom:25px}.navbox button{height:31px;width:37px}.head-end{gap:6px}}
@@ -358,6 +361,59 @@ function retreat(s,origin){
   for(const k of types)s.units[origin][k]+=b.attack[k];
   finishBattle(s,b,'Retreated to '+places[origin].name+' with '+describe(b.attack)+'.');
 }
+// Period-inspired designations for the two land counter types in the playtest.
+const formationPools = {
+  Germany: {
+    inf: ['7. Infanterie-Division','12. Infanterie-Division','30. Infanterie-Division','44. Infanterie-Division','61. Infanterie-Division','71. Infanterie-Division'],
+    tank: ['1. Panzer-Division','2. Panzer-Division','3. Panzer-Division','5. Panzer-Division','7. Panzer-Division','10. Panzer-Division']
+  },
+  France: {
+    inf: ['1re Division d’infanterie motorisée','3e Division d’infanterie motorisée','9e Division d’infanterie motorisée','14e Division d’infanterie','25e Division d’infanterie motorisée','42e Division d’infanterie'],
+    tank: ['1re Division cuirassée','2e Division cuirassée','3e Division cuirassée','4e Division cuirassée','1re Division légère mécanique','2e Division légère mécanique']
+  },
+  'United Kingdom': {
+    inf: ['3rd Infantry Division','50th Northumbrian Division','51st Highland Division','53rd Welsh Division'],
+    tank: ['1st Armoured Division','7th Armoured Division','4th Armoured Brigade','1st Army Tank Brigade']
+  },
+  'United States': {
+    inf: ['1st Infantry Division','29th Infantry Division','36th Infantry Division','45th Infantry Division'],
+    tank: ['1st Armored Division','2nd Armored Division','3rd Armored Division','4th Armored Division']
+  },
+  'Soviet Union': {
+    inf: ['24th Rifle Division','100th Rifle Division','150th Rifle Division','172nd Rifle Division'],
+    tank: ['4th Tank Brigade','6th Tank Division','11th Tank Division','20th Tank Brigade']
+  },
+  Italy: {
+    inf: ['Divisione Granatieri di Sardegna','Divisione fanteria «Sassari»','Divisione fanteria «Pavia»','Divisione fanteria «Bologna»'],
+    tank: ['Divisione corazzata «Ariete»','Divisione corazzata «Littorio»','Divisione corazzata «Centauro»']
+  },
+  Japan: {
+    inf: ['2nd Sendai Division','5th Hiroshima Division','6th Kumamoto Division','9th Kanazawa Division'],
+    tank: ['1st Tank Regiment','3rd Tank Regiment','4th Tank Regiment','7th Tank Regiment']
+  },
+  ANZAC: {
+    inf: ['6th Australian Division','7th Australian Division','9th Australian Division','2nd New Zealand Division'],
+    tank: ['1st Australian Armoured Division','2/4th Australian Armoured Regiment','4th New Zealand Armoured Brigade']
+  },
+  China: {
+    inf: ['36th Division, National Revolutionary Army','87th Division, National Revolutionary Army','88th Division, National Revolutionary Army','New 38th Division']
+  }
+};
+
+function drawFormationNames(territories){
+  const names={}, remaining=new Map();
+  for(const [id,{name,owner}] of Object.entries(territories)){
+    names[id]={};
+    for(const [type,pool] of Object.entries(formationPools[owner]||{})){
+      const key=owner+' '+type;
+      if(!remaining.has(key))remaining.set(key,[...pool]);
+      const choices=remaining.get(key);
+      const index=Math.floor(Math.random()*(choices.length||pool.length));
+      names[id][type]=choices.length?choices.splice(index,1)[0]:pool[index]+' ('+name+')';
+    }
+  }
+  return names;
+}
 const ns='http://www.w3.org/2000/svg';
 function node(tag,attrs,text=''){
   const el=document.createElementNS(ns,tag);
@@ -598,13 +654,16 @@ function frontTransform(to,group,spread,tokenScale){
   const along=spread/57,across=side*tokenScale/length;
   return 'matrix('+[dx*along,dy*along,dy*across,-dx*across,x,y].join(' ')+')';
 }
-function drawStack(parent,id,type,number,nation,role,at,tokenScale,detailed,selected,origin){
+function drawStack(game,parent,id,type,number,nation,role,at,tokenScale,detailed,selected,origin){
   const [x,y]=at;
   const unitInk=nation==='Germany'?'#334334':'#294c60';
   const ink=selected?'#fff9df':unitInk;
   const paper=selected?selectionOrange:(nation==='Germany'?'#e6dfbd':'#d8e6e5');
   const name=type==='inf'?'Infantry':'Armor';
-  const label=places[id].name+' · '+nation+' · '+name+' × '+number+(origin?' from '+places[origin].name:'');
+  // After capture the counter represents the surviving attackers at this destination.
+  const source=origin||(nation!==places[id].owner&&game.orders.find(o=>o.to===id&&o.units[type])?.from)||id;
+  const designation=game.formationNames[source][type];
+  const label=designation+' · '+places[id].name+' · '+nation+' · '+name+' × '+number+(origin?' from '+places[origin].name:'');
   const stack=node('g',{'data-place':id,'data-unit':type,'data-count':number,'data-role':role,
     'aria-label':label,cursor:'pointer',transform:'translate('+x+' '+y+') scale('+tokenScale+')'});
   if(origin)stack.dataset.origin=origin;
@@ -887,7 +946,7 @@ async function atlas(onPick,onView,initial) {
       for(const type of types){
         if(!units[type])continue;
         const at=seat(id,'home',type,spread,offsets),selected=id===focus&&type===selectedType;
-        const stack=drawStack(forces,id,type,units[type],nation,'home',at,tokenScale,detailed,selected);
+        const stack=drawStack(game,forces,id,type,units[type],nation,'home',at,tokenScale,detailed,selected);
         if(game.phase==='plan'&&friendly){
           stack.setAttribute('role','button');
           stack.setAttribute('tabindex','0');
@@ -897,7 +956,7 @@ async function atlas(onPick,onView,initial) {
       }
       for(const group of groups){
         for(const type of types){
-          if(group.units[type])drawStack(forces,id,type,group.units[type],'Germany','incoming',
+          if(group.units[type])drawStack(game,forces,id,type,group.units[type],'Germany','incoming',
             seat(id,group.from,type,spread,offsets),tokenScale,detailed,false,group.from);
         }
       }
@@ -936,7 +995,7 @@ async function atlas(onPick,onView,initial) {
         }
       }
     }
-    const v=basis();gesture={...v,firstX:v.x,firstY:v.y,moved:v.n>1,id:hit?.place,type:hit?.unit,sea:hit?.sea};
+    const v=basis();gesture={...v,firstX:v.x,firstY:v.y,moved:v.n>1,id:hit?.place,type:hit?.unit,origin:hit?.origin,sea:hit?.sea};
   });
   map.addEventListener('pointermove',e=>{
     if(!pointers.has(e.pointerId)||!gesture)return;
@@ -953,7 +1012,7 @@ async function atlas(onPick,onView,initial) {
     if(!pointers.has(e.pointerId))return;
     const tapped=e.type==='pointerup'&&gesture&&!gesture.moved;
     const id=gesture?.id, sea=gesture?.sea;
-    const type=gesture?.type;
+    const type=gesture?.type,origin=gesture?.origin;
     pointers.delete(e.pointerId);
     gesture=pointers.size?{...basis(),moved:true}:null;
     if(tapped){
@@ -961,7 +1020,7 @@ async function atlas(onPick,onView,initial) {
       inspectSea(sea && sea!==inspectedSea ? sea : null);
       if(id){
         if(view.z<.66){[view.x,view.y]=position(id);view.z=1.25;}
-        onPick(id,type);
+        onPick(id,type,origin);
       }
       render();
     }
@@ -1002,6 +1061,7 @@ try{
   const saved=JSON.parse(localStorage.getItem(key)||'null');
   if(saved?.game?.version===1){s=saved.game;ui={...freshUI(),...saved.ui};view=saved.view;layoutSeed=saved.layoutSeed??0;}
 }catch{message='The saved exercise could not be read. A new exercise is open.';}
+s.formationNames??=drawFormationNames(places);
 function save(){
   try{localStorage.setItem(key,JSON.stringify({game:s,ui,view,layoutSeed}));}
   catch{$('storage').textContent='Saving unavailable';}
@@ -1031,12 +1091,12 @@ function selectTarget(id){
   ui.to=id;
   ui.units=order?{...order.units}:{inf:0,tank:0};
 }
-function pick(id,type){
+function pick(id,type,origin){
   if(s.phase==='plan'){run(()=>{
     if(places[id].owner==='Germany'&&type)selectStack(id,type);
     else if(places[id].owner==='Germany')selectOrigin(id);
     else if(ui.stack||ui.to)selectTarget(id);
-    else if(type)throw new Error('Choose an infantry or armor stack first.');
+    else if(type)message=s.formationNames[origin||id][type]+' · '+stats[type].name+' · '+s.owners[origin||id];
   });}
   else if(s.phase==='combat'&&!s.active&&s.battles.some(b=>b.to===id&&!b.resolved))run(()=>chooseBattle(s,id));
 }
@@ -1100,7 +1160,7 @@ function planPanel(){
     '<div class="actions">'+btn('Back','back')+btn(existing?'Update order':'Add order','add','primary',count(ui.units)?'':'disabled')+'</div>';
     if(existing)html+=btn('Cancel this order','remove','danger','style="margin-top:8px"');
   }else if(ui.stack){
-    html=title(unitCounter(ui.stack,undefined,s.owners[ui.from])+' stack',places[ui.from].name)+block('Units to move')+
+    html=title(unitCounter(ui.stack,undefined,s.owners[ui.from])+' '+esc(s.formationNames[ui.from][ui.stack]),stats[ui.stack].name+' · '+places[ui.from].name)+block('Units to move')+
       stepper('quantity',{[ui.stack]:ui.quantity},available(s,ui.from),[ui.stack],1)+
       block('Tap destination to plan move')+
       places[ui.from].targets.map(id=>opt(id,places[id].name,unitLine(s.units[id],s.owners[id]),'↗','target')).join('')+
@@ -1317,7 +1377,7 @@ document.addEventListener('click',e=>{
       case 'loss': casualties(s,ui.losses);ui.losses={inf:0,tank:0};break;
       case 'retreat': retreat(s,id);break;
       case 'reset': showDialog('Restart exercise?','<p>This replaces the position and its local review on this device.</p>'+btn('Restart exercise','confirm-reset','danger'));break;
-      case 'confirm-reset': endPlayback();s=newGame();layoutSeed=newLayoutSeed();ui=freshUI();$('dialog').close();$('recenter').click();break;
+      case 'confirm-reset': endPlayback();s=newGame();s.formationNames=drawFormationNames(places);layoutSeed=newLayoutSeed();ui=freshUI();$('dialog').close();$('recenter').click();break;
     }
   });
 });
