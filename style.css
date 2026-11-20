@@ -186,3 +186,13 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
 .review-round[open]>summary::after{transform:rotate(225deg)}
 .review-round>summary:focus-visible{outline:2px solid #a4441b;outline-offset:-2px}
 @media(hover:hover){.origin-order:hover,.battle-choice:hover,.review-round>summary:hover{background:#e2e3ce}}
+
+.front-choice small{display:block;margin-top:4px}
+#controlKey i[data-nation]{background:repeating-linear-gradient(var(--angle,127deg),transparent 0 2px,currentColor 2px 3px)}
+#controlKey i[data-nation="Germany"]{color:#46543d}
+#controlKey i[data-nation="France"]{--angle:53deg;color:#345f8a}
+#controlKey i[data-nation="Italy"]{color:#87582e}
+#controlKey i[data-nation="Soviet Union"]{--angle:38deg;color:#89483d}
+.counter-face[data-nation="Italy"]{color:#66472d;border-color:#66472d;background:#e3c5a3}
+.counter-face[data-nation="Soviet Union"]{color:#743d38;border-color:#743d38;background:#e3c4af}
+@media(max-width:380px){header{gap:5px}.head-end{gap:3px}.header-button{padding-inline:5px}.brand{font-size:19px}}

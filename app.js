@@ -1,16 +1,25 @@
-import {places,stats,types,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,rollAttack,rollDefense,casualties,retreat,theaterVictoryCities} from './rules.js';
+import {places,stats,types,exercises,adjectives,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,rollAttack,rollDefense,casualties,retreat,theaterVictoryCities} from './rules.js';
 import {drawFormationNames} from './formation-names.js';
 import {atlas} from './map.js';
-const $=id=>document.getElementById(id), key='wartable.western-front.v1';
+const $=id=>document.getElementById(id);
+const lastExerciseKey='wartable.active-exercise.v1';
+let exerciseId='west';
+try{
+  const last=localStorage.getItem(lastExerciseKey);
+  if(Object.hasOwn(exercises,last))exerciseId=last;
+}catch{}
+const key=exerciseId==='west'?'wartable.western-front.v1':'wartable.exercise.'+exerciseId+'.v1';
+const exercise=exercises[exerciseId],{attacker,defender}=exercise;
+const exercisePlaces=Object.fromEntries(Object.keys(exercise.forces).map(id=>[id,places[id]]));
 const newLayoutSeed=()=>crypto.getRandomValues(new Uint32Array(1))[0];
 let layoutSeed=newLayoutSeed();
 const freshUI=()=>({from:null,to:null,stack:null,quantity:1,units:{inf:0,tank:0},losses:{inf:0,tank:0}});
-let s=newGame(),ui=freshUI(),view=null,draw=()=>{},message='';
+let s=newGame(exerciseId),ui=freshUI(),view=null,draw=()=>{},message='';
 try{
   const saved=JSON.parse(localStorage.getItem(key)||'null');
-  if(saved?.game?.version===1){s=saved.game;ui={...freshUI(),...saved.ui};view=saved.view;layoutSeed=saved.layoutSeed??0;}
+  if(saved?.game?.version===1&&(saved.game.exercise||'west')===exerciseId){s=saved.game;ui={...freshUI(),...saved.ui};view=saved.view;layoutSeed=saved.layoutSeed??0;}
 }catch{message='The saved exercise could not be read. A new exercise is open.';}
-s.formationNames??=drawFormationNames(places);
+s.formationNames??=drawFormationNames(exercisePlaces);
 function save(){
   try{localStorage.setItem(key,JSON.stringify({game:s,ui,view,layoutSeed}));}
   catch{$('storage').textContent='Saving unavailable';}
@@ -27,7 +36,7 @@ function selectStack(id,type){
   ui.stack=type;ui.quantity=remaining;
 }
 function selectTarget(id){
-  if(!ui.from)throw new Error('Select a German force first.');
+  if(!ui.from)throw new Error('Select a force from '+attacker+' first.');
   if(!places[ui.from].targets.includes(id))throw new Error(places[id].name+' does not share a playable border with '+places[ui.from].name+'.');
   const order=s.orders.find(o=>o.from===ui.from&&o.to===id);
   if(ui.stack){
@@ -42,8 +51,8 @@ function selectTarget(id){
 }
 function pick(id,type,origin){
   if(s.phase==='plan'){run(()=>{
-    if(places[id].owner==='Germany'&&type)selectStack(id,type);
-    else if(places[id].owner==='Germany')selectOrigin(id);
+    if(s.owners[id]===attacker&&type)selectStack(id,type);
+    else if(s.owners[id]===attacker)selectOrigin(id);
     else if(ui.stack||ui.to)selectTarget(id);
     else if(type)message=s.formationNames[origin||id][type]+' · '+stats[type].name+' · '+s.owners[origin||id];
   });}
@@ -73,7 +82,7 @@ function unitLine(units,nation){
 function reviewDetail(detail){
   return detail.split('; ').map(clause=>{
     // Historic records identify losses by country within each clause.
-    const nation=/^(France held|France:)/.test(clause)?'France':'Germany';
+    const nation=clause.startsWith(defender+' held')||clause.startsWith(defender+':')?defender:attacker;
     return esc(clause).replace(/\b(\d+) (infantry|tanks?)\b/g,(_,n,name)=>unitCounter(name==='infantry'?'inf':'tank',Number(n),nation));
   }).join('; ');
 }
@@ -84,7 +93,7 @@ function dieFace(d,face,stage){
   return '<span role="img" aria-label="'+label+'" title="'+label+'" class="die '+(stage==='marked'&&d.hit?'hit':'miss')+'">'+pips+'</span>';
 }
 function stepper(kind,values,limits,keys=types,min=0){
-  return keys.map(k=>'<div class="stepper"><span>'+unitCounter(k,undefined,'Germany')+'</span><button aria-label="Remove one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="-1" '+(values[k]<=min?'disabled':'')+'>−</button><output>'+values[k]+'</output><button aria-label="Add one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="1" '+(values[k]>=limits[k]?'disabled':'')+'>+</button></div>').join('');
+  return keys.map(k=>'<div class="stepper"><span>'+unitCounter(k,undefined,attacker)+'</span><button aria-label="Remove one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="-1" '+(values[k]<=min?'disabled':'')+'>−</button><output>'+values[k]+'</output><button aria-label="Add one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="1" '+(values[k]>=limits[k]?'disabled':'')+'>+</button></div>').join('');
 }
 function plannedAttacks(){
   const destinations=new Map();
@@ -120,7 +129,7 @@ function planPanel(){
   return html;
 }
 function rollCard(rolls,side,play){
-  const label=side==='attack'?'German attack':'French defense';
+  const label=side==='attack'?adjectives[attacker]+' attack':adjectives[defender]+' defense';
   let hits=0;
   const groups=types.map(type=>{
     const group=rolls.filter(d=>d.type===type);
@@ -139,7 +148,7 @@ function rollCard(rolls,side,play){
     }).join('');
     const threshold=stats[type][side];
     return '<div class="roll-unit" data-unit="'+type+'" data-stage="'+stage+'">'+
-      unitCounter(type,undefined,side==='attack'?'Germany':'France')+'<small>Hits on '+(threshold===1?'1':'1–'+threshold)+
+      unitCounter(type,undefined,side==='attack'?attacker:defender)+'<small>Hits on '+(threshold===1?'1':'1–'+threshold)+
       '</small><div class="dice-row">'+dice+'</div></div>';
   }).join('');
   const total=play&&play.index===0&&play.stage!=='marked'?'Rolling…':hits+' '+(hits===1?'hit':'hits');
@@ -192,7 +201,7 @@ function forceColumns(attack,defense,defendingNation,metric='total'){
     return '<span class="battle-column"><span class="force-heading"><small>'+role+'</small> <strong>'+nation+'</strong></span>'+
       '<span class="force-strength">'+icons+'<span class="force-total">'+count(units)+' '+metric+'</span></span></span>';
   }
-  return column('Attacking','Germany',attack)+column('Defending',defendingNation,defense);
+  return column('Attacking',attacker,attack)+column('Defending',defendingNation,defense);
 }
 function updateBattleForces(){
   const b=currentBattle(s),header=$('battleForces');
@@ -200,7 +209,7 @@ function updateBattleForces(){
   header.innerHTML=forceColumns(b.attack,s.units[b.to],s.owners[b.to]);
 }
 function cityObjective(territory){
-  const city=theaterVictoryCities.find(c=>c.territory===territory);
+  const city=theaterVictoryCities.find(c=>c.territory===(territory==='af'?'fr':territory));
   if(!city)return '';
   return '<span class="objective"><span aria-hidden="true">'+(city.capitalOf?'★':'◆')+'</span> '+city.name+
     ' · Victory city'+(city.capitalOf?' · '+city.capitalOf+'’s capital':'')+'</span>';
@@ -223,20 +232,20 @@ function battlePanel(){
     return info;
   }
   if(b.step==='defense'){
-    $('action').innerHTML=btn('Roll French defense','defend','primary');
+    $('action').innerHTML=btn('Roll '+adjectives[defender]+' defense','defend','primary');
     return info+'<p class="hint">All defenders return fire this round, including marked casualties.</p>';
   }
   if(b.step==='losses' && !b.hits){
     $('action').innerHTML=btn('Resolve round','loss','primary');
-    return info+'<p class="hint">Germany takes no casualties this round.</p>';
+    return info+'<p class="hint">'+attacker+' takes no casualties this round.</p>';
   }
   if(b.step==='losses'){
     const limits={};
     for(const k of types)limits[k]=Math.min(b.attack[k],ui.losses[k]+b.hits-count(ui.losses));
     $('action').innerHTML=btn('Confirm casualties','loss','primary',count(ui.losses)===b.hits?'':'disabled');
-    return info+'<h3>Choose your casualties</h3><p class="hint">Assign '+b.hits+' German '+(b.hits===1?'loss':'losses')+'. Confirm to apply both sides’ losses.</p>'+stepper('casualty',ui.losses,limits);
+    return info+'<h3>Choose your casualties</h3><p class="hint">Assign '+b.hits+' '+adjectives[attacker]+' '+(b.hits===1?'loss':'losses')+'. Confirm to apply both sides’ losses.</p>'+stepper('casualty',ui.losses,limits);
   }
-  $('action').innerHTML=btn(b.round?'Continue · roll German attack':'Roll German attack','roll','primary');
+  $('action').innerHTML=btn((b.round?'Continue · roll ':'Roll ')+adjectives[attacker]+' attack','roll','primary');
   if(b.step==='decision'){
     return info+'<h3>Continue or retreat?</h3><p class="hint">Retreat all survivors to one origin.</p>'+b.origins.map(id=>btn('Retreat to '+places[id].name,'retreat','secondary','data-id="'+id+'"')).join('');
   }
@@ -259,7 +268,7 @@ function timeline(){
     const heading=esc(e.title);
     if(!e.dice)return '<div class="review-item"><strong>'+heading+'</strong><p>'+reviewDetail(e.detail)+'</p></div>';
     const losses=savedRoundLosses(e);
-    const breakdown=losses?'<div class="force-columns">'+forceColumns(losses.attack,losses.defense,'France','lost')+'</div>':
+    const breakdown=losses?'<div class="force-columns">'+forceColumns(losses.attack,losses.defense,defender,'lost')+'</div>':
       '<p>'+reviewDetail(e.detail)+'</p>';
     return '<details class="review-item review-round"><summary>'+heading+'</summary>'+breakdown+rollsBox(e.dice)+'</details>';
   }).join('');
@@ -326,13 +335,32 @@ document.addEventListener('click',e=>{
       case 'loss': casualties(s,ui.losses);ui.losses={inf:0,tank:0};break;
       case 'retreat': retreat(s,id);break;
       case 'reset': showDialog('Restart exercise?','<p>This replaces the position and its local review on this device.</p>'+btn('Restart exercise','confirm-reset','danger'));break;
-      case 'confirm-reset': endPlayback();s=newGame();s.formationNames=drawFormationNames(places);layoutSeed=newLayoutSeed();ui=freshUI();$('dialog').close();$('recenter').click();break;
+      case 'confirm-reset': endPlayback();s=newGame(exerciseId);s.formationNames=drawFormationNames(exercisePlaces);layoutSeed=newLayoutSeed();ui=freshUI();$('dialog').close();$('recenter').click();break;
     }
   });
 });
+$('chooseFront').onclick=()=>showDialog('Choose a front',Object.entries(exercises).map(([id,front])=>
+  '<button class="battle-choice front-choice" data-front="'+id+'" '+(id===exerciseId?'disabled':'')+'><strong>'+front.name+'</strong><small>'+
+  front.attacker+' vs '+front.defender+' · '+Object.keys(front.forces).length+' territories'+(id===exerciseId?' · Current':'')+'</small></button>'
+).join('')+'<p class="hint">Each front saves separately on this device.</p>');
+$('dialogBody').addEventListener('click',event=>{
+  const id=event.target.closest('[data-front]')?.dataset.front;
+  if(!Object.hasOwn(exercises,id)||id===exerciseId)return;
+  try{
+    localStorage.setItem(key,JSON.stringify({game:s,ui,view,layoutSeed}));
+    localStorage.setItem(lastExerciseKey,id);
+    location.reload();
+  }catch{
+    $('dialogBody').querySelector('.hint').textContent='Device storage is unavailable. This exercise is still open.';
+  }
+});
+document.querySelector('.theater').textContent=exercise.name;
+document.querySelector('.power-tab').textContent=attacker;
+$('map').setAttribute('aria-label','Pan or pinch the map. Select a unit from '+attacker+' and a destination controlled by '+defender+'.');
+$('controlKey').innerHTML=[attacker,defender].map(n=>'<i data-nation="'+n+'"></i>'+n).join(' ');
 $('closeDialog').onclick=()=>$('dialog').close();
 $('journal').onclick=()=>showDialog('Exercise review',(s.phase==='review'?timeline():'<p>The record opens after the last battle. It includes committed attacks, dice, casualties, retreats, and control of each territory.</p>'));
-$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The narrow olive hatch marks German control and the blue hatch marks French control. Tap a territory to read its controller. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><h3>Plan an attack</h3><p>German counters use '+unitCounter('inf',undefined,'Germany')+' for infantry and '+unitCounter('tank',undefined,'Germany')+' for armor. Select a stack on the map, adjust the quantity, then tap a highlighted French territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this exercise</h3><p>This local exercise covers adjacent land attacks with infantry and tanks. The starting forces are arranged for testing. The surrounding atlas is for exploration.</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+btn('Restart exercise','reset','danger'));
+$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The colored hatch inside each territory border shows who controls it. Tap a territory to read its controller. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><h3>Plan an attack</h3><p>Counters use '+unitCounter('inf',undefined,attacker)+' for infantry and '+unitCounter('tank',undefined,attacker)+' for armor. Select a stack on the map, adjust the quantity, then tap a highlighted enemy territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this exercise</h3><p>This local exercise covers adjacent land attacks with infantry and tanks. The forces are arranged for testing. Each exercise begins with the two powers already at war. The surrounding atlas is for exploration.</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+btn('Restart exercise','reset','danger'));
 // Store the two panel dimensions separately so rotating the phone restores the last fit.
 function setupOrdersPanel(){
   const main=document.querySelector('main'),sheet=$('ordersPanel'),grip=$('resizePanel');
@@ -402,7 +430,7 @@ function setupOrdersPanel(){
 }
 setupOrdersPanel();
 render();
-try{draw=await atlas(pick,v=>{view=v;save();},view);render();save();}catch{message='The map could not load. Reopen the playtest while online to finish the download.';render();}
+try{draw=await atlas(pick,v=>{view=v;save();},view,exercise);render();save();}catch{message='The map could not load. Reopen the playtest while online to finish the download.';render();}
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('./sw.js').catch(()=>{$('storage').textContent='Offline install unavailable';});
 }

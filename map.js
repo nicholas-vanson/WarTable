@@ -16,6 +16,18 @@ const formations={
   fr:{center:[571,1087],home:{inf:[536,1103],tank:[594,1133]},
     hb:{inf:[549,1021],tank:[609,1038]},wg:{inf:[670,1053],tank:[656,1105]}}
 };
+Object.assign(formations,{
+  ni:{center:[790,1230],home:{inf:[755,1244],tank:[812,1210]}},
+  af:{center:[605,1140],home:{inf:[526,1045],tank:[552,1082]},ni:{inf:[614,1147],tank:[614,1107]}},
+  sf:{center:[559,1273],home:{inf:[513,1254],tank:[532,1301]},ni:{inf:[586,1242],tank:[607,1292]}},
+  bs:{center:[1260,658],home:{inf:[1240,691],tank:[1293,641]}},
+  ep:{center:[1297,935],home:{inf:[1296,889],tank:[1306,977]}},
+  be:{center:[1420,1158],home:{inf:[1419,1144],tank:[1433,1189]}},
+  pl:{center:[1114,873],home:{inf:[1052,878],tank:[1060,926]},
+    bs:{inf:[1115,798],tank:[1173,777]},ep:{inf:[1170,878],tank:[1188,925]}},
+  ro:{center:[1295,1190],home:{inf:[1253,1211],tank:[1288,1252]},
+    ep:{inf:[1262,1125],tank:[1320,1110]},be:{inf:[1347,1163],tank:[1366,1224]}}
+});
 const position=id=>formations[id].center;
 // Bézier handles are surveyed in map coordinates. The two Normandy approaches share
 // a narrow coastal passage, then diverge around the arriving infantry and armor.
@@ -27,6 +39,15 @@ const approaches={
     tank:[[590,922],[543,943],[517,969], [473,1024],[407,1028]]
   }
 };
+// Control points pass through the shared border before fanning into arrival seats.
+Object.assign(approaches,{
+  'ni-af':{inf:[[708,1240],[664,1228],[643,1207],[632,1195],[632,1176]],tank:[[754,1234],[669,1218],[642,1203],[626,1193],[628,1168]]},
+  'ni-sf':{inf:[[720,1262],[658,1283]],tank:[[760,1266],[682,1302]]},
+  'bs-pl':{inf:[[1225,735],[1160,757]],tank:[[1256,699],[1200,742]]},
+  'ep-pl':{inf:[[1282,873],[1210,870]],tank:[[1285,945],[1226,923]]},
+  'ep-ro':{inf:[[1281,975],[1272,1075]],tank:[[1320,1010],[1318,1058]]},
+  'be-ro':{inf:[[1391,1144],[1371,1155]],tank:[[1412,1200],[1390,1217]]}
+});
 // Each of the eight home counters gets four saved random bits. Keep the small jitter
 // within the tested interior margin. Inbound seats stay open for every approach.
 function homeOffsets(seed){
@@ -35,7 +56,7 @@ function homeOffsets(seed){
     offsets[id]={};
     for(const type of types){
       offsets[id][type]=[(seed&3)*8/3-4,((seed>>>2)&3)*8/3-4];
-      seed>>>=4;
+      seed=(seed>>>4)|(seed<<28);
     }
   }
   return offsets;
@@ -229,6 +250,11 @@ const frontLines={
   'hb-fr':[[524,1062],[602,1075]],
   'wg-fr':[[629,1058],[618,1111]]
 };
+Object.assign(frontLines,{
+  'ni-af':[[567,1118],[602,1095]],'ni-sf':[[548,1245],[568,1292]],
+  'bs-pl':[[1080,836],[1140,817]],'ep-pl':[[1118,867],[1122,931]],
+  'ep-ro':[[1260,1166],[1316,1151]],'be-ro':[[1310,1185],[1330,1237]]
+});
 function frontTransform(to,group,spread,tokenScale){
   const [start,end]=frontLines[group.from+'-'+to],center=position(to);
   const dx=end[0]-start[0],dy=end[1]-start[1],length=Math.hypot(dx,dy);
@@ -241,9 +267,9 @@ function frontTransform(to,group,spread,tokenScale){
 }
 function drawStack(game,parent,id,type,number,nation,role,at,tokenScale,detailed,selected,origin){
   const [x,y]=at;
-  const unitInk=nation==='Germany'?'#334334':'#294c60';
+  const style=ownerStyle[nation],unitInk=style.counter;
   const ink=selected?'#fff9df':unitInk;
-  const paper=selected?selectionOrange:(nation==='Germany'?'#e6dfbd':'#d8e6e5');
+  const paper=selected?selectionOrange:style.paper;
   const name=type==='inf'?'Infantry':'Armor';
   // After capture the counter represents the surviving attackers at this destination.
   const source=origin||(nation!==places[id].owner&&game.orders.find(o=>o.to===id&&o.units[type])?.from)||id;
@@ -260,7 +286,7 @@ function drawStack(game,parent,id,type,number,nation,role,at,tokenScale,detailed
     : node('ellipse',{cx:-7,cy:0,rx:6.6,ry:3.8,fill:'none',stroke:ink,'stroke-width':1.6}));
   stack.append(node('text',{x:10,y:4,'text-anchor':'middle','font-family':'sans-serif','font-size':13,'font-weight':700,fill:ink},number));
   if(detailed)stack.append(node('text',{x:0,y:24,'text-anchor':'middle','font-family':'sans-serif','font-size':11,'font-weight':650,fill:unitInk,
-    stroke:'#f5efd8','paint-order':'stroke','stroke-width':3},(nation==='Germany'?'DE':'FR')+' · '+name));
+    stroke:'#f5efd8','paint-order':'stroke','stroke-width':3},style.code+' · '+name));
   parent.append(stack);
   return stack;
 }
@@ -299,9 +325,11 @@ const landNames=[
   ['SOUTHERN FRANCE', 'M499 1314 Q558 1314 610 1286', 103],
   ['GREATER SOUTHERN GERMANY', 'M824 1129 Q897 1135 964 1104', 128],
 ];
-function buildLandLabels(map,layer){
+function buildLandLabels(map,layer,exercise){
   const defs=map.querySelector('defs');
-  return landNames.map(([name,curve,span],index)=>{
+  const activeLabels=[...landNames];
+  if(exercise.forces.ep)activeLabels.push(['Eastern Poland','M1253 947 Q1292 940 1340 912',84],['Bessarabia','M1392 1100 Q1414 1135 1440 1160',65]);
+  return activeLabels.map(([name,curve,span],index)=>{
     const id='land-name-'+index;
     defs.append(node('path',{id,d:curve}));
     const size=Math.min(14,span/(name.length*.68));
@@ -314,8 +342,10 @@ function buildLandLabels(map,layer){
   });
 }
 const ownerStyle={
-  Germany:{ink:'#4d5845',hatch:'german-hatch',angle:37},
-  France:{ink:'#345f8a',hatch:'french-hatch',angle:-37}
+  Germany:{code:'DE',counter:'#334334',paper:'#e6dfbd',ink:'#4d5845',hatch:'german-hatch',angle:37},
+  Italy:{code:'IT',counter:'#66472d',paper:'#e3c5a3',ink:'#87582e',hatch:'italian-hatch',angle:52},
+  'Soviet Union':{code:'SU',counter:'#743d38',paper:'#e3c4af',ink:'#89483d',hatch:'soviet-hatch',angle:-52},
+  France:{code:'FR',counter:'#294c60',paper:'#d8e6e5',ink:'#345f8a',hatch:'french-hatch',angle:-37}
 };
 function buildControlBands(map,shapes,regions){
   const defs=map.querySelector('defs'), layer=map.querySelector('#controlBands');
@@ -340,6 +370,7 @@ function buildControlBands(map,shapes,regions){
     bands[id]={band,region};
   }
   for(const [from,{targets}] of Object.entries(places)){
+    if(!shapes[from])continue;
     for(const to of targets){
       const clip=node('clipPath',{id:'route-'+from+'-'+to});
       clip.append(node('use',{href:'#territory-'+from}),node('use',{href:'#territory-'+to}));
@@ -370,9 +401,11 @@ function buildSeaZones(map,chart){
   return zones;
 }
 const bound=(v,min,max)=>Math.min(max,Math.max(min,v));
-export async function atlas(onPick,onView,initial) {
+export async function atlas(onPick,onView,initial,exercise) {
   const map=document.querySelector('#map'), forces=document.querySelector('#forces'), regions=document.querySelector('#regions'),routes=document.querySelector('#routes');
-  const shapes=await (await fetch('./assets/territories.json')).json();
+  const western=await (await fetch('./assets/territories.json')).json();
+  const other=await (await fetch('./assets/fronts.json')).json();
+  const shapes=Object.fromEntries(Object.keys(exercise.forces).map(id=>[id,western[id]||other[id]]));
   const chart=await (await fetch('./assets/sea-zones.json')).json();
   const bands=buildControlBands(map,shapes,regions), zones=buildSeaZones(map,chart);
   const control=map.querySelector('#controlBands'), intel=document.querySelector('#mapIntel');
@@ -404,7 +437,7 @@ export async function atlas(onPick,onView,initial) {
     return {mark,name,x,y};
   });
   const detailPlate=map.querySelector('#detailPlate');
-  const landLabels=buildLandLabels(map,labelGroup);
+  const landLabels=buildLandLabels(map,labelGroup,exercise);
   const selection=map.querySelector('#selection'),reveal=map.querySelector('#pencil-stroke');
   reveal.setAttribute('d',pencilLine);
   const fronts=map.querySelector('#fronts'), frontMarks=new Map();
@@ -424,7 +457,7 @@ export async function atlas(onPick,onView,initial) {
     if(key)selection.setAttribute('transform','translate('+at.join(' ')+') scale('+tokenScale+')');
   }
   let game=null,focus=null,target=null,selectedType=null;
-  let view=initial&&[initial.x,initial.y,initial.z].every(Number.isFinite)?{...initial}:{x:590,y:985,z:1};
+  let view=initial&&[initial.x,initial.y,initial.z].every(Number.isFinite)?{...initial}:{...exercise.camera};
   const pointers=new Map();let gesture=null;
   function metrics(){
     const w=map.clientWidth||1,h=map.clientHeight||1;
@@ -506,8 +539,8 @@ export async function atlas(onPick,onView,initial) {
     }
     const activeFronts=new Set();
     let selectedAt=null;
-    for(const id of Object.keys(places)){
-      const [x,y]=position(id),nation=game.owners[id],friendly=nation==='Germany';
+    for(const id of Object.keys(game.units)){
+      const [x,y]=position(id),nation=game.owners[id],friendly=nation===exercise.attacker;
       const units=game.phase==='plan'&&friendly?available(game,id):game.units[id];
       const groups=arrivals(game,id).filter(group=>types.some(type=>group.units[type]>0));
       for(const group of groups){
@@ -523,7 +556,7 @@ export async function atlas(onPick,onView,initial) {
         if(ink.getAttribute('transform')!==transform)ink.setAttribute('transform',transform);
       }
       if(compact){
-        forces.append(node('circle',{cx:x,cy:y,r:7/scale,fill:friendly?'#434f3b':'#3f5964',stroke:'#f7f2df','stroke-width':1.6/scale,'data-place':id}));
+        forces.append(node('circle',{cx:x,cy:y,r:7/scale,fill:ownerStyle[nation].counter,stroke:'#f7f2df','stroke-width':1.6/scale,'data-place':id}));
         continue;
       }
       const detailed=view.z>=1.55;
@@ -540,7 +573,7 @@ export async function atlas(onPick,onView,initial) {
       }
       for(const group of groups){
         for(const type of types){
-          if(group.units[type])drawStack(game,forces,id,type,group.units[type],'Germany','incoming',
+          if(group.units[type])drawStack(game,forces,id,type,group.units[type],exercise.attacker,'incoming',
             seat(id,group.from,type,spread,offsets),tokenScale,detailed,false,group.from);
         }
       }
@@ -628,7 +661,7 @@ export async function atlas(onPick,onView,initial) {
   map.addEventListener('wheel',e=>{e.preventDefault();const p=coords(e);zoom(Math.exp(-bound(e.deltaY,-240,240)*.002),p.x,p.y);onView({...view});},{passive:false});
   function button(id,fn){document.getElementById(id).onclick=()=>{fn();render();onView({...view});};}
   button('zoomIn',()=>zoom(1.38));button('zoomOut',()=>zoom(1/1.38));
-  button('recenter',()=>{view={x:590,y:985,z:1};});
+  button('recenter',()=>{view={...exercise.camera};});
   button('overview',()=>{const m=metrics();view={x:1003,y:858,z:Math.min(m.w/2006,m.h/1716)/m.base};});
   new ResizeObserver(render).observe(map);
   return (s,id,to,type,seed)=>{

@@ -5,6 +5,26 @@ export const places = {
   nb: {name:'Normandy Bordeaux', owner:'France', targets:[], lon:-.8, lat:47.45},
   fr: {name:'France', owner:'France', targets:[], lon:2.65, lat:48.45}
 };
+Object.assign(places,{
+  ni:{name:'Northern Italy',owner:'Italy',targets:['af','sf']},
+  af:{name:'France',owner:'France',targets:[]},
+  sf:{name:'Southern France',owner:'France',targets:[]},
+  bs:{name:'Baltic States',owner:'Soviet Union',targets:['pl']},
+  ep:{name:'Eastern Poland',owner:'Soviet Union',targets:['pl','ro']},
+  be:{name:'Bessarabia',owner:'Soviet Union',targets:['ro']},
+  pl:{name:'Poland',owner:'Germany',targets:[]},
+  ro:{name:'Romania',owner:'Germany',targets:[]}
+});
+export const exercises={
+  west:{name:'Western Front',attacker:'Germany',defender:'France',camera:{x:590,y:985,z:1},
+    forces:{hb:[5,2],wg:[4,3],nb:[2,0],fr:[3,1]}},
+  alps:{name:'Alpine Front',attacker:'Italy',defender:'France',camera:{x:665,y:1175,z:1.28},
+    forces:{ni:[7,3],af:[3,1],sf:[2,1]}},
+  east:{name:'Eastern Front',attacker:'Soviet Union',defender:'Germany',camera:{x:1255,y:943,z:.72},
+    forces:{bs:[4,2],ep:[6,3],be:[4,1],pl:[4,2],ro:[3,2]}}
+};
+export const exerciseOf=s=>exercises[s.exercise||'west'];
+export const adjectives={Germany:'German',France:'French',Italy:'Italian','Soviet Union':'Soviet'};
 // Victory cities within this atlas, from Europe 1940 Second Edition, pp. 6 and 34.
 export const theaterVictoryCities=[
   {name:'London',lon:-.12,lat:51.51,capitalOf:'United Kingdom'},
@@ -12,7 +32,7 @@ export const theaterVictoryCities=[
   {name:'Berlin',lon:13.41,lat:52.52,capitalOf:'Germany'},
   {name:'Rome',lon:12.5,lat:41.9,capitalOf:'Italy'},
   {name:'Moscow',lon:37.62,lat:55.75,capitalOf:'Soviet Union'},
-  {name:'Warsaw',lon:21.01,lat:52.23},
+  {name:'Warsaw',lon:21.01,lat:52.23,territory:'pl'},
   {name:'Leningrad',lon:30.32,lat:59.94},
   {name:'Stalingrad',lon:44.51,lat:48.71}
 ];
@@ -24,10 +44,12 @@ export const stats = {
 export const count = units => units.inf + units.tank;
 export const describe = units => types.filter(k=>units[k]).map(k=>k==='inf' ? units[k]+' infantry' : units[k]+(units[k]===1?' tank':' tanks')).join(', ') || 'no units';
 const empty = () => ({inf:0,tank:0});
-export function newGame() {
-  return {version:1,phase:'plan',units:{hb:{inf:5,tank:2},wg:{inf:4,tank:3},nb:{inf:2,tank:0},fr:{inf:3,tank:1}},
-    owners:Object.fromEntries(Object.entries(places).map(([id,p])=>[id,p.owner])),
-    orders:[],battles:[],active:null,record:[]};
+export function newGame(exercise='west') {
+  const units={},owners={};
+  for(const [id,[inf,tank]] of Object.entries(exercises[exercise].forces)){
+    units[id]={inf,tank};owners[id]=places[id].owner;
+  }
+  return {version:1,exercise,phase:'plan',units,owners,orders:[],battles:[],active:null,record:[]};
 }
 function check(ok, message) { if (!ok) throw new Error(message); }
 export function available(s, from, exceptTarget=null) {
@@ -42,7 +64,7 @@ function validUnits(units,limit) {
 }
 export function plan(s,from,to,units) {
   check(s.phase==='plan','Movement has already been committed.');
-  check(places[from]?.targets.includes(to),'This exercise allows an attack into an adjacent hostile territory. These territories do not share a playable border.');
+  check(s.owners[from]===exerciseOf(s).attacker&&s.owners[to]===exerciseOf(s).defender&&places[from]?.targets.includes(to),'This exercise allows an attack into an adjacent hostile territory. These territories do not share a playable border.');
   check(validUnits(units,available(s,from,to)),'This order exceeds the forces available at its origin.');
   s.orders=s.orders.filter(o=>o.from!==from||o.to!==to);
   if(count(units)) s.orders.push({from,to,units:{...units}});
@@ -86,16 +108,17 @@ export function defenderLosses(force,hits){
 }
 function applyLosses(s,b,losses){
   for(const k of types)b.attack[k]-=losses[k];
+  const {attacker,defender}=exerciseOf(s);
   const defenders=s.units[b.to];
   const lost=defenderLosses(defenders,b.dice.attack.filter(d=>d.hit).length);
   for(const k of types)defenders[k]-=lost[k];
   s.record.push({title:places[b.to].name+' · round '+b.round,dice:b.dice,
     losses:{attack:{...losses},defense:lost},
-    detail:'Losses — Germany: '+describe(losses)+'; France: '+describe(lost)+'.'});
+    detail:'Losses — '+attacker+': '+describe(losses)+'; '+defender+': '+describe(lost)+'.'});
   if(!count(defenders)&&count(b.attack)){
-    s.owners[b.to]='Germany';s.units[b.to]={...b.attack};finishBattle(s,b,'Captured by Germany with '+describe(b.attack)+'.');
+    s.owners[b.to]=attacker;s.units[b.to]={...b.attack};finishBattle(s,b,'Captured by '+attacker+' with '+describe(b.attack)+'.');
   }else if(!count(b.attack)){
-    finishBattle(s,b,count(defenders)?'France held with '+describe(defenders)+'.':'Both forces lost. France retains control.');
+    finishBattle(s,b,count(defenders)?defender+' held with '+describe(defenders)+'.':'Both forces lost. '+defender+' retains control.');
   }else b.step='decision';
 }
 export function rollAttack(s,random=die){
@@ -121,7 +144,7 @@ export function casualties(s,losses){
 }
 export function retreat(s,origin){
   const b=currentBattle(s);
-  check(b?.step==='decision'&&b.origins.includes(origin)&&s.owners[origin]==='Germany','Retreat all survivors together to a friendly territory used to enter this battle.');
+  check(b?.step==='decision'&&b.origins.includes(origin)&&s.owners[origin]===exerciseOf(s).attacker,'Retreat all survivors together to a friendly territory used to enter this battle.');
   for(const k of types)s.units[origin][k]+=b.attack[k];
   finishBattle(s,b,'Retreated to '+places[origin].name+' with '+describe(b.attack)+'.');
 }
