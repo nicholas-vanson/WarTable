@@ -13,21 +13,21 @@ const formations={
   hb:{center:[610,926],home:{inf:[602,952],tank:[616,899]}},
   wg:{center:[716,932],home:{inf:[703,957],tank:[729,900]}},
   nb:{center:[421,1100],home:{inf:[387,1094],tank:[427,1150]},
-    hb:{inf:[454,1042],tank:[443,1097]}},
+    hb:{inf:[454,1042],tank:[439,1070]}},
   fr:{center:[571,1087],home:{inf:[536,1103],tank:[594,1133]},
-    hb:{inf:[549,1021],tank:[609,1038]},wg:{inf:[670,1053],tank:[656,1105]}}
+    hb:{inf:[549,1021],tank:[609,1038]},wg:{inf:[652,1068],tank:[656,1105]}}
 };
 Object.assign(formations,{
   ni:{center:[790,1230],home:{inf:[755,1244],tank:[812,1210]}},
-  af:{center:[605,1140],home:{inf:[526,1045],tank:[552,1082]},ni:{inf:[614,1147],tank:[614,1107]}},
-  sf:{center:[559,1273],home:{inf:[513,1254],tank:[532,1301]},ni:{inf:[586,1242],tank:[607,1292]}},
+  af:{center:[605,1140],home:{inf:[536,1046],tank:[552,1082]},ni:{inf:[614,1147],tank:[614,1107]}},
+  sf:{center:[559,1273],home:{inf:[517,1261],tank:[532,1301]},ni:{inf:[586,1251],tank:[607,1292]}},
   bs:{center:[1260,658],home:{inf:[1240,691],tank:[1293,641]}},
-  ep:{center:[1297,935],home:{inf:[1296,889],tank:[1306,977]}},
-  be:{center:[1420,1158],home:{inf:[1419,1144],tank:[1433,1189]}},
-  pl:{center:[1114,873],home:{inf:[1052,878],tank:[1060,926]},
-    bs:{inf:[1115,798],tank:[1173,777]},ep:{inf:[1170,878],tank:[1188,925]}},
+  ep:{center:[1297,935],home:{inf:[1286,888],tank:[1300,978]}},
+  be:{center:[1420,1158],home:{inf:[1419,1144],tank:[1435,1180]}},
+  pl:{center:[1114,873],home:{inf:[1054,877],tank:[1060,926]},
+    bs:{inf:[1115,797],tank:[1134,828]},ep:{inf:[1150,879],tank:[1184,928]}},
   ro:{center:[1295,1190],home:{inf:[1253,1211],tank:[1288,1252]},
-    ep:{inf:[1262,1125],tank:[1320,1110]},be:{inf:[1347,1163],tank:[1366,1224]}}
+    ep:{inf:[1262,1152],tank:[1318,1129]},be:{inf:[1339,1168],tank:[1366,1224]}}
 });
 const position=id=>formations[id].center;
 // Bézier handles are surveyed in map coordinates. The two Normandy approaches share
@@ -37,16 +37,16 @@ const approaches={
   'wg-fr':{inf:[[719,987],[719,1025]],tank:[[756,977],[712,1098]]},
   'hb-nb':{
     inf:[[580,926],[553,944],[526,971], [506,991],[482,1000]],
-    tank:[[590,922],[543,943],[517,969], [473,1024],[407,1028]]
+    tank:[[592,924],[545,945],[519,971], [475,1026],[409,1030]]
   }
 };
 // Control points pass through the shared border before fanning into arrival seats.
 Object.assign(approaches,{
-  'ni-af':{inf:[[708,1240],[664,1228],[643,1207],[632,1195],[632,1176]],tank:[[754,1234],[669,1218],[642,1203],[626,1193],[628,1168]]},
+  'ni-af':{inf:[[712,1232],[668,1220],[647,1199],[636,1187],[636,1168]],tank:[[754,1234],[669,1218],[642,1203],[626,1193],[628,1168]]},
   'ni-sf':{inf:[[720,1262],[658,1283]],tank:[[760,1266],[682,1302]]},
   'bs-pl':{inf:[[1225,735],[1160,757]],tank:[[1256,699],[1200,742]]},
   'ep-pl':{inf:[[1282,873],[1210,870]],tank:[[1285,945],[1226,923]]},
-  'ep-ro':{inf:[[1281,975],[1272,1075]],tank:[[1320,1010],[1318,1058]]},
+  'ep-ro':{inf:[[1331,1013],[1322,1113]],tank:[[1320,1010],[1318,1058]]},
   'be-ro':{inf:[[1391,1144],[1371,1155]],tank:[[1412,1200],[1390,1217]]}
 });
 // Each of the eight home counters gets four saved random bits. Keep the small jitter
@@ -448,7 +448,7 @@ function buildSeaZones(map,chart){
   const layer=map.querySelector('#seaZones'), numbers=node('g',{'pointer-events':'none'});
   const zones=new Map();
   for(const {number,label,d,neighbors,room,ruleRoom} of chart.zones){
-    const area=node('path',{d,stroke:chart.world?'#536f78':'none','stroke-width':.8,'stroke-dasharray':'6 3','fill-rule':'evenodd',fill:'transparent','data-sea':number,
+    const area=node('path',{d,stroke:'none','fill-rule':'evenodd',fill:'transparent','data-sea':number,
       'aria-label':'Sea zone '+number});
     area.append(node('title',{},'Sea zone '+number));layer.append(area);
     const [x,y]=label;
@@ -460,6 +460,10 @@ function buildSeaZones(map,chart){
         'paint-order':'stroke'},number));
     numbers.append(mark);
     zones.set(String(number),{area,mark,x,y,neighbors,room,ruleRoom});
+  }
+  if(chart.globalDividers){
+    layer.append(node('path',{d:chart.globalDividers,fill:'none',stroke:'#536f78','stroke-width':.8,
+      'stroke-dasharray':'6 3','pointer-events':'none'}));
   }
   layer.append(node('path',{d:chart.dividers,fill:'none',stroke:'#365664','stroke-width':1.3,
     'stroke-dasharray':'6 3','vector-effect':'non-scaling-stroke',opacity:.73,'pointer-events':'none'}),numbers);
@@ -474,12 +478,11 @@ export async function atlas(onPick,onView,initial,exercise) {
   const shapes=Object.fromEntries(Object.keys(exercise.forces).filter(id=>!places[id].water).map(id=>[id,exercise.world?exercise.shapes[id].d:western[id]||other[id]]));
   let chart=await (await fetch('./assets/sea-zones.json')).json();
   if(exercise.world){
-    const registered=new Map(chart.zones.map(z=>[z.number,z]));
-    chart={world:true,dividers:chart.dividers,zones:Object.entries(exercise.shapes).filter(([id])=>places[id].water).map(([id,sector])=>{
-      const number=parseInt(places[id].name),local=registered.get(number);
-      return {number,d:sector.d,label:local?.label||sector.center,room:local?.room||2,ruleRoom:local?.ruleRoom||1.6,
-        neighbors:places[id].links.filter(n=>n.endsWith(' Sea Zone')).map(n=>parseInt(n))};
-    })};
+    const seas=Object.entries(exercise.shapes).filter(([id])=>places[id].water);
+    chart={dividers:chart.dividers,globalDividers:seas.map(([,sector])=>sector.dividers).join(''),zones:seas.map(([id,sector])=>({
+      number:parseInt(places[id].name),d:sector.d,label:sector.center,room:sector.room,ruleRoom:sector.ruleRoom,
+      neighbors:places[id].links.filter(n=>n.endsWith(' Sea Zone')).map(n=>parseInt(n))
+    }))};
     const worldPlate=document.getElementById('worldPlate');worldPlate.removeAttribute('display');
     worldPlate.setAttribute('href',worldPlate.dataset.src);
     const engraving=document.getElementById('worldEngraving');engraving.setAttribute('href',engraving.dataset.src);
