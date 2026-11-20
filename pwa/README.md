@@ -27,6 +27,12 @@ python3 -m http.server 8080
 
 Open `http://localhost:8080/` on that machine. Service workers require HTTPS or localhost. For rules tests run `node --test tests/*.test.js` in this directory. To package a release, run `python3 tools/package.py /tmp/wartable-release`. Its `site/` directory can be hosted under any HTTPS path. `WarTable-PWA.zip` and `WarTable-Playtest.html` are the release downloads. Bump the cache version in `sw.js` when publishing a revised site.
 
+## Reading the board
+
+The border band follows the current controller of each of the four playable territories. Germany uses olive hatching and France uses blue hatching in the opposite direction. Tap a territory to read the controller in the map footer. A capture updates the band when the battle resolves.
+
+Tap numbered water to inspect a sea zone and its adjacent zone numbers, including connections beyond the atlas. The dashed dividers and hit areas are original drawings fitted to this coast. The local exercise contains 25 visible zones and supports land combat. Sea-zone numbers and adjacencies follow Global 1940 Second Edition. To regenerate the chart, use Python with Shapely and run `python3 tools/draw-sea-zones.py`. The builder checks shared edges and playable coastal contacts against the project's Global 1940 connection data.
+
 ## Staff Map artwork
 
 The survey plate combines original painted material swatches for plains, woodland, uplands and open water with scale-independent printed detail. Coastlines, rail ties, roads, contour lines and settlement blocks render at the current zoom. Painted impressions vary in position, size and angle across the theater. The sea uses the same relief grid as the land to shade the continental shelf and draw depth contours. A narrow shoreline wash follows the registered coast. The plate is self-contained for offline use and uses the same coordinate space as the interactive territories. The roads and town footprints are generalized illustrations.
@@ -39,7 +45,7 @@ The regional contours are in meters and derive from the GMT 6-arc-minute Earth R
 
 The exercise uses a deliberately arranged position with adjacent land combat only. Infantry attack on 1 and defend on 1–2. Tanks hit on 1–3. Casualties return fire in their round. All retreating attackers withdraw together to one eligible origin. Move legality uses the playable territories' adjacency graph. Physical coastlines and the broader atlas provide geographic context; the four depicted territory outlines are original approximations. Capital treasury, national income, facilities, air and naval rules, noncombat, AI and multiplayer are later scope. This exercise makes no claim to full rules coverage.
 
-- [Europe 1940 Second Edition rulebook](https://www.axisandallies.org/files/rules/Axis-Allies-Europe-1940-Second-Edition.pdf), especially Combat Move, Conduct Combat, unit profiles, and the Global rules.
+- [Europe 1940 Second Edition rulebook](https://axisallies.com/rules/axis-allies-rules-europe1940-second-edition.pdf), especially Combat Move, Conduct Combat, unit profiles, and the Global rules.
 - [Europe Second Edition FAQ](https://www.axisandallies.org/files/AA-Europe-1940-2nd-Edition-FAQ.pdf).
 - [Global 1940 Second Edition scenario](https://github.com/triplea-maps/world_war_ii_global/blob/master/map/games/ww2global40_2nd_edition.xml), consulted to cross-check territory names and adjacency.
 - [Natural Earth](https://www.naturalearthdata.com/about/terms-of-use/) public-domain 1:50m geographic data: land derived from admin polygons, rivers, lakes, and GRAY_50M_SR_W shaded relief. Schematic transport lines are visual context. The original atlas can be rebuilt with `tools/draw-atlas.py DATA_DIR`, Python, Shapely, Pillow and NumPy. Supply the three Natural Earth GeoJSON files as `admin_0_countries.json`, `rivers_lake_centerlines.json`, `lakes.json` and the extracted relief TIFF as `GRAY_50M_SR_W.tif`.

@@ -88,11 +88,68 @@ function buildLandLabels(map,layer){
     return {text,size};
   });
 }
+const ownerStyle={
+  Germany:{ink:'#4d5845',hatch:'german-hatch',angle:37},
+  France:{ink:'#345f8a',hatch:'french-hatch',angle:-37}
+};
+function buildControlBands(map,shapes,regions){
+  const defs=map.querySelector('defs'), layer=map.querySelector('#controlBands');
+  for(const {ink,hatch,angle} of Object.values(ownerStyle)){
+    const pattern=node('pattern',{id:hatch,patternUnits:'userSpaceOnUse',width:4.2,height:4.2,patternTransform:'rotate('+angle+')'});
+    pattern.append(node('path',{d:'M2 0V4.2',stroke:ink,'stroke-width':.8}));
+    defs.append(pattern);
+  }
+  const bands={};
+  for(const [id,d] of Object.entries(shapes)){
+    const href='#territory-'+id;
+    defs.append(node('path',{id:href.slice(1),d}));
+    const clip=node('clipPath',{id:'inside-'+id});
+    clip.append(node('use',{href}));defs.append(clip);
+    const band=node('g',{'clip-path':'url(#inside-'+id+')',fill:'none','stroke-linejoin':'round'});
+    band.append(node('use',{href,stroke:'currentColor','stroke-width':'var(--outer)',opacity:.15}),
+      node('use',{href,stroke:'currentColor','stroke-width':'var(--inner)',opacity:.29}),
+      node('use',{href,'stroke-width':'var(--outer)',opacity:.60}));
+    layer.append(band);
+    const region=node('path',{d,fill:'transparent','data-place':id});
+    region.append(node('title',{}));regions.append(region);
+    bands[id]={band,region};
+  }
+  return bands;
+}
+function buildSeaZones(map,chart){
+  const layer=map.querySelector('#seaZones'), numbers=node('g',{'pointer-events':'none'});
+  const zones=new Map();
+  for(const {number,label,d,neighbors,room,ruleRoom} of chart.zones){
+    const area=node('path',{d,'fill-rule':'evenodd',fill:'transparent','data-sea':number,
+      'aria-label':'Sea zone '+number});
+    area.append(node('title',{},'Sea zone '+number));layer.append(area);
+    const [x,y]=label;
+    const mark=node('g',{transform:'translate('+x+' '+y+')'});
+    // Short horizontal rules distinguish a zone number from a depth contour.
+    mark.append(node('path',{d:'M-19 0h4m30 0h4',stroke:'#344f59','stroke-width':1.1}),
+      node('text',{y:4.3,'text-anchor':'middle','font-family':'Arial, sans-serif','font-size':13.5,
+        'font-weight':700,'letter-spacing':.65,fill:'#314e59',stroke:'#c5d5cd','stroke-width':2.2,
+        'paint-order':'stroke'},number));
+    numbers.append(mark);
+    zones.set(String(number),{area,mark,x,y,neighbors,room,ruleRoom});
+  }
+  layer.append(node('path',{d:chart.dividers,fill:'none',stroke:'#365664','stroke-width':1.3,
+    'stroke-dasharray':'6 3','vector-effect':'non-scaling-stroke',opacity:.73,'pointer-events':'none'}),numbers);
+  return zones;
+}
 const bound=(v,min,max)=>Math.min(max,Math.max(min,v));
 export async function atlas(onPick,onView,initial) {
   const map=document.querySelector('#map'), forces=document.querySelector('#forces'), regions=document.querySelector('#regions'),routes=document.querySelector('#routes');
   const shapes=await (await fetch('./assets/territories.json')).json();
-  for(const [id,d] of Object.entries(shapes)) regions.append(node('path',{d,fill:'transparent','data-place':id}));
+  const chart=await (await fetch('./assets/sea-zones.json')).json();
+  const bands=buildControlBands(map,shapes,regions), zones=buildSeaZones(map,chart);
+  const control=map.querySelector('#controlBands'), intel=document.querySelector('#mapIntel');
+  let inspectedPlace=null, inspectedSea=null, lastScale=0;
+  function inspectSea(id){
+    if(inspectedSea)zones.get(inspectedSea).area.setAttribute('fill','transparent');
+    inspectedSea=id;
+    if(id)zones.get(id).area.setAttribute('fill','#426d8133');
+  }
   const labelGroup=document.querySelector('#labels');
   for(const [name,lon,lat,kind] of labels){
     const [x,y]=project(lon,lat);
@@ -125,7 +182,33 @@ export async function atlas(onPick,onView,initial) {
     for(const {text,size} of landLabels){
       text.style.display=view.z>=1.05 && size*scale>=9?'':'none';
     }
+    if(scale!==lastScale){
+      const width=bound(10/scale,3.2,16);
+      for(const {hatch,angle} of Object.values(ownerStyle)){
+        document.getElementById(hatch).setAttribute('patternTransform','rotate('+angle+') scale('+bound(1/scale,.25,1.4)+')');
+      }
+      control.style.setProperty('--outer',width+'px');
+      control.style.setProperty('--inner',width*.48+'px');
+      for(const {mark,x,y,room,ruleRoom} of zones.values()){
+        const size=Math.min(1/scale,room);
+        mark.setAttribute('transform','translate('+x+' '+y+') scale('+size+')');
+        mark.firstChild.style.display=size>ruleRoom?'none':'';
+        mark.style.display=size*scale<.65?'none':'';
+      }
+      lastScale=scale;
+    }
     if(!game)return;
+    for(const [id,{band,region}] of Object.entries(bands)){
+      const owner=game.owners[id];
+      if(band.dataset.owner===owner)continue;
+      band.dataset.owner=owner;
+      band.style.color=ownerStyle[owner].ink;
+      band.lastChild.setAttribute('stroke','url(#'+ownerStyle[owner].hatch+')');
+      region.firstChild.textContent=places[id].name+' · '+owner+' control';
+    }
+    const info=inspectedSea?'Sea zone '+inspectedSea+' · Adjacent '+zones.get(inspectedSea).neighbors.join(', '):
+      inspectedPlace?places[inspectedPlace].name+' · '+game.owners[inspectedPlace]+' control':'';
+    if(intel.textContent!==info)intel.textContent=info;
     routes.replaceChildren();forces.replaceChildren();
     for(const region of regions.children){
       const id=region.dataset.place;
@@ -177,8 +260,8 @@ export async function atlas(onPick,onView,initial) {
   map.addEventListener('pointerdown',e=>{
     if(e.button!==0)return;
     pointers.set(e.pointerId,coords(e));map.setPointerCapture(e.pointerId);
-    const hit=e.target.closest('[data-place]')?.dataset;
-    const v=basis();gesture={...v,firstX:v.x,firstY:v.y,moved:v.n>1,id:hit?.place,type:hit?.unit};
+    const hit=e.target.closest('[data-place],[data-sea]')?.dataset;
+    const v=basis();gesture={...v,firstX:v.x,firstY:v.y,moved:v.n>1,id:hit?.place,type:hit?.unit,sea:hit?.sea};
   });
   map.addEventListener('pointermove',e=>{
     if(!pointers.has(e.pointerId)||!gesture)return;
@@ -193,11 +276,20 @@ export async function atlas(onPick,onView,initial) {
   });
   function end(e){
     if(!pointers.has(e.pointerId))return;
-    const tapped=e.type==='pointerup'&&gesture&&!gesture.moved&&gesture.id;
+    const tapped=e.type==='pointerup'&&gesture&&!gesture.moved;
+    const id=gesture?.id, sea=gesture?.sea;
     const type=gesture?.type;
     pointers.delete(e.pointerId);
     gesture=pointers.size?{...basis(),moved:true}:null;
-    if(tapped){if(view.z<.66){[view.x,view.y]=position(tapped);view.z=1.25;render();}onPick(tapped,type);}
+    if(tapped){
+      inspectedPlace=id||null;
+      inspectSea(sea && sea!==inspectedSea ? sea : null);
+      if(id){
+        if(view.z<.66){[view.x,view.y]=position(id);view.z=1.25;}
+        onPick(id,type);
+      }
+      render();
+    }
     onView({...view});
   }
   map.addEventListener('pointerup',end);map.addEventListener('pointercancel',end);

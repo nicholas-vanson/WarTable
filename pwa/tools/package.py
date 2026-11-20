@@ -28,7 +28,8 @@ code=[]
 for module in ['rules.js','map.js','app.js']:
     js=(site/module).read_text()
     js='\n'.join(line.removeprefix('export ') for line in js.splitlines() if not line.startswith('import '))
-    js=js.replace("await (await fetch('./assets/territories.json')).json()", (site/'assets/territories.json').read_text())
+    for name in ['territories.json','sea-zones.json']:
+        js=js.replace(f"await (await fetch('./assets/{name}')).json()", (site/'assets'/name).read_text())
     js=js.replace("if('serviceWorker' in navigator)", "if(false)")
     code.append(js)
 html = page.replace('<script type="module" src="./app.js"></script>', '<script type="module">'+'\n'.join(code)+'</script>')
