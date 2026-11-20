@@ -64,7 +64,14 @@ def texture(name, column, row, pitch, paper, tint, angle):
     sample=join_edges(sample.transpose(1,0,2)).transpose(1,0,2)
     pattern=element(defs,'pattern',id=name,patternUnits='userSpaceOnUse',width=pitch,
                     height=pitch,patternTransform=f'rotate({angle})')
-    element(pattern,'rect',width=pitch,height=pitch,fill=paper)
+    if name == 'woods':
+        # Expose the field or upland through gaps in the original painted tree canopy.
+        green = sample[:, :, 1].astype(float)
+        coverage = np.clip((200 - green) / 47, 0, 1)
+        alpha = np.rint(255 * coverage**2 * (3 - 2 * coverage)).astype('uint8')
+        sample = np.dstack((sample, alpha))
+    else:
+        element(pattern,'rect',width=pitch,height=pitch,fill=paper)
     element(pattern,'image',width=pitch+.03,height=pitch+.03,
             href=bitmap(Image.fromarray(sample)),preserveAspectRatio='none')
 
@@ -83,26 +90,29 @@ def smooth_grid(values):
                y=np.linspace(0,HEIGHT,fine.shape[0]),z=fine,fill_type='OuterOffset')
 
 
-def woodland_shapes():
-    # Smooth, discrete forest overprints. The woodland clusters are illustrative.
-    xs=np.linspace(0,WIDTH,402)
-    ys=np.linspace(0,HEIGHT,344)
-    random_grid=np.random.default_rng(1940)
-    def noise(w,h):
-        swatch=Image.fromarray(random_grid.integers(0,256,(h,w),dtype='uint8'))
-        return np.asarray(swatch.resize((len(xs),len(ys)),Image.Resampling.BICUBIC))/255
-    field=.65*noise(59,51)+.35*noise(158,136)
-    for lon,lat,rx,ry in [(5.6,50.15,37,29),(7.1,48.2,16,38),(8.2,48.25,15,36),
-                           (-.8,48.65,34,25),(1.6,47.6,25,25),(14,62,160,235),(28,58,180,120)]:
-        x,y=project(lon,lat)
-        field+=.30*np.exp(-((xs[None,:]-x)/rx)**2-((ys[:,None]-y)/ry)**2)
-    cg=smooth_grid(field)
-    points,offsets=cg.filled(.70,2)
-    rings=[]
-    for polygon, cuts in zip(points,offsets):
-        for a,b in zip(cuts[:-1],cuts[1:]):
-            rings.append(path_data(polygon[a:b])+'Z')
-    return ''.join(rings)
+def woodland_mask():
+    # The mask carries only density. Individual crowns keep the resolution of the painted swatch.
+    xs = np.arange(WIDTH) + .5
+    ys = np.arange(HEIGHT) + .5
+    noise_rng = np.random.default_rng(1940)
+
+    def noise(cols, rows):
+        pixels = noise_rng.integers(0, 256, (rows, cols), dtype='uint8')
+        swatch = Image.fromarray(pixels).resize((WIDTH, HEIGHT), Image.Resampling.BICUBIC)
+        return np.asarray(swatch, dtype='float32') / 255
+
+    density = (.38 * noise(24, 18) + .36 * noise(54, 67)
+               + .19 * noise(141, 128) + .07 * noise(487, 430))
+    for lon, lat, rx, ry in [(5.6,50.15,37,29),(7.1,48.2,16,38),(8.2,48.25,15,36),
+                             (-.8,48.65,34,25),(1.6,47.6,25,25),(14,62,160,235),(28,58,180,120)]:
+        x, y = project(lon, lat)
+        density += .31 * np.exp(-((xs[None, :] - x) / rx)**2 - ((ys[:, None] - y) / ry)**2)
+
+    cover = np.clip((density - .40) / .43, 0, 1)
+    feather = np.rint(255 * cover**2 * (3 - 2 * cover)).astype('uint8')
+    mask = element(defs, 'mask', id='woodland-density', maskUnits='userSpaceOnUse',
+                   x=0, y=0, width=WIDTH, height=HEIGHT, color_interpolation='sRGB')
+    element(mask, 'image', width=WIDTH, height=HEIGHT, href=bitmap(Image.fromarray(feather)))
 
 
 def contours():
@@ -166,8 +176,8 @@ uplands=smooth_grid(height_data*.5)
 polygons,cuts=uplands.filled(460,10000)
 upland_paths=[path_data(poly[a:b])+'Z' for poly,offsets in zip(polygons,cuts) for a,b in zip(offsets[:-1],offsets[1:])]
 element(ground,'path',d=''.join(upland_paths),fill='url(#upland)',fill_rule='evenodd')
-element(ground,'path',d=woodland_shapes(),fill='url(#woods)',fill_rule='evenodd',
-        stroke='#899677',stroke_width=.32)
+woodland_mask()
+element(ground,'rect',width=WIDTH,height=HEIGHT,fill='url(#woods)',mask='url(#woodland-density)')
 relief=Image.open(ART/'relief.webp').convert('RGBA')
 element(ground,'image',href=bitmap(relief),width=WIDTH,height=HEIGHT,opacity=.58)
 label_sites=[]
