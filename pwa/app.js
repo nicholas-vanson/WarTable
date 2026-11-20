@@ -1,4 +1,4 @@
-import {places,stats,types,newGame,count,available,plan,commit,chooseBattle,currentBattle,rollAttack,rollDefense,casualties,retreat} from './rules.js';
+import {places,stats,types,newGame,count,available,plan,commit,chooseBattle,currentBattle,rollAttack,rollDefense,casualties,retreat,theaterVictoryCities,defenderLosses} from './rules.js';
 import {atlas} from './map.js';
 const $=id=>document.getElementById(id), key='wartable.western-front.v1';
 const newLayoutSeed=()=>crypto.getRandomValues(new Uint32Array(1))[0];
@@ -175,6 +175,7 @@ function advanceRoll(){
   }
   const card=$('panel').querySelector('.roll-card[data-side="'+play.side+'"]');
   card.outerHTML=rollCard(play.rolls,play.side,play);
+  if(play.side==='attack'&&play.stage==='marked')updateBattleForces();
   if((play.frame===0||play.index===0&&play.frame===1)&&play.stage==='rolling'){
     $('panel').querySelector('[data-side="'+play.side+'"] [data-unit="'+play.types[play.index]+'"]').scrollIntoView({block:'nearest'});
   }
@@ -184,20 +185,42 @@ function advanceRoll(){
   if($('rollStatus').textContent!==note)$('rollStatus').textContent=note;
   rollTimer=setTimeout(advanceRoll,delay);
 }
+function updateBattleForces(){
+  const b=currentBattle(s),header=$('battleForces');
+  if(!b){header.replaceChildren();return;}
+  const defenders=s.units[b.to];
+  const pending=b.step==='defense'||b.step==='losses';
+  let rolls=pending?b.dice.attack:[];
+  if(playback?.side==='attack'){
+    const shown=playback.types.slice(0,playback.index+(playback.stage==='marked'?1:0));
+    rolls=rolls.filter(d=>shown.includes(d.type));
+  }
+  const lost=defenderLosses(defenders,rolls.filter(d=>d.hit).length);
+  function column(role,nation,units,losses){
+    const icons=types.filter(k=>units[k]>0).map(k=>unitCounter(k,units[k]-(losses?.[k]||0),nation)).join(' ');
+    return '<div class="battle-column"><div class="force-heading"><small>'+role+'</small> <strong>'+nation+'</strong></div>'+
+      '<div class="force-strength">'+icons+'<span class="force-total">'+(count(units)-(losses?count(losses):0))+' total</span></div></div>';
+  }
+  header.innerHTML=column('Attacking','Germany',b.attack,b.step==='losses'?ui.losses:null)+
+    column('Defending',s.owners[b.to],defenders,lost);
+}
 function battlePanel(){
   const b=currentBattle(s);
   if(!b){
     return title('Conduct combat','Choose the next battle to resolve.')+block('Battle order')+
       s.battles.map(b=>b.resolved?'<div class="review-item"><strong>'+places[b.to].name+'</strong><p>'+reviewDetail(b.result)+'</p></div>':opt(b.to,places[b.to].name,unitLine(b.attack,'Germany')+' attacking','⚑','battle')).join('');
   }
-  const info=title(places[b.to].name,'Germany · '+unitLine(b.attack,'Germany')+'<br>France · '+unitLine(s.units[b.to],s.owners[b.to]))+block(b.round?'Battle round '+b.round:'Land battle')+rollsBox(b.dice,playback);
+  const city=theaterVictoryCities.find(c=>c.territory===b.to);
+  const cityNote=city&&!b.round?'<p class="objective"><span aria-hidden="true">'+(city.capitalOf?'★':'◆')+'</span> '+city.name+
+    ' · Victory city'+(city.capitalOf?' · '+city.capitalOf+'’s capital':'')+'</p>':'';
+  const info='<h2>'+places[b.to].name+'</h2>'+block(b.round?'Battle round '+b.round:'Land battle')+cityNote+rollsBox(b.dice,playback);
   if(playback){
     $('action').innerHTML='<div class="roll-progress" id="rollStatus" role="status">Rolling '+stats[playback.types[playback.index]].name.toLowerCase()+'…</div>';
     return info;
   }
   if(b.step==='defense'){
     $('action').innerHTML=btn('Roll French defense','defend','primary');
-    return info+'<p class="hint">All defending units in this round return fire, including those hit by Germany.</p>';
+    return info+'<p class="hint">The header counts survivors. All defenders return fire this round, including marked casualties.</p>';
   }
   if(b.step==='losses' && !b.hits){
     $('action').innerHTML=btn('Resolve round','loss','primary');
@@ -207,13 +230,13 @@ function battlePanel(){
     const limits={};
     for(const k of types)limits[k]=Math.min(b.attack[k],ui.losses[k]+b.hits-count(ui.losses));
     $('action').innerHTML=btn('Confirm casualties','loss','primary',count(ui.losses)===b.hits?'':'disabled');
-    return info+'<h3>Choose your casualties</h3><p class="hint">Assign '+b.hits+' German '+(b.hits===1?'loss':'losses')+'.</p>'+stepper('casualty',ui.losses,limits);
+    return info+'<h3>Choose your casualties</h3><p class="hint">Assign '+b.hits+' German '+(b.hits===1?'loss':'losses')+'. The header previews your selections.</p>'+stepper('casualty',ui.losses,limits);
   }
   $('action').innerHTML=btn(b.round?'Continue · roll German attack':'Roll German attack','roll','primary');
   if(b.step==='decision'){
     return info+'<h3>Continue or retreat?</h3><p class="hint">Retreat all survivors to one origin.</p>'+b.origins.map(id=>btn('Retreat to '+places[id].name,'retreat','secondary','data-id="'+id+'"')).join('');
   }
-  return info+'<p class="hint">'+unitCounter('inf')+' hits on 1 attacking or 1–2 defending. '+unitCounter('tank')+' hits on 1–3.</p>';
+  return info;
 }
 function timeline(){
   return s.record.map(e=>'<div class="review-item"><strong>'+esc(e.title)+'</strong><p>'+reviewDetail(e.detail)+'</p>'+rollsBox(e.dice)+'</div>').join('');
@@ -245,6 +268,7 @@ function render(){
     $('panel').innerHTML=title('Exercise review','Committed attacks and resolved outcomes.')+timeline();
     $('action').innerHTML=btn('Start another exercise','reset');
   }
+  updateBattleForces();
   const nextView=[s.phase,s.active,currentBattle(s)?.step,ui.from,ui.to,ui.stack].join('|');
   if(panelView!==nextView)document.querySelector('.panel-scroll').scrollTop=0;
   panelView=nextView;
@@ -286,7 +310,7 @@ document.addEventListener('click',e=>{
 });
 $('closeDialog').onclick=()=>$('dialog').close();
 $('journal').onclick=()=>showDialog('Exercise review',(s.phase==='review'?timeline():'<p>The record opens after the last battle. It includes committed attacks, dice, casualties, retreats, and control of each territory.</p>'));
-$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>The narrow olive hatch marks German control and the blue hatch marks French control. Tap a territory to read its controller. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><h3>Plan an attack</h3><p>German counters use '+unitCounter('inf',undefined,'Germany')+' for infantry and '+unitCounter('tank',undefined,'Germany')+' for armor. Adjust the quantity, then tap a highlighted French territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this exercise</h3><p>This local exercise covers adjacent land attacks with infantry and tanks. The starting forces are arranged for testing. The surrounding atlas is for exploration.</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+btn('Restart exercise','reset','danger'));
+$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The narrow olive hatch marks German control and the blue hatch marks French control. Tap a territory to read its controller. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><h3>Plan an attack</h3><p>German counters use '+unitCounter('inf',undefined,'Germany')+' for infantry and '+unitCounter('tank',undefined,'Germany')+' for armor. Adjust the quantity, then tap a highlighted French territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this exercise</h3><p>This local exercise covers adjacent land attacks with infantry and tanks. The starting forces are arranged for testing. The surrounding atlas is for exploration.</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+btn('Restart exercise','reset','danger'));
 // Store the two panel dimensions separately so rotating the phone restores the last fit.
 function setupOrdersPanel(){
   const main=document.querySelector('main'),sheet=$('ordersPanel'),grip=$('resizePanel');
@@ -301,7 +325,7 @@ function setupOrdersPanel(){
   function dimensions(){
     const vertical=stacked.matches,axis=vertical?'height':'width';
     const extent=main.getBoundingClientRect()[axis];
-    const max=Math.floor(extent*(vertical?.74:.62)),min=Math.min(max,vertical?162:218);
+    const max=Math.floor(extent*(vertical?.74:.62)),min=Math.min(max,vertical?(currentBattle(s)?232:162):218);
     return {axis,extent,min,max,coordinate:vertical?'clientY':'clientX'};
   }
   function apply(){
@@ -350,7 +374,9 @@ function setupOrdersPanel(){
     else return;
     e.preventDefault();persist();
   };
-  apply();new ResizeObserver(apply).observe(main);
+  apply();
+  const layoutObserver=new ResizeObserver(apply);
+  layoutObserver.observe(main);layoutObserver.observe($('battleForces'));
 }
 setupOrdersPanel();
 render();

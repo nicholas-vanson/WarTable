@@ -29,6 +29,10 @@ Open `http://localhost:8080/` on that machine. Service workers require HTTPS or 
 
 ## Reading the board
 
+The two combat-header columns show each side’s surviving units. German hits mark French casualties automatically. German casualty selections preview the remaining attacking force until confirmed. All defenders eligible at the start of the round still roll.
+
+The atlas marks victory cities that are power capitals with an ochre star, and the other victory cities with a green diamond. Each counts as one victory city. See pages 6 and 34 of the [Europe 1940 Second Edition rulebook](https://www.axisandallies.org/files/rules/Axis-Allies-Europe-1940-Second-Edition.pdf).
+
 Use **Hide orders** for the full map and **Open orders** to restore the panel. On a portrait phone the reopen button sits at the lower right. Drag the grip on the panel’s map-facing edge to resize it. The panel remembers its portrait height and landscape width separately.
 
 The border band follows the current controller of each of the four playable territories. Germany uses olive hatching and France uses blue hatching in the opposite direction. Tap a territory to read the controller in the map footer. A capture updates the band when the battle resolves.

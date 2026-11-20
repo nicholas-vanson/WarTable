@@ -5,6 +5,17 @@ export const places = {
   nb: {name:'Normandy Bordeaux', owner:'France', targets:[], lon:-.8, lat:47.45},
   fr: {name:'France', owner:'France', targets:[], lon:2.65, lat:48.45}
 };
+// Victory cities within this atlas, from Europe 1940 Second Edition, pp. 6 and 34.
+export const theaterVictoryCities=[
+  {name:'London',lon:-.12,lat:51.51,capitalOf:'United Kingdom'},
+  {name:'Paris',lon:2.35,lat:48.86,capitalOf:'France',territory:'fr'},
+  {name:'Berlin',lon:13.41,lat:52.52,capitalOf:'Germany'},
+  {name:'Rome',lon:12.5,lat:41.9,capitalOf:'Italy'},
+  {name:'Moscow',lon:37.62,lat:55.75,capitalOf:'Soviet Union'},
+  {name:'Warsaw',lon:21.01,lat:52.23},
+  {name:'Leningrad',lon:30.32,lat:59.94},
+  {name:'Stalingrad',lon:44.51,lat:48.71}
+];
 export const types = ['inf','tank'];
 export const stats = {
   inf:{name:'Infantry',attack:1,defense:2,cost:3},
@@ -68,12 +79,16 @@ function finishBattle(s,b,result){
   s.record.push({title:places[b.to].name,detail:result});
   if(s.battles.every(b=>b.resolved))s.phase='review';
 }
+export function defenderLosses(force,hits){
+  const lost=empty();
+  for(const k of types){lost[k]=Math.min(force[k],hits);hits-=lost[k];}
+  return lost;
+}
 function applyLosses(s,b,losses){
   for(const k of types)b.attack[k]-=losses[k];
   const defenders=s.units[b.to];
-  let hits=b.dice.attack.filter(d=>d.hit).length;
-  const lost=empty();
-  for(const k of types){lost[k]=Math.min(defenders[k],hits);defenders[k]-=lost[k];hits-=lost[k];}
+  const lost=defenderLosses(defenders,b.dice.attack.filter(d=>d.hit).length);
+  for(const k of types)defenders[k]-=lost[k];
   s.record.push({title:places[b.to].name+' · round '+b.round,dice:b.dice,
     detail:'Losses — Germany: '+describe(losses)+'; France: '+describe(lost)+'.'});
   if(!count(defenders)&&count(b.attack)){
