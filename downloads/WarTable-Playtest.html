@@ -55,13 +55,10 @@ aside h3,dialog h3{font:600 18px/1.2 Georgia,serif;margin:16px 0 4px}
 .hint,.review-item p{font-size:13px;line-height:1.45;color:#505949}
 .block-title{display:flex;align-items:center;gap:9px;margin:16px 0 6px}
 .block-title::after{content:'';flex:1;border-top:1px solid var(--sheet-rule)}
-.roster{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-block:1px solid var(--sheet-rule);background:#fffdf028}
-.force,.option {
+.option {
   width:100%;border:0;border-radius:0;display:flex;align-items:center;text-align:left;
   color:var(--sheet-ink);background:transparent;
 }
-.force{gap:8px;min-height:47px;padding:4px 6px;font-size:13px;font-weight:650}
-.force + .force{border-left:1px solid var(--sheet-rule);padding-left:10px}
 .counter-face {
   display:inline-flex;align-items:center;gap:3px;justify-content:center;flex:none;
   height:22px;min-width:34px;padding:2px;background:#e6dfbd;border:1.5px solid #465440;
@@ -71,7 +68,7 @@ aside h3,dialog h3{font:600 18px/1.2 Georgia,serif;margin:16px 0 4px}
 .symbol.inf{background:linear-gradient(to top right,transparent 45%,currentColor 47% 53%,transparent 55%),linear-gradient(to bottom right,transparent 45%,currentColor 47% 53%,transparent 55%)}
 .symbol.tank{border-radius:50%;height:9px}
 .option{min-height:44px;gap:9px;padding:7px 2px;border-bottom:1px solid var(--sheet-rule)}
-.option.active,.option:active,.force:active{background:#d9ddc7}
+.option.active,.option:active{background:#d9ddc7}
 .unitcode{display:grid;place-items:center;min-width:26px;height:26px;border:1px solid #a1a38c;color:#654b39;font:600 17px/1 Georgia,serif}
 .option strong{font-size:14px}.option small{display:block;font-size:12px;color:#535c4d;margin-top:2px}
 .end{margin-left:auto;color:#646e58;font:20px Georgia}
@@ -129,11 +126,10 @@ dialog h2{font-size:27px}
 #dialogBody p{font-size:14px;line-height:1.5;margin:4px 0 9px}
 #dialogBody>button{margin-top:8px}
 .header-button{font-family:'Courier New',monospace;font-weight:700;background:#ffffff08;border-color:#909780}
-@media(hover:hover){.option:hover,.force:hover,.secondary:hover,.stepper button:enabled:hover{background:#e2e3ce}.primary:enabled:hover{background:#3a4d33}}
+@media(hover:hover){.option:hover,.secondary:hover,.stepper button:enabled:hover{background:#e2e3ce}.primary:enabled:hover{background:#3a4d33}}
 @media(max-height:540px) and (orientation:landscape){
   aside{--gutter:12px}.panelhead{padding-top:7px}.panel-scroll{padding-bottom:8px}
   aside h2{font-size:25px;margin:7px 0 3px}.block-title{margin:9px 0 3px}
-  .force{min-height:44px;padding-inline:3px;gap:6px}.force+.force{padding-left:6px}
   #action:not(:empty){padding-block:5px}.dialog-head{padding-block:4px}
 }
 @media(max-width:650px) and (orientation:portrait){
@@ -622,6 +618,7 @@ function drawStack(parent,id,type,number,nation,role,at,tokenScale,detailed,sele
   if(detailed)stack.append(node('text',{x:0,y:24,'text-anchor':'middle','font-family':'sans-serif','font-size':11,'font-weight':650,fill:unitInk,
     stroke:'#f5efd8','paint-order':'stroke','stroke-width':3},(nation==='Germany'?'DE':'FR')+' · '+name));
   parent.append(stack);
+  return stack;
 }
 const labels=[
   ['NORTH SEA',1,55.2,'water'],['BALTIC SEA',19.7,57.3,'water'],['ATLANTIC OCEAN',-8,47.5,'water'],['MEDITERRANEAN SEA',7.3,38,'water'],['BLACK SEA',33.3,43.4,'water'],['NORWEGIAN SEA',.5,66,'water'],
@@ -890,7 +887,12 @@ async function atlas(onPick,onView,initial) {
       for(const type of types){
         if(!units[type])continue;
         const at=seat(id,'home',type,spread,offsets),selected=id===focus&&type===selectedType;
-        drawStack(forces,id,type,units[type],nation,'home',at,tokenScale,detailed,selected);
+        const stack=drawStack(forces,id,type,units[type],nation,'home',at,tokenScale,detailed,selected);
+        if(game.phase==='plan'&&friendly){
+          stack.setAttribute('role','button');
+          stack.setAttribute('tabindex','0');
+          stack.setAttribute('aria-pressed',String(selected));
+        }
         if(selected)selectedAt=at;
       }
       for(const group of groups){
@@ -965,6 +967,20 @@ async function atlas(onPick,onView,initial) {
     }
     onView({...view});
   }
+  function activateStack(event){
+    const stack=event.target.closest('[data-unit][role="button"]');
+    if(!stack)return;
+    event.preventDefault();
+    onPick(stack.dataset.place,stack.dataset.unit);
+    const panel=document.getElementById('panel');
+    const next=document.getElementById('ordersPanel').hidden?document.getElementById('openPanel'):
+      panel.querySelector('button:not(:disabled)')||forces.querySelector('[role="button"]');
+    next?.focus();
+  }
+  forces.addEventListener('keydown',event=>{
+    if(!event.repeat&&(event.key==='Enter'||event.key===' '))activateStack(event);
+  });
+  forces.addEventListener('click',event=>{if(event.detail===0)activateStack(event);});
   map.addEventListener('pointerup',end);map.addEventListener('pointercancel',end);
   map.addEventListener('wheel',e=>{e.preventDefault();const p=coords(e);zoom(Math.exp(-bound(e.deltaY,-240,240)*.002),p.x,p.y);onView({...view});},{passive:false});
   function button(id,fn){document.getElementById(id).onclick=()=>{fn();render();onView({...view});};}
@@ -1061,15 +1077,6 @@ function dieFace(d,face,stage){
 function stepper(kind,values,limits,keys=types,min=0){
   return keys.map(k=>'<div class="stepper"><span>'+unitCounter(k,undefined,'Germany')+'</span><button aria-label="Remove one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="-1" '+(values[k]<=min?'disabled':'')+'>−</button><output>'+values[k]+'</output><button aria-label="Add one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="1" '+(values[k]>=limits[k]?'disabled':'')+'>+</button></div>').join('');
 }
-function forceRoster(id){
-  const free=available(s,id);
-  const stacks=types.filter(k=>free[k]).map(k=>{
-    const label=stats[k].name+', '+free[k]+' available in '+places[id].name;
-    return '<button class="force" data-act="stack" data-id="'+id+'-'+k+'" aria-label="'+label+'">'+
-      unitCounter(k,free[k],s.owners[id])+'<span class="end" aria-hidden="true">›</span></button>';
-  });
-  return block(places[id].name)+(stacks.length?'<div class="roster">'+stacks.join('')+'</div>':'<p class="hint">All units assigned.</p>');
-}
 function plannedAttacks(){
   const destinations=new Map();
   s.orders.forEach((order,index)=>{
@@ -1086,7 +1093,7 @@ function plannedAttacks(){
   return html;
 }
 function planPanel(){
-  let html=title('Combat move','Select a stack here or on the map, then choose how many units to send.');
+  let html=title('Combat move','Tap a unit stack on the map to plan an attack.');
   if(ui.to){
     const existing=s.orders.some(o=>o.from===ui.from&&o.to===ui.to);
     html=title('Plan attack',places[ui.from].name+' → '+places[ui.to].name)+block('Assign units')+stepper('assign',ui.units,available(s,ui.from,ui.to))+
@@ -1098,10 +1105,6 @@ function planPanel(){
       block('Tap destination to plan move')+
       places[ui.from].targets.map(id=>opt(id,places[id].name,unitLine(s.units[id],s.owners[id]),'↗','target')).join('')+
       '<div class="actions">'+btn('Deselect stack','clear')+'</div>';
-  }else{
-    const origins=ui.from?[ui.from]:['hb','wg'];
-    html+=origins.map(forceRoster).join('');
-    if(ui.from)html+=btn('All forces','clear');
   }
   if(!ui.to&&s.orders.length)html+=plannedAttacks();
   $('action').innerHTML=!ui.to&&!ui.stack?'<button class="primary" id="hold" '+(s.orders.length?'':'disabled')+'>Hold to commit attacks</button>':'';
@@ -1299,12 +1302,11 @@ document.addEventListener('click',e=>{
   const {act,id,k,n}=b.dataset;
   run(()=>{
     switch(act){
-      case 'stack': {const [place,type]=id.split('-');selectStack(place,type);break;}
       case 'quantity': ui.quantity=Math.max(1,Math.min(available(s,ui.from)[ui.stack],ui.quantity+Number(n)));break;
       case 'target': selectTarget(id);break;
       case 'assign': ui.units[k]+=Number(n);break;
       case 'casualty': ui.losses[k]+=Number(n);break;
-      case 'back': ui.to=null;break;
+      case 'back': ui=freshUI();break;
       case 'clear': ui=freshUI();break;
       case 'edit': {const order=s.orders[Number(id)];selectOrigin(order.from);selectTarget(order.to);break;}
       case 'add': plan(s,ui.from,ui.to,ui.units);ui=freshUI();break;
@@ -1321,7 +1323,7 @@ document.addEventListener('click',e=>{
 });
 $('closeDialog').onclick=()=>$('dialog').close();
 $('journal').onclick=()=>showDialog('Exercise review',(s.phase==='review'?timeline():'<p>The record opens after the last battle. It includes committed attacks, dice, casualties, retreats, and control of each territory.</p>'));
-$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The narrow olive hatch marks German control and the blue hatch marks French control. Tap a territory to read its controller. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><h3>Plan an attack</h3><p>German counters use '+unitCounter('inf',undefined,'Germany')+' for infantry and '+unitCounter('tank',undefined,'Germany')+' for armor. Adjust the quantity, then tap a highlighted French territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this exercise</h3><p>This local exercise covers adjacent land attacks with infantry and tanks. The starting forces are arranged for testing. The surrounding atlas is for exploration.</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+btn('Restart exercise','reset','danger'));
+$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The narrow olive hatch marks German control and the blue hatch marks French control. Tap a territory to read its controller. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><h3>Plan an attack</h3><p>German counters use '+unitCounter('inf',undefined,'Germany')+' for infantry and '+unitCounter('tank',undefined,'Germany')+' for armor. Select a stack on the map, adjust the quantity, then tap a highlighted French territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this exercise</h3><p>This local exercise covers adjacent land attacks with infantry and tanks. The starting forces are arranged for testing. The surrounding atlas is for exploration.</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+btn('Restart exercise','reset','danger'));
 // Store the two panel dimensions separately so rotating the phone restores the last fit.
 function setupOrdersPanel(){
   const main=document.querySelector('main'),sheet=$('ordersPanel'),grip=$('resizePanel');

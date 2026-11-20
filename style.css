@@ -48,13 +48,10 @@ aside h3,dialog h3{font:600 18px/1.2 Georgia,serif;margin:16px 0 4px}
 .hint,.review-item p{font-size:13px;line-height:1.45;color:#505949}
 .block-title{display:flex;align-items:center;gap:9px;margin:16px 0 6px}
 .block-title::after{content:'';flex:1;border-top:1px solid var(--sheet-rule)}
-.roster{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-block:1px solid var(--sheet-rule);background:#fffdf028}
-.force,.option {
+.option {
   width:100%;border:0;border-radius:0;display:flex;align-items:center;text-align:left;
   color:var(--sheet-ink);background:transparent;
 }
-.force{gap:8px;min-height:47px;padding:4px 6px;font-size:13px;font-weight:650}
-.force + .force{border-left:1px solid var(--sheet-rule);padding-left:10px}
 .counter-face {
   display:inline-flex;align-items:center;gap:3px;justify-content:center;flex:none;
   height:22px;min-width:34px;padding:2px;background:#e6dfbd;border:1.5px solid #465440;
@@ -64,7 +61,7 @@ aside h3,dialog h3{font:600 18px/1.2 Georgia,serif;margin:16px 0 4px}
 .symbol.inf{background:linear-gradient(to top right,transparent 45%,currentColor 47% 53%,transparent 55%),linear-gradient(to bottom right,transparent 45%,currentColor 47% 53%,transparent 55%)}
 .symbol.tank{border-radius:50%;height:9px}
 .option{min-height:44px;gap:9px;padding:7px 2px;border-bottom:1px solid var(--sheet-rule)}
-.option.active,.option:active,.force:active{background:#d9ddc7}
+.option.active,.option:active{background:#d9ddc7}
 .unitcode{display:grid;place-items:center;min-width:26px;height:26px;border:1px solid #a1a38c;color:#654b39;font:600 17px/1 Georgia,serif}
 .option strong{font-size:14px}.option small{display:block;font-size:12px;color:#535c4d;margin-top:2px}
 .end{margin-left:auto;color:#646e58;font:20px Georgia}
@@ -122,11 +119,10 @@ dialog h2{font-size:27px}
 #dialogBody p{font-size:14px;line-height:1.5;margin:4px 0 9px}
 #dialogBody>button{margin-top:8px}
 .header-button{font-family:'Courier New',monospace;font-weight:700;background:#ffffff08;border-color:#909780}
-@media(hover:hover){.option:hover,.force:hover,.secondary:hover,.stepper button:enabled:hover{background:#e2e3ce}.primary:enabled:hover{background:#3a4d33}}
+@media(hover:hover){.option:hover,.secondary:hover,.stepper button:enabled:hover{background:#e2e3ce}.primary:enabled:hover{background:#3a4d33}}
 @media(max-height:540px) and (orientation:landscape){
   aside{--gutter:12px}.panelhead{padding-top:7px}.panel-scroll{padding-bottom:8px}
   aside h2{font-size:25px;margin:7px 0 3px}.block-title{margin:9px 0 3px}
-  .force{min-height:44px;padding-inline:3px;gap:6px}.force+.force{padding-left:6px}
   #action:not(:empty){padding-block:5px}.dialog-head{padding-block:4px}
 }
 @media(max-width:650px) and (orientation:portrait){

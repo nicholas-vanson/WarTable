@@ -259,6 +259,7 @@ function drawStack(parent,id,type,number,nation,role,at,tokenScale,detailed,sele
   if(detailed)stack.append(node('text',{x:0,y:24,'text-anchor':'middle','font-family':'sans-serif','font-size':11,'font-weight':650,fill:unitInk,
     stroke:'#f5efd8','paint-order':'stroke','stroke-width':3},(nation==='Germany'?'DE':'FR')+' · '+name));
   parent.append(stack);
+  return stack;
 }
 const labels=[
   ['NORTH SEA',1,55.2,'water'],['BALTIC SEA',19.7,57.3,'water'],['ATLANTIC OCEAN',-8,47.5,'water'],['MEDITERRANEAN SEA',7.3,38,'water'],['BLACK SEA',33.3,43.4,'water'],['NORWEGIAN SEA',.5,66,'water'],
@@ -526,7 +527,12 @@ export async function atlas(onPick,onView,initial) {
       for(const type of types){
         if(!units[type])continue;
         const at=seat(id,'home',type,spread,offsets),selected=id===focus&&type===selectedType;
-        drawStack(forces,id,type,units[type],nation,'home',at,tokenScale,detailed,selected);
+        const stack=drawStack(forces,id,type,units[type],nation,'home',at,tokenScale,detailed,selected);
+        if(game.phase==='plan'&&friendly){
+          stack.setAttribute('role','button');
+          stack.setAttribute('tabindex','0');
+          stack.setAttribute('aria-pressed',String(selected));
+        }
         if(selected)selectedAt=at;
       }
       for(const group of groups){
@@ -601,6 +607,20 @@ export async function atlas(onPick,onView,initial) {
     }
     onView({...view});
   }
+  function activateStack(event){
+    const stack=event.target.closest('[data-unit][role="button"]');
+    if(!stack)return;
+    event.preventDefault();
+    onPick(stack.dataset.place,stack.dataset.unit);
+    const panel=document.getElementById('panel');
+    const next=document.getElementById('ordersPanel').hidden?document.getElementById('openPanel'):
+      panel.querySelector('button:not(:disabled)')||forces.querySelector('[role="button"]');
+    next?.focus();
+  }
+  forces.addEventListener('keydown',event=>{
+    if(!event.repeat&&(event.key==='Enter'||event.key===' '))activateStack(event);
+  });
+  forces.addEventListener('click',event=>{if(event.detail===0)activateStack(event);});
   map.addEventListener('pointerup',end);map.addEventListener('pointercancel',end);
   map.addEventListener('wheel',e=>{e.preventDefault();const p=coords(e);zoom(Math.exp(-bound(e.deltaY,-240,240)*.002),p.x,p.y);onView({...view});},{passive:false});
   function button(id,fn){document.getElementById(id).onclick=()=>{fn();render();onView({...view});};}

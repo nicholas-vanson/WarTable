@@ -84,15 +84,6 @@ function dieFace(d,face,stage){
 function stepper(kind,values,limits,keys=types,min=0){
   return keys.map(k=>'<div class="stepper"><span>'+unitCounter(k,undefined,'Germany')+'</span><button aria-label="Remove one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="-1" '+(values[k]<=min?'disabled':'')+'>−</button><output>'+values[k]+'</output><button aria-label="Add one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="1" '+(values[k]>=limits[k]?'disabled':'')+'>+</button></div>').join('');
 }
-function forceRoster(id){
-  const free=available(s,id);
-  const stacks=types.filter(k=>free[k]).map(k=>{
-    const label=stats[k].name+', '+free[k]+' available in '+places[id].name;
-    return '<button class="force" data-act="stack" data-id="'+id+'-'+k+'" aria-label="'+label+'">'+
-      unitCounter(k,free[k],s.owners[id])+'<span class="end" aria-hidden="true">›</span></button>';
-  });
-  return block(places[id].name)+(stacks.length?'<div class="roster">'+stacks.join('')+'</div>':'<p class="hint">All units assigned.</p>');
-}
 function plannedAttacks(){
   const destinations=new Map();
   s.orders.forEach((order,index)=>{
@@ -109,7 +100,7 @@ function plannedAttacks(){
   return html;
 }
 function planPanel(){
-  let html=title('Combat move','Select a stack here or on the map, then choose how many units to send.');
+  let html=title('Combat move','Tap a unit stack on the map to plan an attack.');
   if(ui.to){
     const existing=s.orders.some(o=>o.from===ui.from&&o.to===ui.to);
     html=title('Plan attack',places[ui.from].name+' → '+places[ui.to].name)+block('Assign units')+stepper('assign',ui.units,available(s,ui.from,ui.to))+
@@ -121,10 +112,6 @@ function planPanel(){
       block('Tap destination to plan move')+
       places[ui.from].targets.map(id=>opt(id,places[id].name,unitLine(s.units[id],s.owners[id]),'↗','target')).join('')+
       '<div class="actions">'+btn('Deselect stack','clear')+'</div>';
-  }else{
-    const origins=ui.from?[ui.from]:['hb','wg'];
-    html+=origins.map(forceRoster).join('');
-    if(ui.from)html+=btn('All forces','clear');
   }
   if(!ui.to&&s.orders.length)html+=plannedAttacks();
   $('action').innerHTML=!ui.to&&!ui.stack?'<button class="primary" id="hold" '+(s.orders.length?'':'disabled')+'>Hold to commit attacks</button>':'';
@@ -322,12 +309,11 @@ document.addEventListener('click',e=>{
   const {act,id,k,n}=b.dataset;
   run(()=>{
     switch(act){
-      case 'stack': {const [place,type]=id.split('-');selectStack(place,type);break;}
       case 'quantity': ui.quantity=Math.max(1,Math.min(available(s,ui.from)[ui.stack],ui.quantity+Number(n)));break;
       case 'target': selectTarget(id);break;
       case 'assign': ui.units[k]+=Number(n);break;
       case 'casualty': ui.losses[k]+=Number(n);break;
-      case 'back': ui.to=null;break;
+      case 'back': ui=freshUI();break;
       case 'clear': ui=freshUI();break;
       case 'edit': {const order=s.orders[Number(id)];selectOrigin(order.from);selectTarget(order.to);break;}
       case 'add': plan(s,ui.from,ui.to,ui.units);ui=freshUI();break;
@@ -344,7 +330,7 @@ document.addEventListener('click',e=>{
 });
 $('closeDialog').onclick=()=>$('dialog').close();
 $('journal').onclick=()=>showDialog('Exercise review',(s.phase==='review'?timeline():'<p>The record opens after the last battle. It includes committed attacks, dice, casualties, retreats, and control of each territory.</p>'));
-$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The narrow olive hatch marks German control and the blue hatch marks French control. Tap a territory to read its controller. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><h3>Plan an attack</h3><p>German counters use '+unitCounter('inf',undefined,'Germany')+' for infantry and '+unitCounter('tank',undefined,'Germany')+' for armor. Adjust the quantity, then tap a highlighted French territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this exercise</h3><p>This local exercise covers adjacent land attacks with infantry and tanks. The starting forces are arranged for testing. The surrounding atlas is for exploration.</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+btn('Restart exercise','reset','danger'));
+$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The narrow olive hatch marks German control and the blue hatch marks French control. Tap a territory to read its controller. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><h3>Plan an attack</h3><p>German counters use '+unitCounter('inf',undefined,'Germany')+' for infantry and '+unitCounter('tank',undefined,'Germany')+' for armor. Select a stack on the map, adjust the quantity, then tap a highlighted French territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this exercise</h3><p>This local exercise covers adjacent land attacks with infantry and tanks. The starting forces are arranged for testing. The surrounding atlas is for exploration.</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+btn('Restart exercise','reset','danger'));
 // Store the two panel dimensions separately so rotating the phone restores the last fit.
 function setupOrdersPanel(){
   const main=document.querySelector('main'),sheet=$('ordersPanel'),grip=$('resizePanel');
