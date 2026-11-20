@@ -90,6 +90,7 @@ function applyLosses(s,b,losses){
   const lost=defenderLosses(defenders,b.dice.attack.filter(d=>d.hit).length);
   for(const k of types)defenders[k]-=lost[k];
   s.record.push({title:places[b.to].name+' · round '+b.round,dice:b.dice,
+    losses:{attack:{...losses},defense:lost},
     detail:'Losses — Germany: '+describe(losses)+'; France: '+describe(lost)+'.'});
   if(!count(defenders)&&count(b.attack)){
     s.owners[b.to]='Germany';s.units[b.to]={...b.attack};finishBattle(s,b,'Captured by Germany with '+describe(b.attack)+'.');
