@@ -80,19 +80,63 @@ function arrivals(game,to){
   return groups;
 }
 const pencilLine='M-24 -5 C-21 -14 -4 -17 10 -16 C23 -15 30 -8 27 2 C25 12 9 16 -5 15 C-19 15 -29 10 -28 2 C-28 -5 -23 -11 -15 -14';
-function pencilMark(nation){
+const selectionOrange='#a4441b';
+function pencilMark(){
   const g=node('g',{'aria-hidden':'true','pointer-events':'none',fill:'none',
-    stroke:nation==='Germany'?'#334334':'#294c60','stroke-linecap':'round',filter:'url(#pencil-grain)',mask:'url(#pencil-reveal)'});
+    stroke:selectionOrange,'stroke-linecap':'round',filter:'url(#pencil-grain)',mask:'url(#pencil-reveal)'});
   g.append(node('path',{d:pencilLine,'stroke-width':1.6,opacity:.84,'stroke-dasharray':'6 .35 2 .3 9 .55'}),
     node('path',{d:pencilLine,transform:'translate(.45 .5) scale(1.025 .96)','stroke-width':.75,opacity:.66,'stroke-dasharray':'2 .55 .6 .5 5 .9'}),
     node('path',{d:pencilLine,transform:'translate(-.5 .2) scale(1.04 1.04)','stroke-width':.65,opacity:.52,'stroke-dasharray':'.2 1.1 .5 1.7'}));
   return g;
 }
+// The Situation Map front is a shallow pencil arc with short strokes facing the attackers.
+// Draw it in local coordinates so an existing annotation can follow the counters without replaying.
+function drawFront(from,to){
+  const group=node('g',{'data-from':from,'data-to':to,'clip-path':'url(#inside-'+to+')'});
+  const ink=node('g',{fill:'none',stroke:'#ae3835','stroke-linecap':'round','stroke-linejoin':'round',
+    filter:'url(#pencil-grain)'});
+  const spine='M-30 -2 Q-28 -1 -25 -.4 Q-20 .4 -15 1 Q-10 2 -5 1.6 Q0 1 5 1.4 Q11 2 15 1.1 Q21 .5 25 -.6 Q28 -1.1 30 -2.3';
+  const animate=!window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const stroke=(d,width,delay,duration,attrs={})=>{
+    const line=node('path',{d,'stroke-width':width,pathLength:1,'stroke-dasharray':'1 1',...attrs});
+    ink.append(line);
+    if(animate)
+      line.animate([{strokeDashoffset:1},{strokeDashoffset:0}],{duration,delay,fill:'backwards'});
+  };
+  stroke(spine,2.1,0,540);
+  stroke(spine,.7,40,545,{transform:'translate(.25 .8)',opacity:.66});
+  const ticks=[[-25,-.4,-1.5,5.3],[-15,1,-1,6.1],[-5,1.6,-.6,5.1],
+    [5,1.4,.3,6.4],[15,1.1,.8,5.5],[25,-.6,1.4,5]];
+  for(const [x,y,lean,height] of ticks){
+    stroke('M'+x+' '+y+' q'+(lean*.25)+' 2.4 '+lean+' '+height,1.55,(x+30)*9,115);
+  }
+  group.append(ink);
+  return group;
+}
+// Centerlines follow the open corridors between the hand-spaced formations. Infantry
+// and armor occupy successive stretches of each line, as they do in the arrival seats.
+const frontLines={
+  'hb-nb':[[394,1049],[418,1071]],
+  'hb-fr':[[524,1062],[602,1075]],
+  'wg-fr':[[629,1058],[618,1111]]
+};
+function frontTransform(to,group,spread,tokenScale){
+  const [start,end]=frontLines[group.from+'-'+to],center=position(to);
+  const dx=end[0]-start[0],dy=end[1]-start[1],length=Math.hypot(dx,dy);
+  const first=group.units.inf?0:.48,last=group.units.tank?1:.52;
+  const mid=(first+last)/2;
+  const x=center[0]+spread*(start[0]+mid*dx-center[0]);
+  const y=center[1]+spread*(start[1]+mid*dy-center[1]);
+  const attacker=formations[to][group.from][group.units.inf?'inf':'tank'];
+  const side=Math.sign(dy*(attacker[0]-start[0])-dx*(attacker[1]-start[1]));
+  const along=spread*(last-first)/60,across=side*tokenScale/length;
+  return 'matrix('+[dx*along,dy*along,dy*across,-dx*across,x,y].join(' ')+')';
+}
 function drawStack(parent,id,type,number,nation,role,at,tokenScale,detailed,selected,origin){
   const [x,y]=at;
   const unitInk=nation==='Germany'?'#334334':'#294c60';
   const ink=selected?'#fff9df':unitInk;
-  const paper=selected?'#a4441b':(nation==='Germany'?'#e6dfbd':'#d8e6e5');
+  const paper=selected?selectionOrange:(nation==='Germany'?'#e6dfbd':'#d8e6e5');
   const name=type==='inf'?'Infantry':'Armor';
   const label=places[id].name+' · '+nation+' · '+name+' × '+number+(origin?' from '+places[origin].name:'');
   const stack=node('g',{'data-place':id,'data-unit':type,'data-count':number,'data-role':role,
@@ -232,13 +276,14 @@ export async function atlas(onPick,onView,initial) {
   const landLabels=buildLandLabels(map,labelGroup);
   const selection=map.querySelector('#selection'),reveal=map.querySelector('#pencil-stroke');
   reveal.setAttribute('d',pencilLine);
+  const fronts=map.querySelector('#fronts'), frontMarks=new Map();
   let selectionKey='',layoutSeed,offsets;
-  function showSelection(key,nation,at,tokenScale){
+  function showSelection(key,at,tokenScale){
     if(key!==selectionKey){
       selection.replaceChildren();
       reveal.getAnimations().forEach(animation=>animation.cancel());
       if(key){
-        selection.append(pencilMark(nation));
+        selection.append(pencilMark());
         if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches)
           reveal.animate([{strokeDashoffset:1},{strokeDashoffset:0}],{duration:480,easing:'ease-out'});
       }
@@ -312,14 +357,27 @@ export async function atlas(onPick,onView,initial) {
       for(const type of types.filter(type=>order.units[type]>0)){
         routes.append(node('path',{d:movementArc(order.from,order.to,type,spread,tokenScale,offsets),
           'data-from':order.from,'data-to':order.to,'data-unit':type,
-          stroke:'#99432e','stroke-width':2/scale,'stroke-linecap':'round',
+          stroke:'#99432e','stroke-width':2.55/scale,'stroke-linecap':'round',
           'stroke-dasharray':game.phase==='plan'?(6/scale)+' '+(4/scale):'none','marker-end':'url(#arrow)',fill:'none'}));
       }
     }
+    const activeFronts=new Set();
     let selectedAt=null;
     for(const id of Object.keys(places)){
       const [x,y]=position(id),nation=game.owners[id],friendly=nation==='Germany';
       const units=game.phase==='plan'&&friendly?available(game,id):game.units[id];
+      const groups=arrivals(game,id).filter(group=>types.some(type=>group.units[type]>0));
+      for(const group of groups){
+        const key=group.from+'-'+id;
+        activeFronts.add(key);
+        if(!frontMarks.has(key)){
+          const mark=drawFront(group.from,id);
+          fronts.append(mark);frontMarks.set(key,mark);
+        }
+        const ink=frontMarks.get(key).firstChild;
+        const transform=frontTransform(id,group,spread,tokenScale);
+        if(ink.getAttribute('transform')!==transform)ink.setAttribute('transform',transform);
+      }
       if(compact){
         forces.append(node('circle',{cx:x,cy:y,r:7/scale,fill:friendly?'#434f3b':'#3f5964',stroke:'#f7f2df','stroke-width':1.6/scale,'data-place':id}));
         continue;
@@ -331,16 +389,19 @@ export async function atlas(onPick,onView,initial) {
         drawStack(forces,id,type,units[type],nation,'home',at,tokenScale,detailed,selected);
         if(selected)selectedAt=at;
       }
-      for(const group of arrivals(game,id)){
+      for(const group of groups){
         for(const type of types){
           if(group.units[type])drawStack(forces,id,type,group.units[type],'Germany','incoming',
             seat(id,group.from,type,spread,offsets),tokenScale,detailed,false,group.from);
         }
       }
     }
+    for(const [key,mark] of frontMarks){
+      if(!activeFronts.has(key)){mark.remove();frontMarks.delete(key);}
+    }
     // The overlay survives frequent force-layer redraws, so pan or quantity changes
     // reposition the mark without restarting the pencil.
-    showSelection(selectedAt?focus+'-'+selectedType:'',game.owners[focus],selectedAt,tokenScale);
+    showSelection(selectedAt?focus+'-'+selectedType:'',selectedAt,tokenScale);
   }
   function zoom(factor,px=map.clientWidth/2,py=map.clientHeight/2) {
     const old=metrics();const wx=view.x+(px-old.w/2)/old.scale,wy=view.y+(py-old.h/2)/old.scale;
