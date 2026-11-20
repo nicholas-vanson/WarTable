@@ -44,7 +44,8 @@ export const globalKey='wartable.global1940.match.v1';
 const regionAliases={'Holland Belgium':'hb','Western Germany':'wg','Normandy Bordeaux':'nb','France':'fr',
   'Northern Italy':'ni','Southern France':'sf','Baltic States':'bs','Eastern Poland':'ep','Bessarabia':'be','Poland':'pl','Romania':'ro'};
 const typeKeys={infantry:'inf',armour:'tank'};
-export function prepareGlobalBoard(setup,sectors,match){
+export function prepareGlobalBoard(setup,atlas,match){
+  const {sectors,projection}=atlas;
   const forces={},shapes={},units={},owners={},pieces={};
   const ids=Object.fromEntries(Object.keys(setup.regions).map(name=>[name,regionAliases[name]||'world-'+name.toLowerCase().replace(/[^a-z0-9]+/g,'-')]));
   const attacker=globalPowers[match.power];
@@ -72,8 +73,10 @@ export function prepareGlobalBoard(setup,sectors,match){
     ['San Francisco','Western United States',-122.42,37.77],['Honolulu','Hawaiian Islands',-157.86,21.3],
     ['Tokyo','Japan',139.69,35.68,'Japan'],['Shanghai','Kiangsu',121.47,31.23],['Hong Kong','Kwangtung',114.17,22.32],
     ['Manila','Philippines',120.98,14.6],['Calcutta','India',88.36,22.57,'UK Pacific'],['Sydney','New South Wales',151.21,-33.87,'ANZAC']
-  ].map(([name,region,lon,lat,capitalOf])=>({name,territory:ids[region],lon,lat,capitalOf}));
-  const exercise={name:'Global 1940',attacker,defender:'France',camera:{x:590,y:985,z:1},forces,shapes,cities,world:true};
+  ].map(([name,region,lon,lat,capitalOf])=>({name,territory:ids[region],lon,lat,point:sectors[region].city,capitalOf}));
+  const west=sectors['Normandy Bordeaux'].center,east=sectors['Western Germany'].center;
+  const camera={x:(west[0]+east[0])/2,y:(west[1]+east[1])/2,z:.7};
+  const exercise={name:'Global 1940',attacker,defender:'France',camera,forces,shapes,cities,world:true,projection};
   exercises.global=exercise;
   return {exercise,game:{version:1,exercise:'global',phase:'plan',power:match.power,units,owners,pieces,orders:[],battles:[],active:null,record:[]}};
 }
