@@ -16,3 +16,11 @@ aside{min-height:0;overflow:auto;display:flex;flex-direction:column;border-left:
 .die{padding:3px 6px;border-radius:3px;border:1px solid #b7b7a8;background:#eeeee6;color:#4d564c;font-size:12px}
 .die.hit{background:#e0ead3;border-color:#839477;color:#263e28}
 .die b{font-size:14px;margin-right:2px}
+
+#controlKey{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+#controlKey i{width:12px;height:8px;border-bottom:2px solid currentColor}
+.ink-de{color:#4d5845;background:repeating-linear-gradient(127deg,transparent 0 2px,#65705d 2px 3px)}
+.ink-fr{color:#345f8a;background:repeating-linear-gradient(53deg,transparent 0 2px,#537c9c 2px 3px);margin-left:5px}
+#mapIntel:empty,.map-foot:has(#mapIntel:not(:empty)) #controlKey{display:none}
+#mapIntel{letter-spacing:0}
+@media(max-width:1050px){.map-foot:has(#mapIntel:not(:empty)) #coordinates{display:none}}

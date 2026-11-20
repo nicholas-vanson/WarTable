@@ -41,9 +41,9 @@ function pick(id,type){
     if(places[id].owner==='Germany'&&type)selectStack(id,type);
     else if(places[id].owner==='Germany')selectOrigin(id);
     else if(ui.stack||ui.to)selectTarget(id);
-    else throw new Error('Choose an infantry or armor stack first.');
+    else if(type)throw new Error('Choose an infantry or armor stack first.');
   });}
-  else if(s.phase==='combat'&&!s.active)run(()=>chooseBattle(s,id));
+  else if(s.phase==='combat'&&!s.active&&s.battles.some(b=>b.to===id&&!b.resolved))run(()=>chooseBattle(s,id));
 }
 function run(fn){
   message='';
@@ -187,7 +187,7 @@ document.addEventListener('click',e=>{
 });
 $('closeDialog').onclick=()=>$('dialog').close();
 $('journal').onclick=()=>showDialog('<h2>Exercise review</h2>'+(s.phase==='review'?timeline():'<p>The record opens after the last battle. It includes committed attacks, dice, casualties, retreats, and control of each territory.</p>'));
-$('help').onclick=()=>showDialog('<h2>Field guide</h2><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater.</p><p>Tap a German counter: crossed lines mean infantry, an ellipse means armor. Adjust the quantity, then tap a highlighted French territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><p>This local exercise covers adjacent land attacks with infantry and tanks. The starting forces are arranged for testing. The surrounding atlas is for exploration.</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+btn('Restart exercise','reset','danger'));
+$('help').onclick=()=>showDialog('<h2>Field guide</h2><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater.</p><p>The narrow olive hatch marks German control and the blue hatch marks French control. Tap a territory to read its controller. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><p>German counters use crossed lines for infantry and an ellipse for armor. Adjust the quantity, then tap a highlighted French territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><p>This local exercise covers adjacent land attacks with infantry and tanks. The starting forces are arranged for testing. The surrounding atlas is for exploration.</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+btn('Restart exercise','reset','danger'));
 render();
 try{draw=await atlas(pick,v=>{view=v;save();},view);render();}catch{message='The map could not load. Reopen the playtest while online to finish the download.';render();}
 if('serviceWorker' in navigator){
