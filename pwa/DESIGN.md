@@ -32,6 +32,8 @@ Use the Staff Map concept: period-inspired colors, cartographic lettering, named
 
 Use WWII survey maps as the art reference. Blend painted fields, woodland, hills and water beneath crisp contours, rail sleepers and settlement blocks that stay legible at full phone zoom.
 
+The approved map baseline is the `pwa-playtest-0.1.12` release. Use it as the visual and interaction reference for panel and menu work, including map footprint, artwork, territory control, counter selection, movement arrows, and combat fronts.
+
 ## Project history and research
 
 The earlier Godot work is preserved on GitHub in `backup/2026-11-19-source` and `backup/2026-11-19-android`. TripleA's Java engine is GPLv3. The Global 1940 map and WWII Global Strategy's game assets had no verified license for reuse in our research. This PWA implements its own code, scenario and map artwork.
