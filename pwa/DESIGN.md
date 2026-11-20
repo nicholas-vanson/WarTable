@@ -30,6 +30,8 @@ The entire game must be playable on a modern Samsung Galaxy. Phones and tablets 
 
 Use the Staff Map concept: period-inspired colors, cartographic lettering, named territories and boxed tactical symbols at overview scale. Disperse unit-type stacks across each territory. Show counted, boxed infantry crosses and armor ellipses. Use a contrasting counter face for selection; a second tap deselects it. Set territory names along fitted, curved baselines and reveal them at readable map scales. Players select a stack, choose how many units to send, then tap a destination. Make every playable adjacency visible on the map. Subtle panning parallax is desirable. Keep free rotation and full 3D deferred. Support future player-selectable themes and understated phase treatments, including Situation Map pencil-like routes in combat. Keep game decisions independent of how the map is rendered.
 
+Use WWII survey maps as the art reference. Blend painted fields, woodland, hills and water beneath crisp contours, rail sleepers and settlement blocks that stay legible at full phone zoom.
+
 ## Project history and research
 
 The earlier Godot work is preserved on GitHub in `backup/2026-11-19-source` and `backup/2026-11-19-android`. TripleA's Java engine is GPLv3. The Global 1940 map and WWII Global Strategy's game assets had no verified license for reuse in our research. This PWA implements its own code, scenario and map artwork.

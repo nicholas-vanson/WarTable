@@ -29,9 +29,11 @@ Open `http://localhost:8080/` on that machine. Service workers require HTTPS or 
 
 ## Staff Map artwork
 
-The board displays one offline WebP painting in the same 2006 × 1716 coordinate space as the interactive territories. Its 4012 × 3432 pixels carry pigment detail into close zoom. Territory hit areas, labels, counters, routes and selection colors are separate layers. Fields, woodland and settlement marks are illustrative; the coastlines, waterways and shaded relief use Natural Earth geography.
+The survey plate combines original painted material swatches for plains, woodland, uplands and open water with scale-independent printed detail. Coastlines, rail ties, roads, contour lines and settlement blocks render at the current zoom. The plate is self-contained for offline use and uses the same coordinate space as the interactive territories. The roads and town footprints are generalized illustrations.
 
-To rebuild the painting, run `python3 tools/paint-staff-map.py` with Inkscape, Pillow, SciPy and NumPy installed. The original AI-generated ink and watercolor swatches, geographic linework and relief plate are in `tools/art/`. Only the finished painting ships with the game.
+To rebuild the plate, run `python3 tools/paint-staff-map.py` with Pillow, NumPy, SciPy, ContourPy and Matplotlib installed. The original AI-generated color swatches, registered geography, hillshade and cropped elevation grid are in `tools/art/`. Only the assembled plate ships in the game.
+
+The regional contours are in meters and derive from the GMT 6-arc-minute Earth Relief grid (SRTM15+ v2.7). The grid stored here spans 13° W–46° E and 36°–69° N. Rows run north to south and the stored integers represent half meters, matching the source encoding. [GMT data source](https://oceania.generic-mapping-tools.org/server/earth/earth_relief/earth_relief_06m_g.grd) · [Tozer et al., 2019](https://doi.org/10.1029/2019EA000658)
 
 ## Rules and map sources
 
