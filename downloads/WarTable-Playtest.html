@@ -44,10 +44,9 @@ aside {
   clip-path:polygon(0 0,calc(100% - 7px) 0,100% 100%,0 100%);
   font:700 11px/1.1 var(--typewriter);letter-spacing:.1em;text-transform:uppercase;
 }
-.exercise-label,.block-title {
+.block-title {
   font:700 11px/1.25 var(--typewriter);letter-spacing:.065em;text-transform:uppercase;color:#545c4a;
 }
-.exercise-label{font-size:10px;letter-spacing:.05em}
 .panel-scroll{min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:0 var(--gutter) 12px;flex:1}
 aside h2, dialog h2, aside h3, dialog h3, aside p, dialog p{margin:0}
 aside h2,dialog h2{font:600 31px/1.05 Georgia,serif;letter-spacing:-.045em}
@@ -104,9 +103,13 @@ aside h3,dialog h3{font:600 18px/1.2 Georgia,serif;margin:16px 0 4px}
 .roll-unit{padding:6px 9px;font-size:13px}.roll-unit+.roll-unit{border-top:1px dotted var(--sheet-rule)}
 .roll-unit small{margin-left:7px;color:#57604e}
 .dice-row{display:flex;gap:5px;flex-wrap:wrap;margin-top:4px}
-.die{display:inline-flex;gap:5px;align-items:center;color:#596153;font:12px var(--typewriter)}
-.die b{display:grid;place-items:center;width:22px;height:22px;border:1px solid #a6a794;border-radius:3px;background:#f8f5e9;font-size:14px}
-.die.hit{font-weight:bold;color:#713a2a}.die.hit b{background:#834735;color:#fff6df;border-color:#693d30}
+.die{width:26px;height:26px;display:inline-grid;grid-template:repeat(3,1fr)/repeat(3,1fr);place-items:center;
+  padding:3px;border:1px solid #90977f;border-radius:4px;background:#f8f5e9;color:#505b4c}
+.die i{display:block;width:4px;height:4px;background:currentColor;border-radius:50%}
+.die.hit{background:#834735;color:#fff6df;border-color:#693d30;box-shadow:inset 0 0 0 1px #693d30}
+.counter-face{vertical-align:middle}
+.counter-face:has(.symbol:only-child){min-width:25px}
+.hint .counter-face,.review-item .counter-face,.option small .counter-face{margin-block:2px}
 .review-item{position:relative;border-left:1px solid #a8ab92;margin-left:4px;padding:5px 0 12px 14px;font-size:14px}
 .review-item::before{content:'';position:absolute;left:-4px;top:10px;width:7px;height:7px;background:#646f56;border:1px solid var(--sheet)}
 .review-item p{margin:3px 0 0}
@@ -136,6 +139,21 @@ dialog h2{font-size:27px}
   header{padding-inline:8px;gap:5px}.brand .mark{display:none}
   .header-button{padding-inline:7px}.head-end{min-width:0}.local{font-size:11px}
 }
+
+main,#ordersPanel{position:relative}
+main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+#ordersPanel[hidden],#openPanel[hidden]{display:none}
+#hidePanel,#openPanel{font:700 12px/1.2 'Courier New',monospace;border:1px solid #879079;border-radius:2px;padding:6px 10px}
+#hidePanel{background:#f8f4e5;color:#374530;min-height:32px;margin-bottom:3px}
+#openPanel{position:absolute;z-index:2;right:12px;top:12px;min-height:44px;background:#44533c;color:#fff8e3;box-shadow:0 2px 5px #23342644}
+#resizePanel{position:absolute;z-index:1;left:0;top:calc(50% - 38px);width:14px;height:76px;
+  display:grid;place-items:center;cursor:col-resize;touch-action:none;user-select:none}
+#resizePanel::before{content:'';width:3px;height:32px;border-inline:1px solid #767b67}
+#resizePanel:focus-visible{outline:2px solid #a4441b;outline-offset:-2px}
+@media(max-width:650px) and (orientation:portrait){
+  #resizePanel{left:calc(50% - 40px);top:0;width:80px;height:24px;cursor:row-resize}
+  #resizePanel::before{width:32px;height:3px;border:0;border-block:1px solid #767b67}
+}
 </style>
 </head>
 <body>
@@ -164,8 +182,10 @@ dialog h2{font-size:27px}
 <div class="navbox"><button id="zoomIn" aria-label="Zoom in">+</button><button id="zoomOut" aria-label="Zoom out">−</button><button id="recenter" aria-label="Center on the western front">⌖</button><button id="overview" aria-label="Show entire theater">⤢</button></div>
 <div class="map-foot"><span class="north">↑ N</span><span id="scale"></span><span id="controlKey"><i class="ink-de"></i>Germany <i class="ink-fr"></i>France</span><span id="mapIntel" role="status"></span><span id="coordinates"></span></div>
 </section>
-<aside aria-label="Operations panel">
-<div class="panelhead"><span class="power-tab">Germany</span><span class="exercise-label">Local exercise</span></div>
+<button id="openPanel" aria-controls="ordersPanel" aria-expanded="false" hidden>Open orders</button>
+<aside id="ordersPanel" aria-label="Operations panel">
+<div id="resizePanel" tabindex="0" role="separator" aria-controls="ordersPanel" aria-label="Resize orders panel" title="Drag to resize orders panel"></div>
+<div class="panelhead"><span class="power-tab">Germany</span><button id="hidePanel" aria-controls="ordersPanel" aria-expanded="true">Hide orders</button></div>
 <div class="panel-scroll"><div id="panel"></div></div>
 <div id="notice" role="status" aria-live="polite"></div><div id="action"></div>
 </aside>
@@ -942,16 +962,33 @@ function opt(id,label,sub,code,act,selected=false){
 }
 function title(t,sub){return '<h2>'+t+'</h2><p class="hint">'+sub+'</p>';}
 function block(t){return '<div class="block-title">'+t+'</div>';}
+function unitCounter(type,amount){
+  const label=amount===undefined?stats[type].name:amount+' '+(type==='inf'?'infantry':amount===1?'tank':'tanks');
+  return '<span class="counter-face" role="img" aria-label="'+label+'" title="'+label+'"><i class="symbol '+type+'"></i>'+
+    (amount===undefined?'':'<b>'+amount+'</b>')+'</span>';
+}
+function unitLine(units){
+  return types.filter(k=>units[k]>0).map(k=>unitCounter(k,units[k])).join(' ')||'no units';
+}
+// The local journal stores sentences. Render counts in existing saved reviews as counters too.
+function reviewDetail(detail){
+  return esc(detail).replace(/\b(\d+) (infantry|tanks?)\b/g,(_,n,name)=>unitCounter(name==='infantry'?'inf':'tank',Number(n)));
+}
+const diePips=[[],[5],[1,9],[1,5,9],[1,3,7,9],[1,3,5,7,9],[1,3,4,6,7,9]];
+function dieFace(d){
+  const label=stats[d.type].name+' rolled '+d.face+', '+(d.hit?'hit':'miss');
+  const pips=diePips[d.face].map(pos=>'<i style="grid-area:'+Math.ceil(pos/3)+' / '+((pos-1)%3+1)+'"></i>').join('');
+  return '<span role="img" aria-label="'+label+'" title="'+label+'" class="die '+(d.hit?'hit':'miss')+'">'+pips+'</span>';
+}
 function stepper(kind,values,limits,keys=types,min=0){
-  return keys.map(k=>'<div class="stepper"><span>'+stats[k].name+'</span><button aria-label="Remove one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="-1" '+(values[k]<=min?'disabled':'')+'>−</button><output>'+values[k]+'</output><button aria-label="Add one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="1" '+(values[k]>=limits[k]?'disabled':'')+'>+</button></div>').join('');
+  return keys.map(k=>'<div class="stepper"><span>'+unitCounter(k)+'</span><button aria-label="Remove one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="-1" '+(values[k]<=min?'disabled':'')+'>−</button><output>'+values[k]+'</output><button aria-label="Add one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="1" '+(values[k]>=limits[k]?'disabled':'')+'>+</button></div>').join('');
 }
 function forceRoster(id){
   const free=available(s,id);
   const stacks=types.filter(k=>free[k]).map(k=>{
     const label=stats[k].name+', '+free[k]+' available in '+places[id].name;
     return '<button class="force" data-act="stack" data-id="'+id+'-'+k+'" aria-label="'+label+'">'+
-      '<span class="counter-face" aria-hidden="true"><i class="symbol '+k+'"></i><b>'+free[k]+'</b></span>'+
-      '<span>'+stats[k].name+'</span></button>';
+      unitCounter(k,free[k])+'<span class="end" aria-hidden="true">›</span></button>';
   });
   return block(places[id].name)+(stacks.length?'<div class="roster">'+stacks.join('')+'</div>':'<p class="hint">All units assigned.</p>');
 }
@@ -963,10 +1000,10 @@ function planPanel(){
     '<div class="actions">'+btn('Back','back')+btn(existing?'Update order':'Add order','add','primary',count(ui.units)?'':'disabled')+'</div>';
     if(existing)html+=btn('Cancel this order','remove','danger','style="margin-top:8px"');
   }else if(ui.stack){
-    html=title(stats[ui.stack].name+' stack',places[ui.from].name)+block('Units to move')+
+    html=title(unitCounter(ui.stack)+' stack',places[ui.from].name)+block('Units to move')+
       stepper('quantity',{[ui.stack]:ui.quantity},available(s,ui.from),[ui.stack],1)+
       block('Tap destination to plan move')+
-      places[ui.from].targets.map(id=>opt(id,places[id].name,describe(s.units[id]),'↗','target')).join('')+
+      places[ui.from].targets.map(id=>opt(id,places[id].name,unitLine(s.units[id]),'↗','target')).join('')+
       '<div class="actions">'+btn('Deselect stack','clear')+'</div>';
   }else{
     const origins=ui.from?[ui.from]:['hb','wg'];
@@ -974,7 +1011,7 @@ function planPanel(){
     if(ui.from)html+=btn('All forces','clear');
   }
   if(!ui.to&&s.orders.length){
-    html+=block('Planned attacks · '+s.orders.length)+s.orders.map((o,i)=>opt(String(i),places[o.to].name,places[o.from].name+' · '+describe(o.units),'↗','edit')).join('');
+    html+=block('Planned attacks · '+s.orders.length)+s.orders.map((o,i)=>opt(String(i),places[o.to].name,places[o.from].name+' · '+unitLine(o.units),'↗','edit')).join('');
   }
   $('action').innerHTML=!ui.to&&!ui.stack?'<button class="primary" id="hold" '+(s.orders.length?'':'disabled')+'>Hold to commit attacks</button>':'';
   return html;
@@ -988,8 +1025,8 @@ function rollsBox(dice){
       const group=rolls.filter(d=>d.type===type);
       if(!group.length)return '';
       const threshold=stats[type][side];
-      const diceRow=group.map(d=>'<span class="die '+(d.hit?'hit':'miss')+'"><b>'+d.face+'</b> '+(d.hit?'Hit':'Miss')+'</span>').join('');
-      return '<div class="roll-unit"><strong>'+stats[type].name+'</strong><small>Hits on '+(threshold===1?'1':'1–'+threshold)+'</small><div class="dice-row">'+diceRow+'</div></div>';
+      const diceRow=group.map(dieFace).join('');
+      return '<div class="roll-unit">'+unitCounter(type)+'<small>Hits on '+(threshold===1?'1':'1–'+threshold)+'</small><div class="dice-row">'+diceRow+'</div></div>';
     }).join('');
     return '<section class="roll-card" data-side="'+side+'"><h4>'+label+'<span>'+hits+' '+(hits===1?'hit':'hits')+'</span></h4>'+groups+'</section>';
   }).join('');
@@ -998,9 +1035,9 @@ function battlePanel(){
   const b=currentBattle(s);
   if(!b){
     return title('Conduct combat','Choose the next battle to resolve.')+block('Battle order')+
-      s.battles.map(b=>b.resolved?'<div class="review-item"><strong>'+places[b.to].name+'</strong><p>'+b.result+'</p></div>':opt(b.to,places[b.to].name,describe(b.attack)+' attacking','⚑','battle')).join('');
+      s.battles.map(b=>b.resolved?'<div class="review-item"><strong>'+places[b.to].name+'</strong><p>'+reviewDetail(b.result)+'</p></div>':opt(b.to,places[b.to].name,unitLine(b.attack)+' attacking','⚑','battle')).join('');
   }
-  const info=title(places[b.to].name,'Germany · '+describe(b.attack)+'<br>France · '+describe(s.units[b.to]))+block(b.round?'Battle round '+b.round:'Land battle')+rollsBox(b.dice);
+  const info=title(places[b.to].name,'Germany · '+unitLine(b.attack)+'<br>France · '+unitLine(s.units[b.to]))+block(b.round?'Battle round '+b.round:'Land battle')+rollsBox(b.dice);
   if(b.step==='defense'){
     $('action').innerHTML=btn('Roll French defense','defend','primary');
     return info+'<p class="hint">All defending units in this round return fire, including those hit by Germany.</p>';
@@ -1019,10 +1056,10 @@ function battlePanel(){
   if(b.step==='decision'){
     return info+'<h3>Continue or retreat?</h3><p class="hint">Retreat all survivors to one origin.</p>'+b.origins.map(id=>btn('Retreat to '+places[id].name,'retreat','secondary','data-id="'+id+'"')).join('');
   }
-  return info+'<p class="hint">Infantry hit on 1 attacking or 1–2 defending. Tanks hit on 1–3.</p>';
+  return info+'<p class="hint">'+unitCounter('inf')+' hits on 1 attacking or 1–2 defending. '+unitCounter('tank')+' hits on 1–3.</p>';
 }
 function timeline(){
-  return s.record.map(e=>'<div class="review-item"><strong>'+esc(e.title)+'</strong><p>'+esc(e.detail)+'</p>'+rollsBox(e.dice)+'</div>').join('');
+  return s.record.map(e=>'<div class="review-item"><strong>'+esc(e.title)+'</strong><p>'+reviewDetail(e.detail)+'</p>'+rollsBox(e.dice)+'</div>').join('');
 }
 let stopHold=()=>{};
 function bindHold(){
@@ -1052,7 +1089,9 @@ function render(){
   const nextView=[s.phase,s.active,currentBattle(s)?.step,ui.from,ui.to,ui.stack].join('|');
   if(panelView!==nextView)document.querySelector('.panel-scroll').scrollTop=0;
   panelView=nextView;
-  $('notice').textContent=message;draw(s,ui.from,ui.to,ui.stack,layoutSeed);bindHold();
+  $('notice').textContent=message;
+  if(message&&$('ordersPanel').hidden)$('openPanel').click();
+  draw(s,ui.from,ui.to,ui.stack,layoutSeed);bindHold();
 }
 function showDialog(heading,html){
   $('dialogTitle').textContent=heading;
@@ -1088,7 +1127,73 @@ document.addEventListener('click',e=>{
 });
 $('closeDialog').onclick=()=>$('dialog').close();
 $('journal').onclick=()=>showDialog('Exercise review',(s.phase==='review'?timeline():'<p>The record opens after the last battle. It includes committed attacks, dice, casualties, retreats, and control of each territory.</p>'));
-$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater.</p><h3>Read the board</h3><p>The narrow olive hatch marks German control and the blue hatch marks French control. Tap a territory to read its controller. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><h3>Plan an attack</h3><p>German counters use crossed lines for infantry and an ellipse for armor. Adjust the quantity, then tap a highlighted French territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this exercise</h3><p>This local exercise covers adjacent land attacks with infantry and tanks. The starting forces are arranged for testing. The surrounding atlas is for exploration.</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+btn('Restart exercise','reset','danger'));
+$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>The narrow olive hatch marks German control and the blue hatch marks French control. Tap a territory to read its controller. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><h3>Plan an attack</h3><p>German counters use '+unitCounter('inf')+' for infantry and '+unitCounter('tank')+' for armor. Adjust the quantity, then tap a highlighted French territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this exercise</h3><p>This local exercise covers adjacent land attacks with infantry and tanks. The starting forces are arranged for testing. The surrounding atlas is for exploration.</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+btn('Restart exercise','reset','danger'));
+// Store the two panel dimensions separately so rotating the phone restores the last fit.
+function setupOrdersPanel(){
+  const main=document.querySelector('main'),sheet=$('ordersPanel'),grip=$('resizePanel');
+  const open=$('openPanel'),hide=$('hidePanel'),stacked=matchMedia('(max-width:650px) and (orientation:portrait)');
+  const prefKey='wartable.orders-panel.v1';
+  let prefs={};
+  try{
+    const saved=JSON.parse(localStorage.getItem(prefKey));
+    if(saved&&typeof saved==='object')prefs=saved;
+  }catch{}
+  const persist=()=>{try{localStorage.setItem(prefKey,JSON.stringify(prefs));}catch{}};
+  function dimensions(){
+    const vertical=stacked.matches,axis=vertical?'height':'width';
+    const extent=main.getBoundingClientRect()[axis];
+    const max=Math.floor(extent*(vertical?.74:.62)),min=Math.min(max,vertical?162:218);
+    return {axis,extent,min,max,coordinate:vertical?'clientY':'clientX'};
+  }
+  function apply(){
+    const collapsed=prefs.hidden===true;
+    sheet.hidden=collapsed;open.hidden=!collapsed;main.classList.toggle('panel-closed',collapsed);
+    hide.setAttribute('aria-expanded',String(!collapsed));
+    main.style.gridTemplateColumns='';main.style.gridTemplateRows='';
+    if(collapsed)return;
+    const {axis,extent,min,max}=dimensions();
+    if(Number.isFinite(prefs[axis])){
+      const size=Math.max(min,Math.min(max,Math.round(prefs[axis]*extent)));
+      const property=axis==='height'?'gridTemplateRows':'gridTemplateColumns';
+      main.style[property]='minmax(0,1fr) '+size+'px';
+    }
+    grip.setAttribute('aria-orientation',axis==='height'?'horizontal':'vertical');
+    grip.setAttribute('aria-valuemin',min);grip.setAttribute('aria-valuemax',max);
+    const actual=Math.round(sheet.getBoundingClientRect()[axis]);
+    grip.setAttribute('aria-valuenow',actual);grip.setAttribute('aria-valuetext',actual+' pixels '+(axis==='height'?'high':'wide'));
+  }
+  function toggle(collapsed){
+    prefs.hidden=collapsed;apply();persist();(collapsed?open:hide).focus({preventScroll:true});
+  }
+  hide.onclick=()=>toggle(true);open.onclick=()=>toggle(false);
+  function sizeTo(pixels){
+    const {axis,extent,min,max}=dimensions();
+    prefs[axis]=Math.max(min,Math.min(max,pixels))/extent;apply();
+  }
+  let drag=null;
+  grip.onpointerdown=e=>{
+    if(e.button!==0||!e.isPrimary)return;
+    const {coordinate,axis}=dimensions();
+    drag={coordinate,axis,start:e[coordinate],size:sheet.getBoundingClientRect()[axis]};
+    grip.setPointerCapture(e.pointerId);
+  };
+  grip.onpointermove=e=>{
+    if(drag&&grip.hasPointerCapture(e.pointerId)&&drag.axis===dimensions().axis)
+      sizeTo(drag.size+drag.start-e[drag.coordinate]);
+  };
+  grip.onlostpointercapture=()=>{drag=null;persist();};
+  grip.onkeydown=e=>{
+    const {min,max,axis}=dimensions(),size=sheet.getBoundingClientRect()[axis];
+    const larger=axis==='width'?'ArrowLeft':'ArrowUp',smaller=axis==='width'?'ArrowRight':'ArrowDown';
+    if(e.key===larger||e.key===smaller)sizeTo(size+(e.key===larger?24:-24));
+    else if(e.key==='Home')sizeTo(min);
+    else if(e.key==='End')sizeTo(max);
+    else return;
+    e.preventDefault();persist();
+  };
+  apply();new ResizeObserver(apply).observe(main);
+}
+setupOrdersPanel();
 render();
 try{draw=await atlas(pick,v=>{view=v;save();},view);render();save();}catch{message='The map could not load. Reopen the playtest while online to finish the download.';render();}
 if(false){

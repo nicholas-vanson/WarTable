@@ -1,4 +1,4 @@
-import {places,stats,types,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,rollAttack,rollDefense,casualties,retreat} from './rules.js';
+import {places,stats,types,newGame,count,available,plan,commit,chooseBattle,currentBattle,rollAttack,rollDefense,casualties,retreat} from './rules.js';
 import {atlas} from './map.js';
 const $=id=>document.getElementById(id), key='wartable.western-front.v1';
 const newLayoutSeed=()=>crypto.getRandomValues(new Uint32Array(1))[0];
@@ -59,16 +59,33 @@ function opt(id,label,sub,code,act,selected=false){
 }
 function title(t,sub){return '<h2>'+t+'</h2><p class="hint">'+sub+'</p>';}
 function block(t){return '<div class="block-title">'+t+'</div>';}
+function unitCounter(type,amount){
+  const label=amount===undefined?stats[type].name:amount+' '+(type==='inf'?'infantry':amount===1?'tank':'tanks');
+  return '<span class="counter-face" role="img" aria-label="'+label+'" title="'+label+'"><i class="symbol '+type+'"></i>'+
+    (amount===undefined?'':'<b>'+amount+'</b>')+'</span>';
+}
+function unitLine(units){
+  return types.filter(k=>units[k]>0).map(k=>unitCounter(k,units[k])).join(' ')||'no units';
+}
+// The local journal stores sentences. Render counts in existing saved reviews as counters too.
+function reviewDetail(detail){
+  return esc(detail).replace(/\b(\d+) (infantry|tanks?)\b/g,(_,n,name)=>unitCounter(name==='infantry'?'inf':'tank',Number(n)));
+}
+const diePips=[[],[5],[1,9],[1,5,9],[1,3,7,9],[1,3,5,7,9],[1,3,4,6,7,9]];
+function dieFace(d){
+  const label=stats[d.type].name+' rolled '+d.face+', '+(d.hit?'hit':'miss');
+  const pips=diePips[d.face].map(pos=>'<i style="grid-area:'+Math.ceil(pos/3)+' / '+((pos-1)%3+1)+'"></i>').join('');
+  return '<span role="img" aria-label="'+label+'" title="'+label+'" class="die '+(d.hit?'hit':'miss')+'">'+pips+'</span>';
+}
 function stepper(kind,values,limits,keys=types,min=0){
-  return keys.map(k=>'<div class="stepper"><span>'+stats[k].name+'</span><button aria-label="Remove one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="-1" '+(values[k]<=min?'disabled':'')+'>−</button><output>'+values[k]+'</output><button aria-label="Add one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="1" '+(values[k]>=limits[k]?'disabled':'')+'>+</button></div>').join('');
+  return keys.map(k=>'<div class="stepper"><span>'+unitCounter(k)+'</span><button aria-label="Remove one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="-1" '+(values[k]<=min?'disabled':'')+'>−</button><output>'+values[k]+'</output><button aria-label="Add one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="1" '+(values[k]>=limits[k]?'disabled':'')+'>+</button></div>').join('');
 }
 function forceRoster(id){
   const free=available(s,id);
   const stacks=types.filter(k=>free[k]).map(k=>{
     const label=stats[k].name+', '+free[k]+' available in '+places[id].name;
     return '<button class="force" data-act="stack" data-id="'+id+'-'+k+'" aria-label="'+label+'">'+
-      '<span class="counter-face" aria-hidden="true"><i class="symbol '+k+'"></i><b>'+free[k]+'</b></span>'+
-      '<span>'+stats[k].name+'</span></button>';
+      unitCounter(k,free[k])+'<span class="end" aria-hidden="true">›</span></button>';
   });
   return block(places[id].name)+(stacks.length?'<div class="roster">'+stacks.join('')+'</div>':'<p class="hint">All units assigned.</p>');
 }
@@ -80,10 +97,10 @@ function planPanel(){
     '<div class="actions">'+btn('Back','back')+btn(existing?'Update order':'Add order','add','primary',count(ui.units)?'':'disabled')+'</div>';
     if(existing)html+=btn('Cancel this order','remove','danger','style="margin-top:8px"');
   }else if(ui.stack){
-    html=title(stats[ui.stack].name+' stack',places[ui.from].name)+block('Units to move')+
+    html=title(unitCounter(ui.stack)+' stack',places[ui.from].name)+block('Units to move')+
       stepper('quantity',{[ui.stack]:ui.quantity},available(s,ui.from),[ui.stack],1)+
       block('Tap destination to plan move')+
-      places[ui.from].targets.map(id=>opt(id,places[id].name,describe(s.units[id]),'↗','target')).join('')+
+      places[ui.from].targets.map(id=>opt(id,places[id].name,unitLine(s.units[id]),'↗','target')).join('')+
       '<div class="actions">'+btn('Deselect stack','clear')+'</div>';
   }else{
     const origins=ui.from?[ui.from]:['hb','wg'];
@@ -91,7 +108,7 @@ function planPanel(){
     if(ui.from)html+=btn('All forces','clear');
   }
   if(!ui.to&&s.orders.length){
-    html+=block('Planned attacks · '+s.orders.length)+s.orders.map((o,i)=>opt(String(i),places[o.to].name,places[o.from].name+' · '+describe(o.units),'↗','edit')).join('');
+    html+=block('Planned attacks · '+s.orders.length)+s.orders.map((o,i)=>opt(String(i),places[o.to].name,places[o.from].name+' · '+unitLine(o.units),'↗','edit')).join('');
   }
   $('action').innerHTML=!ui.to&&!ui.stack?'<button class="primary" id="hold" '+(s.orders.length?'':'disabled')+'>Hold to commit attacks</button>':'';
   return html;
@@ -105,8 +122,8 @@ function rollsBox(dice){
       const group=rolls.filter(d=>d.type===type);
       if(!group.length)return '';
       const threshold=stats[type][side];
-      const diceRow=group.map(d=>'<span class="die '+(d.hit?'hit':'miss')+'"><b>'+d.face+'</b> '+(d.hit?'Hit':'Miss')+'</span>').join('');
-      return '<div class="roll-unit"><strong>'+stats[type].name+'</strong><small>Hits on '+(threshold===1?'1':'1–'+threshold)+'</small><div class="dice-row">'+diceRow+'</div></div>';
+      const diceRow=group.map(dieFace).join('');
+      return '<div class="roll-unit">'+unitCounter(type)+'<small>Hits on '+(threshold===1?'1':'1–'+threshold)+'</small><div class="dice-row">'+diceRow+'</div></div>';
     }).join('');
     return '<section class="roll-card" data-side="'+side+'"><h4>'+label+'<span>'+hits+' '+(hits===1?'hit':'hits')+'</span></h4>'+groups+'</section>';
   }).join('');
@@ -115,9 +132,9 @@ function battlePanel(){
   const b=currentBattle(s);
   if(!b){
     return title('Conduct combat','Choose the next battle to resolve.')+block('Battle order')+
-      s.battles.map(b=>b.resolved?'<div class="review-item"><strong>'+places[b.to].name+'</strong><p>'+b.result+'</p></div>':opt(b.to,places[b.to].name,describe(b.attack)+' attacking','⚑','battle')).join('');
+      s.battles.map(b=>b.resolved?'<div class="review-item"><strong>'+places[b.to].name+'</strong><p>'+reviewDetail(b.result)+'</p></div>':opt(b.to,places[b.to].name,unitLine(b.attack)+' attacking','⚑','battle')).join('');
   }
-  const info=title(places[b.to].name,'Germany · '+describe(b.attack)+'<br>France · '+describe(s.units[b.to]))+block(b.round?'Battle round '+b.round:'Land battle')+rollsBox(b.dice);
+  const info=title(places[b.to].name,'Germany · '+unitLine(b.attack)+'<br>France · '+unitLine(s.units[b.to]))+block(b.round?'Battle round '+b.round:'Land battle')+rollsBox(b.dice);
   if(b.step==='defense'){
     $('action').innerHTML=btn('Roll French defense','defend','primary');
     return info+'<p class="hint">All defending units in this round return fire, including those hit by Germany.</p>';
@@ -136,10 +153,10 @@ function battlePanel(){
   if(b.step==='decision'){
     return info+'<h3>Continue or retreat?</h3><p class="hint">Retreat all survivors to one origin.</p>'+b.origins.map(id=>btn('Retreat to '+places[id].name,'retreat','secondary','data-id="'+id+'"')).join('');
   }
-  return info+'<p class="hint">Infantry hit on 1 attacking or 1–2 defending. Tanks hit on 1–3.</p>';
+  return info+'<p class="hint">'+unitCounter('inf')+' hits on 1 attacking or 1–2 defending. '+unitCounter('tank')+' hits on 1–3.</p>';
 }
 function timeline(){
-  return s.record.map(e=>'<div class="review-item"><strong>'+esc(e.title)+'</strong><p>'+esc(e.detail)+'</p>'+rollsBox(e.dice)+'</div>').join('');
+  return s.record.map(e=>'<div class="review-item"><strong>'+esc(e.title)+'</strong><p>'+reviewDetail(e.detail)+'</p>'+rollsBox(e.dice)+'</div>').join('');
 }
 let stopHold=()=>{};
 function bindHold(){
@@ -169,7 +186,9 @@ function render(){
   const nextView=[s.phase,s.active,currentBattle(s)?.step,ui.from,ui.to,ui.stack].join('|');
   if(panelView!==nextView)document.querySelector('.panel-scroll').scrollTop=0;
   panelView=nextView;
-  $('notice').textContent=message;draw(s,ui.from,ui.to,ui.stack,layoutSeed);bindHold();
+  $('notice').textContent=message;
+  if(message&&$('ordersPanel').hidden)$('openPanel').click();
+  draw(s,ui.from,ui.to,ui.stack,layoutSeed);bindHold();
 }
 function showDialog(heading,html){
   $('dialogTitle').textContent=heading;
@@ -205,7 +224,73 @@ document.addEventListener('click',e=>{
 });
 $('closeDialog').onclick=()=>$('dialog').close();
 $('journal').onclick=()=>showDialog('Exercise review',(s.phase==='review'?timeline():'<p>The record opens after the last battle. It includes committed attacks, dice, casualties, retreats, and control of each territory.</p>'));
-$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater.</p><h3>Read the board</h3><p>The narrow olive hatch marks German control and the blue hatch marks French control. Tap a territory to read its controller. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><h3>Plan an attack</h3><p>German counters use crossed lines for infantry and an ellipse for armor. Adjust the quantity, then tap a highlighted French territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this exercise</h3><p>This local exercise covers adjacent land attacks with infantry and tanks. The starting forces are arranged for testing. The surrounding atlas is for exploration.</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+btn('Restart exercise','reset','danger'));
+$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>The narrow olive hatch marks German control and the blue hatch marks French control. Tap a territory to read its controller. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><h3>Plan an attack</h3><p>German counters use '+unitCounter('inf')+' for infantry and '+unitCounter('tank')+' for armor. Adjust the quantity, then tap a highlighted French territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this exercise</h3><p>This local exercise covers adjacent land attacks with infantry and tanks. The starting forces are arranged for testing. The surrounding atlas is for exploration.</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+btn('Restart exercise','reset','danger'));
+// Store the two panel dimensions separately so rotating the phone restores the last fit.
+function setupOrdersPanel(){
+  const main=document.querySelector('main'),sheet=$('ordersPanel'),grip=$('resizePanel');
+  const open=$('openPanel'),hide=$('hidePanel'),stacked=matchMedia('(max-width:650px) and (orientation:portrait)');
+  const prefKey='wartable.orders-panel.v1';
+  let prefs={};
+  try{
+    const saved=JSON.parse(localStorage.getItem(prefKey));
+    if(saved&&typeof saved==='object')prefs=saved;
+  }catch{}
+  const persist=()=>{try{localStorage.setItem(prefKey,JSON.stringify(prefs));}catch{}};
+  function dimensions(){
+    const vertical=stacked.matches,axis=vertical?'height':'width';
+    const extent=main.getBoundingClientRect()[axis];
+    const max=Math.floor(extent*(vertical?.74:.62)),min=Math.min(max,vertical?162:218);
+    return {axis,extent,min,max,coordinate:vertical?'clientY':'clientX'};
+  }
+  function apply(){
+    const collapsed=prefs.hidden===true;
+    sheet.hidden=collapsed;open.hidden=!collapsed;main.classList.toggle('panel-closed',collapsed);
+    hide.setAttribute('aria-expanded',String(!collapsed));
+    main.style.gridTemplateColumns='';main.style.gridTemplateRows='';
+    if(collapsed)return;
+    const {axis,extent,min,max}=dimensions();
+    if(Number.isFinite(prefs[axis])){
+      const size=Math.max(min,Math.min(max,Math.round(prefs[axis]*extent)));
+      const property=axis==='height'?'gridTemplateRows':'gridTemplateColumns';
+      main.style[property]='minmax(0,1fr) '+size+'px';
+    }
+    grip.setAttribute('aria-orientation',axis==='height'?'horizontal':'vertical');
+    grip.setAttribute('aria-valuemin',min);grip.setAttribute('aria-valuemax',max);
+    const actual=Math.round(sheet.getBoundingClientRect()[axis]);
+    grip.setAttribute('aria-valuenow',actual);grip.setAttribute('aria-valuetext',actual+' pixels '+(axis==='height'?'high':'wide'));
+  }
+  function toggle(collapsed){
+    prefs.hidden=collapsed;apply();persist();(collapsed?open:hide).focus({preventScroll:true});
+  }
+  hide.onclick=()=>toggle(true);open.onclick=()=>toggle(false);
+  function sizeTo(pixels){
+    const {axis,extent,min,max}=dimensions();
+    prefs[axis]=Math.max(min,Math.min(max,pixels))/extent;apply();
+  }
+  let drag=null;
+  grip.onpointerdown=e=>{
+    if(e.button!==0||!e.isPrimary)return;
+    const {coordinate,axis}=dimensions();
+    drag={coordinate,axis,start:e[coordinate],size:sheet.getBoundingClientRect()[axis]};
+    grip.setPointerCapture(e.pointerId);
+  };
+  grip.onpointermove=e=>{
+    if(drag&&grip.hasPointerCapture(e.pointerId)&&drag.axis===dimensions().axis)
+      sizeTo(drag.size+drag.start-e[drag.coordinate]);
+  };
+  grip.onlostpointercapture=()=>{drag=null;persist();};
+  grip.onkeydown=e=>{
+    const {min,max,axis}=dimensions(),size=sheet.getBoundingClientRect()[axis];
+    const larger=axis==='width'?'ArrowLeft':'ArrowUp',smaller=axis==='width'?'ArrowRight':'ArrowDown';
+    if(e.key===larger||e.key===smaller)sizeTo(size+(e.key===larger?24:-24));
+    else if(e.key==='Home')sizeTo(min);
+    else if(e.key==='End')sizeTo(max);
+    else return;
+    e.preventDefault();persist();
+  };
+  apply();new ResizeObserver(apply).observe(main);
+}
+setupOrdersPanel();
 render();
 try{draw=await atlas(pick,v=>{view=v;save();},view);render();save();}catch{message='The map could not load. Reopen the playtest while online to finish the download.';render();}
 if('serviceWorker' in navigator){
