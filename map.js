@@ -1,4 +1,5 @@
-import {places,types,available,theaterVictoryCities} from './rules.js';
+import {ownerNames,globalUnits} from './global-game.js';
+import {places,types,stats,available,theaterVictoryCities} from './rules.js';
 const ns='http://www.w3.org/2000/svg';
 function node(tag,attrs,text=''){
   const el=document.createElementNS(ns,tag);
@@ -265,27 +266,30 @@ function frontTransform(to,group,spread,tokenScale){
   const along=spread/57,across=side*tokenScale/length;
   return 'matrix('+[dx*along,dy*along,dy*across,-dx*across,x,y].join(' ')+')';
 }
-function drawStack(game,parent,id,type,number,nation,role,at,tokenScale,detailed,selected,origin){
+function drawStack(game,parent,id,type,number,nation,role,at,tokenScale,detailed,selected,origin,auxiliary=false){
   const [x,y]=at;
-  const style=ownerStyle[nation],unitInk=style.counter;
+  const style=styleFor(nation),unitInk=style.counter;
   const ink=selected?'#fff9df':unitInk;
   const paper=selected?selectionOrange:style.paper;
-  const name=type==='inf'?'Infantry':'Armor';
+  const name=stats[type]?.name||globalUnits[type]?.[0]||type;
   // After capture the counter represents the surviving attackers at this destination.
   const source=origin||(nation!==places[id].owner&&game.orders.find(o=>o.to===id&&o.units[type])?.from)||id;
-  const designation=game.formationNames[source][type];
+  const designation=game.formationNames[nation===places[source].owner?source:source+'/'+nation]?.[type]||name;
   const label=designation+' · '+places[id].name+' · '+nation+' · '+name+' × '+number+(origin?' from '+places[origin].name:'');
   const stack=node('g',{'data-place':id,'data-unit':type,'data-count':number,'data-role':role,
     'aria-label':label,cursor:'pointer',transform:'translate('+x+' '+y+') scale('+tokenScale+')'});
   if(origin)stack.dataset.origin=origin;
+  stack.dataset.nation=nation;
   stack.append(node('title',{},label),node('rect',{x:-22,y:-22,width:44,height:44,fill:'transparent'}));
   stack.append(node('rect',{x:-19,y:-11,width:38,height:22,rx:1,fill:paper,stroke:selected?'#753515':unitInk,'stroke-width':1.6}));
   stack.append(node('rect',{x:-15,y:-6,width:16,height:12,fill:'none',stroke:ink,'stroke-width':1.3}));
-  stack.append(type==='inf'
+  if(!types.includes(type)){
+    stack.append(node('text',{x:-7,y:2.8,'text-anchor':'middle','font-family':'sans-serif','font-size':6.5,'font-weight':700,fill:ink},stats[type]?.code||counterCodes[type]||'•'));
+  }else stack.append(type==='inf'
     ? node('path',{d:'M-15 -6L1 6M-15 6L1 -6',stroke:ink,'stroke-width':1.5})
     : node('ellipse',{cx:-7,cy:0,rx:6.6,ry:3.8,fill:'none',stroke:ink,'stroke-width':1.6}));
   stack.append(node('text',{x:10,y:4,'text-anchor':'middle','font-family':'sans-serif','font-size':13,'font-weight':700,fill:ink},number));
-  if(detailed)stack.append(node('text',{x:0,y:24,'text-anchor':'middle','font-family':'sans-serif','font-size':11,'font-weight':650,fill:unitInk,
+  if(detailed&&!auxiliary)stack.append(node('text',{x:0,y:24,'text-anchor':'middle','font-family':'sans-serif','font-size':11,'font-weight':650,fill:unitInk,
     stroke:'#f5efd8','paint-order':'stroke','stroke-width':3},style.code+' · '+name));
   parent.append(stack);
   return stack;
@@ -329,6 +333,14 @@ function buildLandLabels(map,layer,exercise){
   const defs=map.querySelector('defs');
   const activeLabels=[...landNames];
   if(exercise.forces.ep)activeLabels.push(['Eastern Poland','M1253 947 Q1292 940 1340 912',84],['Bessarabia','M1392 1100 Q1414 1135 1440 1160',65]);
+  if(exercise.world){
+    const existing=new Set(activeLabels.map(([name])=>name.toLowerCase()));
+    for(const [id,{center:[x,y]}] of Object.entries(exercise.shapes)){
+      if(places[id].water||existing.has(places[id].name.toLowerCase()))continue;
+      const span=Math.min(120,Math.max(38,places[id].name.length*7));
+      activeLabels.push([places[id].name,'M'+(x-span/2)+' '+(y+34)+' q'+span/2+' 4 '+span+' -5',span]);
+    }
+  }
   return activeLabels.map(([name,curve,span],index)=>{
     const id='land-name-'+index;
     defs.append(node('path',{id,d:curve}));
@@ -347,6 +359,59 @@ const ownerStyle={
   'Soviet Union':{code:'SU',counter:'#743d38',paper:'#e3c4af',ink:'#89483d',hatch:'soviet-hatch',angle:-52},
   France:{code:'FR',counter:'#294c60',paper:'#d8e6e5',ink:'#345f8a',hatch:'french-hatch',angle:-37}
 };
+const nationalInks={
+  'United Kingdom':['UK','#76603e','#ead6ac'],Japan:['JP','#86651e','#eddba0'],'United States':['US','#455939','#d7dfb0'],
+  China:['CN','#596a36','#deebbc'],ANZAC:['AZ','#435d63','#c4d8d3'],Netherlands:['NL','#97653d','#e7d5ba'],
+  Neutral:['—','#666254','#e6dfcf']
+};
+for(const [nation,[code,counter,paper]] of Object.entries(nationalInks)){
+  ownerStyle[nation]={code,counter,ink:counter,paper,hatch:'hatch-'+code,angle:code==='JP'?42:-32};
+}
+function styleFor(nation){return ownerStyle[nation]||ownerStyle.Neutral;}
+const counterCodes={transport:'TR',submarine:'SS',destroyer:'DD',cruiser:'CA',carrier:'CV',battleship:'BB',
+  harbour:'NB',airfield:'AB',factory_minor:'IC',factory_major:'IC'};
+function worldSeats(exercise){
+  for(const [id,sector] of Object.entries(exercise.shapes)){
+    const [x,y]=sector.center;
+    formations[id]??={center:[x,y],home:{inf:[x-18,y+14],tank:[x+18,y-18]}};
+  }
+  for(const from of Object.keys(exercise.forces)){
+    for(const to of places[from].targets){
+      if(formations[to][from])continue;
+      const [x,y]=position(to),[ox,oy]=position(from);
+      const length=Math.hypot(ox-x,oy-y)||1,dx=(ox-x)/length,dy=(oy-y)/length;
+      formations[to][from]={inf:[x+dx*64-dy*25,y+dy*64+dx*25],tank:[x+dx*64+dy*25,y+dy*64-dx*25]};
+      const key=from+'-'+to;
+      frontLines[key]=[[x+dx*34-dy*26,y+dy*34+dx*26],[x+dx*34+dy*26,y+dy*34-dx*26]];
+      approaches[key]={};
+      for(const type of types){
+        const [a,b]=formations[from].home[type],[c,d]=formations[to][from][type];
+        approaches[key][type]=[[a+(c-a)*.35-dy*8,b+(d-b)*.35+dx*8],[a+(c-a)*.70-dy*9,b+(d-b)*.70+dx*9]];
+      }
+    }
+  }
+}
+// Pick supporting-counter seats once, inside the printed territory where space allows.
+function supportingSeats(path,formation,required){
+  const [x,y]=formation.center,points=[];
+  const reserved=Object.entries(formation).filter(([name])=>name!=='center').flatMap(([,pair])=>Object.values(pair));
+  const xy=new DOMPoint();
+  function inside(a,b){xy.x=a;xy.y=b;return path.isPointInFill(xy);}
+  for(const spacing of [1,.70,.42]){
+    for(let ring=0;ring<=9&&points.length<required;ring++){
+      const count=Math.max(1,ring*8);
+      for(let i=0;i<count&&points.length<required;i++){
+        const angle=i/count*2*Math.PI+ring*.3;
+        const a=x+Math.cos(angle)*ring*15,b=y+Math.sin(angle)*ring*12;
+        if(!inside(a,b)||!inside(a-13*spacing,b-8*spacing)||!inside(a+13*spacing,b+8*spacing))continue;
+        if(reserved.some(([u,v])=>Math.abs(a-u)<43*spacing&&Math.abs(b-v)<27*spacing))continue;
+        if(points.some(([u,v])=>Math.abs(a-u)<36*spacing&&Math.abs(b-v)<21*spacing))continue;
+        points.push([a,b]);
+      }
+    }
+  }
+  return points;
+}
 function buildControlBands(map,shapes,regions){
   const defs=map.querySelector('defs'), layer=map.querySelector('#controlBands');
   for(const {ink,hatch,angle} of Object.values(ownerStyle)){
@@ -383,7 +448,7 @@ function buildSeaZones(map,chart){
   const layer=map.querySelector('#seaZones'), numbers=node('g',{'pointer-events':'none'});
   const zones=new Map();
   for(const {number,label,d,neighbors,room,ruleRoom} of chart.zones){
-    const area=node('path',{d,'fill-rule':'evenodd',fill:'transparent','data-sea':number,
+    const area=node('path',{d,stroke:chart.world?'#536f78':'none','stroke-width':.8,'stroke-dasharray':'6 3','fill-rule':'evenodd',fill:'transparent','data-sea':number,
       'aria-label':'Sea zone '+number});
     area.append(node('title',{},'Sea zone '+number));layer.append(area);
     const [x,y]=label;
@@ -405,9 +470,30 @@ export async function atlas(onPick,onView,initial,exercise) {
   const map=document.querySelector('#map'), forces=document.querySelector('#forces'), regions=document.querySelector('#regions'),routes=document.querySelector('#routes');
   const western=await (await fetch('./assets/territories.json')).json();
   const other=await (await fetch('./assets/fronts.json')).json();
-  const shapes=Object.fromEntries(Object.keys(exercise.forces).map(id=>[id,western[id]||other[id]]));
-  const chart=await (await fetch('./assets/sea-zones.json')).json();
+  if(exercise.world)worldSeats(exercise);
+  const shapes=Object.fromEntries(Object.keys(exercise.forces).filter(id=>!places[id].water).map(id=>[id,exercise.world?exercise.shapes[id].d:western[id]||other[id]]));
+  let chart=await (await fetch('./assets/sea-zones.json')).json();
+  if(exercise.world){
+    const registered=new Map(chart.zones.map(z=>[z.number,z]));
+    chart={world:true,dividers:chart.dividers,zones:Object.entries(exercise.shapes).filter(([id])=>places[id].water).map(([id,sector])=>{
+      const number=parseInt(places[id].name),local=registered.get(number);
+      return {number,d:sector.d,label:local?.label||sector.center,room:local?.room||2,ruleRoom:local?.ruleRoom||1.6,
+        neighbors:places[id].links.filter(n=>n.endsWith(' Sea Zone')).map(n=>parseInt(n))};
+    })};
+    const worldPlate=document.getElementById('worldPlate');worldPlate.removeAttribute('display');
+    worldPlate.setAttribute('href',worldPlate.dataset.src);
+    const engraving=document.getElementById('worldEngraving');engraving.setAttribute('href',engraving.dataset.src);
+    document.getElementById('europeX').setAttribute('mask','url(#plateFadeX)');
+    document.getElementById('europeY').setAttribute('mask','url(#plateFadeY)');
+  }
+  const extent=exercise.world?{left:-5678,top:-676,width:12240,height:7488}:{left:0,top:0,width:2006,height:1716};
   const bands=buildControlBands(map,shapes,regions), zones=buildSeaZones(map,chart);
+  if(exercise.world){
+    for(const [id,sector] of Object.entries(exercise.shapes)){
+      const path=bands[id]?.region||zones.get(String(parseInt(places[id].name)))?.area;
+      if(path&&sector.stacks)sector.slots=supportingSeats(path,formations[id],sector.stacks);
+    }
+  }
   const control=map.querySelector('#controlBands'), intel=document.querySelector('#mapIntel');
   let inspectedPlace=null, inspectedSea=null, lastScale=0;
   function inspectSea(id){
@@ -423,7 +509,7 @@ export async function atlas(onPick,onView,initial,exercise) {
       fill:kind==='water'?'#506b6c':'#535747','font-family':kind==='city'?'Arial, sans-serif':'Georgia,serif','font-weight':kind==='city'?600:400,'font-size':kind==='city'?7.2:kind==='water'?15:13,'letter-spacing':kind==='city'?0:kind==='water'?2:1.8,'font-style':kind==='water'?'italic':'normal',
       'paint-order':'stroke','stroke-width':1.8,stroke:kind==='water'?'#bacbcc':'#dcd9c1'},name));
   }
-  const cityMarks=theaterVictoryCities.map(city=>{
+  const cityMarks=(exercise.cities||theaterVictoryCities).map(city=>{
     const [x,y]=project(city.lon,city.lat),capital=Boolean(city.capitalOf);
     const caption=city.name+' · Victory city'+(capital?' · Capital of '+city.capitalOf:'');
     const mark=node('g',{'data-victory-city':city.name,role:'img','aria-label':caption});
@@ -456,21 +542,21 @@ export async function atlas(onPick,onView,initial,exercise) {
     }
     if(key)selection.setAttribute('transform','translate('+at.join(' ')+') scale('+tokenScale+')');
   }
-  let game=null,focus=null,target=null,selectedType=null;
+  let game=null,focus=null,target=null,selectedType=null,selectedNation=null;
   let view=initial&&[initial.x,initial.y,initial.z].every(Number.isFinite)?{...initial}:{...exercise.camera};
   const pointers=new Map();let gesture=null;
   function metrics(){
     const w=map.clientWidth||1,h=map.clientHeight||1;
     const base=Math.min(w/650,h/480);
-    const scale=Math.max(Math.min(w/2006,h/1716),base*view.z);
+    const scale=Math.max(Math.min(w/extent.width,h/extent.height),base*view.z);
     return {w,h,scale,vw:w/scale,vh:h/scale,base};
   }
   function render(){
     const {vw,vh,scale}=metrics();
     const display=scale*window.devicePixelRatio>2?'inline':'none';
     if(detailPlate.getAttribute('display')!==display)detailPlate.setAttribute('display',display);
-    view.x=vw>=2006?1003:bound(view.x,vw/2,2006-vw/2);
-    view.y=vh>=1716?858:bound(view.y,vh/2,1716-vh/2);
+    view.x=extent.left+(vw>=extent.width?extent.width/2:bound(view.x-extent.left,vw/2,extent.width-vw/2));
+    view.y=extent.top+(vh>=extent.height?extent.height/2:bound(view.y-extent.top,vh/2,extent.height-vh/2));
     map.setAttribute('viewBox',[view.x-vw/2,view.y-vh/2,vw,vh].join(' '));
     document.querySelector('#scale').textContent=Math.round(view.z*100)+'%';
     const lon=view.x/34-13,lat=69-view.y/52;
@@ -502,8 +588,8 @@ export async function atlas(onPick,onView,initial,exercise) {
       const owner=game.owners[id];
       if(band.dataset.owner===owner)continue;
       band.dataset.owner=owner;
-      band.style.color=ownerStyle[owner].ink;
-      band.lastChild.setAttribute('stroke','url(#'+ownerStyle[owner].hatch+')');
+      band.style.color=styleFor(owner).ink;
+      band.lastChild.setAttribute('stroke','url(#'+styleFor(owner).hatch+')');
       region.firstChild.textContent=places[id].name+' · '+owner+' control';
     }
     const info=inspectedSea?'Sea zone '+inspectedSea+' · Adjacent '+zones.get(inspectedSea).neighbors.join(', '):
@@ -538,9 +624,10 @@ export async function atlas(onPick,onView,initial,exercise) {
       routeStarts=nextStarts;routeKey=nextRouteKey;
     }
     const activeFronts=new Set();
-    let selectedAt=null;
+    let selectedAt=null,selectionScale=tokenScale;
     for(const id of Object.keys(game.units)){
       const [x,y]=position(id),nation=game.owners[id],friendly=nation===exercise.attacker;
+      if(exercise.world&&(Math.abs(x-view.x)>vw/2+180||Math.abs(y-view.y)>vh/2+180))continue;
       const units=game.phase==='plan'&&friendly?available(game,id):game.units[id];
       const groups=arrivals(game,id).filter(group=>types.some(type=>group.units[type]>0));
       for(const group of groups){
@@ -556,20 +643,31 @@ export async function atlas(onPick,onView,initial,exercise) {
         if(ink.getAttribute('transform')!==transform)ink.setAttribute('transform',transform);
       }
       if(compact){
-        forces.append(node('circle',{cx:x,cy:y,r:7/scale,fill:ownerStyle[nation].counter,stroke:'#f7f2df','stroke-width':1.6/scale,'data-place':id}));
+        if(!exercise.world||game.pieces[id].some(row=>row[2]>0))forces.append(node('circle',{cx:x,cy:y,r:Math.min(7/scale,exercise.world?22:Infinity),fill:styleFor(nation).counter,stroke:'#f7f2df','stroke-width':exercise.world?Math.min(1.6/scale,4):1.6/scale,'data-place':id}));
         continue;
       }
       const detailed=view.z>=1.55;
-      for(const type of types){
-        if(!units[type])continue;
-        const at=seat(id,'home',type,spread,offsets),selected=id===focus&&type===selectedType;
-        const stack=drawStack(game,forces,id,type,units[type],nation,'home',at,tokenScale,detailed,selected);
-        if(game.phase==='plan'&&friendly){
-          stack.setAttribute('role','button');
-          stack.setAttribute('tabindex','0');
+      const homeRows=exercise.world?game.pieces[id].filter(row=>row[2]>0):types.filter(t=>units[t]).map(t=>[null,t,units[t]]);
+      let extraIndex=0;
+      for(const [power,type,n] of homeRows){
+        const country=power?ownerNames[power]||power:nation;
+        const primary=types.includes(type)&&country===nation;
+        const free=primary&&friendly?units[type]:n;
+        if(!free)continue;
+        const selected=id===focus&&type===selectedType&&(!selectedNation||country===selectedNation);
+        let at;
+        if(primary)at=seat(id,'home',type,spread,offsets);
+        else{
+          const slots=exercise.shapes[id].slots;
+          const point=slots?.[extraIndex]||[x+(extraIndex%3-1)*36,y+(Math.floor(extraIndex/3)+1)*24];
+          at=[x+(point[0]-x)*spread,y+(point[1]-y)*spread];extraIndex++;
+        }
+        const stack=drawStack(game,forces,id,type,free,country,'home',at,primary?tokenScale:tokenScale*.73,detailed,selected,null,!primary);
+        if(game.phase==='plan'&&(exercise.world||friendly&&primary)){
+          stack.setAttribute('role','button');stack.setAttribute('tabindex','0');
           stack.setAttribute('aria-pressed',String(selected));
         }
-        if(selected)selectedAt=at;
+        if(selected){selectedAt=at;selectionScale=primary?tokenScale:tokenScale*.73;}
       }
       for(const group of groups){
         for(const type of types){
@@ -583,11 +681,11 @@ export async function atlas(onPick,onView,initial,exercise) {
     }
     // The overlay survives frequent force-layer redraws, so pan or quantity changes
     // reposition the mark without restarting the pencil.
-    showSelection(selectedAt?focus+'-'+selectedType:'',selectedAt,tokenScale);
+    showSelection(selectedAt?focus+'-'+selectedType+'-'+(selectedNation||''):'',selectedAt,selectionScale);
   }
   function zoom(factor,px=map.clientWidth/2,py=map.clientHeight/2) {
     const old=metrics();const wx=view.x+(px-old.w/2)/old.scale,wy=view.y+(py-old.h/2)/old.scale;
-    view.z=bound(view.z*factor,.15,4.5);const next=metrics();
+    view.z=bound(view.z*factor,exercise.world?.025:.15,4.5);const next=metrics();
     view.x=wx-(px-next.w/2)/next.scale;view.y=wy-(py-next.h/2)/next.scale;render();
   }
   const coords=e=>{const b=map.getBoundingClientRect();return {x:e.clientX-b.left,y:e.clientY-b.top};};
@@ -612,7 +710,7 @@ export async function atlas(onPick,onView,initial,exercise) {
         }
       }
     }
-    const v=basis();gesture={...v,firstX:v.x,firstY:v.y,moved:v.n>1,id:hit?.place,type:hit?.unit,origin:hit?.origin,sea:hit?.sea};
+    const v=basis();gesture={...v,firstX:v.x,firstY:v.y,moved:v.n>1,id:hit?.place,type:hit?.unit,nation:hit?.nation,origin:hit?.origin,sea:hit?.sea};
   });
   map.addEventListener('pointermove',e=>{
     if(!pointers.has(e.pointerId)||!gesture)return;
@@ -629,7 +727,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     if(!pointers.has(e.pointerId))return;
     const tapped=e.type==='pointerup'&&gesture&&!gesture.moved;
     const id=gesture?.id, sea=gesture?.sea;
-    const type=gesture?.type,origin=gesture?.origin;
+    const type=gesture?.type,origin=gesture?.origin,nation=gesture?.nation;
     pointers.delete(e.pointerId);
     gesture=pointers.size?{...basis(),moved:true}:null;
     if(tapped){
@@ -637,8 +735,9 @@ export async function atlas(onPick,onView,initial,exercise) {
       inspectSea(sea && sea!==inspectedSea ? sea : null);
       if(id){
         if(view.z<.66){[view.x,view.y]=position(id);view.z=1.25;}
-        onPick(id,type,origin);
+        onPick(id,type,origin,nation);
       }
+      if(!id&&sea&&exercise.world)onPick('world-'+sea+'-sea-zone');
       render();
     }
     onView({...view});
@@ -647,7 +746,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     const stack=event.target.closest('[data-unit][role="button"]');
     if(!stack)return;
     event.preventDefault();
-    onPick(stack.dataset.place,stack.dataset.unit);
+    onPick(stack.dataset.place,stack.dataset.unit,null,stack.dataset.nation);
     const panel=document.getElementById('panel');
     const next=document.getElementById('ordersPanel').hidden?document.getElementById('openPanel'):
       panel.querySelector('button:not(:disabled)')||forces.querySelector('[role="button"]');
@@ -662,10 +761,10 @@ export async function atlas(onPick,onView,initial,exercise) {
   function button(id,fn){document.getElementById(id).onclick=()=>{fn();render();onView({...view});};}
   button('zoomIn',()=>zoom(1.38));button('zoomOut',()=>zoom(1/1.38));
   button('recenter',()=>{view={...exercise.camera};});
-  button('overview',()=>{const m=metrics();view={x:1003,y:858,z:Math.min(m.w/2006,m.h/1716)/m.base};});
+  button('overview',()=>{const m=metrics();view={x:extent.left+extent.width/2,y:extent.top+extent.height/2,z:Math.min(m.w/extent.width,m.h/extent.height)/m.base};});
   new ResizeObserver(render).observe(map);
-  return (s,id,to,type,seed)=>{
+  return (s,id,to,type,seed,nation)=>{
     if(seed!==layoutSeed){offsets=homeOffsets(seed);layoutSeed=seed;}
-    game=s;focus=id;target=to;selectedType=type;render();
+    game=s;focus=id;target=to;selectedType=type;selectedNation=nation;render();
   };
 }

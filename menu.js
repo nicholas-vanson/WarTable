@@ -1,5 +1,4 @@
 import {exercises} from './rules.js';
-import {openGlobalGame} from './global-game.js';
 
 const launcher=document.getElementById('launcher');
 const route=location.hash.slice(1);
@@ -7,17 +6,12 @@ window.addEventListener('hashchange',()=>location.reload());
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('./sw.js').catch(()=>{document.getElementById('storage').textContent='Offline install unavailable';});
 }
-if(route==='global'){
-  launcher.hidden=true;
-  const screen=document.getElementById('globalScreen');
-  screen.hidden=false;
-  try{await openGlobalGame(screen);}
-  catch(err){document.getElementById('globalStatus').textContent='Could not open the global match. '+err.message;}
-}else if(route.startsWith('exercise/')&&Object.hasOwn(exercises,route.slice('exercise/'.length))){
+if(route==='global'||route.startsWith('exercise/')&&Object.hasOwn(exercises,route.slice('exercise/'.length))){
   launcher.hidden=true;
   document.getElementById('exerciseHeader').hidden=false;
   document.getElementById('exerciseBoard').hidden=false;
-  await import('./app.js');
+  try{await import('./app.js');}
+  catch(error){document.getElementById('notice').textContent='Could not open this board. '+error.message;document.getElementById('exerciseMenu').onclick=()=>{location.hash='';};}
 }else if(route==='exercises'){
   document.getElementById('modeChoices').hidden=true;
   document.getElementById('exerciseChoices').hidden=false;

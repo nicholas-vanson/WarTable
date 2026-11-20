@@ -24,7 +24,7 @@ export const exercises={
     forces:{bs:[4,2],ep:[6,3],be:[4,1],pl:[4,2],ro:[3,2]}}
 };
 export const exerciseOf=s=>exercises[s.exercise||'west'];
-export const adjectives={Germany:'German',France:'French',Italy:'Italian','Soviet Union':'Soviet'};
+export const adjectives={Germany:'German',France:'French',Italy:'Italian','Soviet Union':'Soviet','United Kingdom':'British','United States':'American',Japan:'Japanese',China:'Chinese',ANZAC:'ANZAC',Netherlands:'Dutch'};
 // Victory cities within this atlas, from Europe 1940 Second Edition, pp. 6 and 34.
 export const theaterVictoryCities=[
   {name:'London',lon:-.12,lat:51.51,capitalOf:'United Kingdom'},
@@ -41,8 +41,14 @@ export const stats = {
   inf:{name:'Infantry',attack:1,defense:2,cost:3},
   tank:{name:'Tank',attack:3,defense:3,cost:6}
 };
-export const count = units => units.inf + units.tank;
-export const describe = units => types.filter(k=>units[k]).map(k=>k==='inf' ? units[k]+' infantry' : units[k]+(units[k]===1?' tank':' tanks')).join(', ') || 'no units';
+Object.assign(stats,{
+  artillery:{name:'Artillery',defense:2,cost:4,code:'ART'},mech_infantry:{name:'Mechanized infantry',defense:2,cost:4,code:'MECH'},
+  aaGun:{name:'AAA',defense:0,cost:5,code:'AAA'},fighter:{name:'Fighter',defense:4,cost:10,code:'FTR'},
+  tactical_bomber:{name:'Tactical bomber',defense:3,cost:11,code:'TAC'},bomber:{name:'Strategic bomber',defense:1,cost:12,code:'BMR'}
+});
+export const count=units=>Object.values(units).reduce((n,v)=>n+v,0);
+const casualtyOrder=Object.keys(stats).sort((a,b)=>stats[a].cost-stats[b].cost);
+export const describe = units => Object.keys(stats).filter(k=>units[k]).map(k=>k==='inf' ? units[k]+' infantry' : k==='tank'?units[k]+(units[k]===1?' tank':' tanks'):units[k]+' '+stats[k].name.toLowerCase()).join(', ') || 'no units';
 const empty = () => ({inf:0,tank:0});
 export function newGame(exercise='west') {
   const units={},owners={};
@@ -64,10 +70,16 @@ function validUnits(units,limit) {
 }
 export function plan(s,from,to,units) {
   check(s.phase==='plan','Movement has already been committed.');
-  check(s.owners[from]===exerciseOf(s).attacker&&s.owners[to]===exerciseOf(s).defender&&places[from]?.targets.includes(to),'This exercise allows an attack into an adjacent hostile territory. These territories do not share a playable border.');
+  check(s.owners[from]===exerciseOf(s).attacker&&(s.exercise==='global'?s.owners[to]!==exerciseOf(s).attacker:s.owners[to]===exerciseOf(s).defender)&&places[from]?.targets.includes(to),'This exercise allows an attack into an adjacent hostile territory. These territories do not share a playable border.');
   check(validUnits(units,available(s,from,to)),'This order exceeds the forces available at its origin.');
   s.orders=s.orders.filter(o=>o.from!==from||o.to!==to);
   if(count(units)) s.orders.push({from,to,units:{...units}});
+}
+function alterStack(s,id,power,type,delta){
+  if(!s.pieces||!delta)return;
+  let row=s.pieces[id].find(([p,t])=>p===power&&t===type);
+  if(!row){row=[power,type,0];s.pieces[id].push(row);}
+  row[2]+=delta;
 }
 export function commit(s) {
   check(s.phase==='plan' && s.orders.length,'Plan at least one attack before committing.');
@@ -75,7 +87,7 @@ export function commit(s) {
     let b=s.battles.find(b=>b.to===o.to);
     if(!b){b={to:o.to,origins:[],attack:empty(),round:0,step:'ready',resolved:false};s.battles.push(b);}
     b.origins.push(o.from);
-    for(const k of types){b.attack[k]+=o.units[k];s.units[o.from][k]-=o.units[k];}
+    for(const k of types){b.attack[k]+=o.units[k];s.units[o.from][k]-=o.units[k];alterStack(s,o.from,s.power,k,-o.units[k]);}
     s.record.push({title:places[o.from].name+' → '+places[o.to].name,detail:describe(o.units)});
   }
   s.phase='combat';
@@ -92,7 +104,7 @@ function die(){
   return bytes[0]%6+1;
 }
 function rollForce(force,mode,random) {
-  return types.flatMap(type=>Array.from({length:force[type]},()=>{
+  return (mode==='attack'?types:Object.keys(stats).filter(k=>stats[k].defense)).flatMap(type=>Array.from({length:force[type]||0},()=>{
     const face=random(); return {type,face,hit:face<=stats[type][mode]};
   }));
 }
@@ -103,19 +115,35 @@ function finishBattle(s,b,result){
 }
 export function defenderLosses(force,hits){
   const lost=empty();
-  for(const k of types){lost[k]=Math.min(force[k],hits);hits-=lost[k];}
+  for(const k of casualtyOrder){if(force[k]){lost[k]=Math.min(force[k],hits);hits-=lost[k];}}
   return lost;
 }
 function applyLosses(s,b,losses){
   for(const k of types)b.attack[k]-=losses[k];
-  const {attacker,defender}=exerciseOf(s);
+  const {attacker}=exerciseOf(s),defender=s.owners[b.to];
   const defenders=s.units[b.to];
   const lost=defenderLosses(defenders,b.dice.attack.filter(d=>d.hit).length);
-  for(const k of types)defenders[k]-=lost[k];
+  const nationalLosses={};
+  for(const [type,n] of Object.entries(lost)){
+    if(!n)continue;
+    defenders[type]-=n;
+    let remaining=n;
+    for(const row of s.pieces?.[b.to]||[]){
+      if(row[1]!==type||!remaining||!row[2])continue;
+      const taken=Math.min(remaining,row[2]);row[2]-=taken;remaining-=taken;
+      const army=nationalLosses[row[0]]??={};army[type]=(army[type]||0)+taken;
+    }
+  }
   s.record.push({title:places[b.to].name+' · round '+b.round,dice:b.dice,
-    losses:{attack:{...losses},defense:lost},
+    losses:{attack:{...losses},defense:lost},defender,nationalLosses,
     detail:'Losses — '+attacker+': '+describe(losses)+'; '+defender+': '+describe(lost)+'.'});
   if(!count(defenders)&&count(b.attack)){
+    if(s.pieces){
+      for(const row of s.pieces[b.to]){
+        if(row[2]&&!stats[row[1]]){row[0]=s.power;if(row[1]==='factory_major')row[1]='factory_minor';}
+      }
+      for(const k of types)alterStack(s,b.to,s.power,k,b.attack[k]);
+    }
     s.owners[b.to]=attacker;s.units[b.to]={...b.attack};finishBattle(s,b,'Captured by '+attacker+' with '+describe(b.attack)+'.');
   }else if(!count(b.attack)){
     finishBattle(s,b,count(defenders)?defender+' held with '+describe(defenders)+'.':'Both forces lost. '+defender+' retains control.');
@@ -132,7 +160,12 @@ export function rollDefense(s,random=die){
   const b=currentBattle(s);
   check(b?.step==='defense','Roll the attack first. Each side rolls once per round.');
   // Defenders hit by the attack still return fire in this land battle.
-  b.dice.defense=rollForce(s.units[b.to],'defense',random);
+  b.dice.defense=s.pieces?s.pieces[b.to].flatMap(([power,type,n])=>{
+    if(!stats[type]?.defense)return [];
+    return Array.from({length:n},()=>{
+      const face=random();return {type,face,hit:face<=stats[type].defense,power};
+    });
+  }):rollForce(s.units[b.to],'defense',random);
   b.hits=Math.min(count(b.attack),b.dice.defense.filter(d=>d.hit).length);
   b.step='losses';
 
@@ -145,6 +178,6 @@ export function casualties(s,losses){
 export function retreat(s,origin){
   const b=currentBattle(s);
   check(b?.step==='decision'&&b.origins.includes(origin)&&s.owners[origin]===exerciseOf(s).attacker,'Retreat all survivors together to a friendly territory used to enter this battle.');
-  for(const k of types)s.units[origin][k]+=b.attack[k];
+  for(const k of types){s.units[origin][k]+=b.attack[k];alterStack(s,origin,s.power,k,b.attack[k]);}
   finishBattle(s,b,'Retreated to '+places[origin].name+' with '+describe(b.attack)+'.');
 }

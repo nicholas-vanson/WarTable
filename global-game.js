@@ -1,9 +1,10 @@
+import {places,exercises,stats} from './rules.js';
 // Global 1940 Second Edition order of play. Both British economies share a controller.
 export const globalPowers={
   Germans:'Germany',Russians:'Soviet Union',Japanese:'Japan',Americans:'United States',
   Chinese:'China',British:'United Kingdom',Italians:'Italy',ANZAC:'ANZAC',French:'France'
 };
-const ownerNames={...globalPowers,UK_Pacific:'United Kingdom · Pacific',Dutch:'Netherlands',
+export const ownerNames={...globalPowers,UK_Pacific:'United Kingdom',Dutch:'Netherlands',
   Neutral_True:'Strict neutral',Neutral_Allies:'Pro-Allied neutral',Neutral_Axis:'Pro-Axis neutral',Mongolians:'Mongolia'};
 export const globalUnits={
   infantry:['Infantry',3],artillery:['Artillery',4],mech_infantry:['Mechanized infantry',4],armour:['Tank',6],aaGun:['AAA',5],
@@ -39,128 +40,56 @@ export function confirmPurchase(match){
   match.mobilization[match.power]={...match.draft};
   match.draft={};match.phase='combatMove';
 }
-const globalKey='wartable.global1940.match.v1';
-function globalElement(tag,text='',className=''){
-  const el=document.createElement(tag);el.textContent=text;
-  if(className)el.className=className;
-  return el;
+export const globalKey='wartable.global1940.match.v1';
+const regionAliases={'Holland Belgium':'hb','Western Germany':'wg','Normandy Bordeaux':'nb','France':'fr',
+  'Northern Italy':'ni','Southern France':'sf','Baltic States':'bs','Eastern Poland':'ep','Bessarabia':'be','Poland':'pl','Romania':'ro'};
+const typeKeys={infantry:'inf',armour:'tank'};
+export function prepareGlobalBoard(setup,sectors,match){
+  const forces={},shapes={},units={},owners={},pieces={};
+  const ids=Object.fromEntries(Object.keys(setup.regions).map(name=>[name,regionAliases[name]||'world-'+name.toLowerCase().replace(/[^a-z0-9]+/g,'-')]));
+  const attacker=globalPowers[match.power];
+  const enemies=new Set(setup.diplomacy.filter(([a,b,rel])=>rel==='War'&&(a===match.power||b===match.power)).map(([a,b])=>a===match.power?b:a));
+  if(enemies.has('British'))enemies.add('UK_Pacific');
+  for(const [name,r] of Object.entries(setup.regions)){
+    const id=ids[name],position=match.board[name],owner=r.water?'Sea zone':ownerNames[position.owner]||'Impassable';
+    const targets=r.water||r.owner!==match.power?[]:r.links.filter(to=>{
+      const dest=setup.regions[to];return !dest.water&&!dest.blocked&&enemies.has(dest.owner);
+    }).map(to=>ids[to]);
+    places[id]={name,owner:ownerNames[r.owner]||owner,targets,water:r.water,city:r.city,ipc:r.ipc,links:r.links,original:r.original};
+    shapes[id]={...sectors[name],stacks:position.units.filter(([p,t])=>ownerNames[p]!==owner||!['infantry','armour'].includes(t)).length};owners[id]=owner;forces[id]=true;
+    pieces[id]=position.units.map(([power,unit,n])=>[power,typeKeys[unit]||unit,n]);
+    const available={inf:0,tank:0};
+    for(const [power,type,n] of pieces[id]){
+      if(stats[type]&&!r.water&&(owner!==attacker||power===match.power&&['inf','tank'].includes(type)))available[type]=(available[type]||0)+n;
+    }
+    units[id]=available;
+  }
+  const cities=[
+    ['London','United Kingdom',-.12,51.51,'United Kingdom'],['Paris','France',2.35,48.86,'France'],
+    ['Berlin','Germany',13.41,52.52,'Germany'],['Rome','Southern Italy',12.5,41.9,'Italy'],['Moscow','Russia',37.62,55.75,'Soviet Union'],
+    ['Warsaw','Poland',21.01,52.23],['Leningrad','Novgorod',30.32,59.94],['Stalingrad','Volgograd',44.51,48.71],
+    ['Cairo','Egypt',31.24,30.04],['Ottawa','Ontario',-75.7,45.42],['Washington','Eastern United States',-77.04,38.9,'United States'],
+    ['San Francisco','Western United States',-122.42,37.77],['Honolulu','Hawaiian Islands',-157.86,21.3],
+    ['Tokyo','Japan',139.69,35.68,'Japan'],['Shanghai','Kiangsu',121.47,31.23],['Hong Kong','Kwangtung',114.17,22.32],
+    ['Manila','Philippines',120.98,14.6],['Calcutta','India',88.36,22.57,'UK Pacific'],['Sydney','New South Wales',151.21,-33.87,'ANZAC']
+  ].map(([name,region,lon,lat,capitalOf])=>({name,territory:ids[region],lon,lat,capitalOf}));
+  const exercise={name:'Global 1940',attacker,defender:'France',camera:{x:590,y:985,z:1},forces,shapes,cities,world:true};
+  exercises.global=exercise;
+  return {exercise,game:{version:1,exercise:'global',phase:'plan',power:match.power,units,owners,pieces,orders:[],battles:[],active:null,record:[]}};
 }
-export async function openGlobalGame(root){
+export function saveGlobalPosition(match,game){
+  for(const [id,stacks] of Object.entries(game.pieces)){
+    const area=match.board[places[id].name];
+    if(game.owners[id]===globalPowers[match.power])area.owner=match.power;
+    area.units=stacks.filter(row=>row[2]>0).map(([p,t,n])=>[p,t==='inf'?'infantry':t==='tank'?'armour':t,n]);
+  }
+}
+export async function loadGlobalBoard(){
   const setup=await (await fetch('./assets/global-setup.json')).json();
-  const byId=id=>root.querySelector('#'+id);
-  const names=Object.keys(setup.regions).sort(new Intl.Collator('en',{numeric:true}).compare);
-  let match,selected='Germany',tab='orders',confirming=false;
-  function read(){
-    const saved=JSON.parse(localStorage.getItem(globalKey));
-    if(saved&&(saved.version!==1||!saved.board?.Germany||!saved.controllers||!saved.treasury))throw Error('The saved global match could not be opened.');
-    return saved;
-  }
-  function report(err){byId('globalStatus').textContent=err.message||'This device could not save the match.';}
-  function setupScreen(){
-    const seats=byId('controllers');seats.replaceChildren();
-    for(const [power,name] of Object.entries(globalPowers)){
-      const row=globalElement('label',name),select=globalElement('select');select.name=power;
-      for(let i=1;i<=9;i++)select.add(new Option(i===1?'Player 1 · host':'Player '+i,String(i)));
-      row.append(select);seats.append(row);
-    }
-    byId('globalSetup').hidden=false;byId('matchDesk').hidden=true;
-  }
-  function territory(){
-    const data=setup.regions[selected],position=match.board[selected];
-    const body=byId('areaInfo');body.replaceChildren(globalElement('h3',selected));
-    const control=data.water?'Sea zone':data.blocked?'Impassable':ownerNames[position.owner]||'Neutral';
-    body.append(globalElement('p',[control,...(!data.water&&!data.blocked?[data.ipc+' IPC']:[]),...(data.city?['Victory city']:[])].join(' · '),'hint'));
-    if(!position.units.length)body.append(globalElement('p','No units present.','hint'));
-    const forces=new Map();
-    for(const [power,unit,n] of position.units){
-      if(!forces.has(power))forces.set(power,[]);
-      forces.get(power).push(n+' × '+(globalUnits[unit]?.[0]||unit));
-    }
-    for(const [power,units] of forces){
-      body.append(globalElement('h4',ownerNames[power]||power),globalElement('p',units.join(' · ')));
-    }
-    const links=globalElement('div','','area-links');
-    for(const name of data.links){
-      const b=globalElement('button',name);b.type='button';b.dataset.region=name;links.append(b);
-    }
-    body.append(globalElement('h4','Adjacent areas'),links);
-    byId('globalArea').value=selected;
-  }
-  function render(){
-    if(!match){setupScreen();return;}
-    byId('globalSetup').hidden=true;byId('matchDesk').hidden=false;
-    const phase=match.phase==='purchase'?'Purchase and Repair Units':'Combat Move';
-    byId('turnTitle').textContent='Round '+match.round+' · '+globalPowers[match.power];
-    byId('turnInfo').textContent='Player '+match.controllers[match.power]+' · '+phase;
-    byId('globalOrders').hidden=tab!=='orders';byId('globalBoard').hidden=tab!=='board';
-    for(const b of root.querySelectorAll('[data-global-tab]'))b.setAttribute('aria-pressed',String(b.dataset.globalTab===tab));
-    if(tab==='board'){territory();return;}
-    const cost=purchaseTotal(match.draft),cash=match.treasury[match.power];
-    byId('cash').textContent=match.phase==='purchase'?(cash-cost)+' IPCs available · '+cost+' IPCs ordered':cash+' IPCs in treasury';
-    byId('purchases').hidden=match.phase!=='purchase';
-    byId('confirmOrder').hidden=match.phase!=='purchase';
-    byId('confirmOrder').textContent=confirming?'Confirm and end purchases':cost?'Review purchase':'Finish without purchases';
-    byId('editOrder').hidden=!confirming||match.phase!=='purchase';
-    byId('stageNote').textContent=match.phase==='purchase'?(confirming?'Order total: '+cost+' IPCs. Confirm to enter Combat Move.':''):
-      'Opening purchases are saved. Global combat movement is in development.';
-    const list=byId('purchases');
-    if(!list.children.length){
-      for(const [unit,[name,price]] of Object.entries(globalUnits)){
-        const row=globalElement('div','','buy-row'),desc=globalElement('span',name);
-        desc.append(globalElement('small',price+' IPCs'));
-        const buttons=[-1,1].map(delta=>{
-          const b=globalElement('button',delta<0?'−':'+');b.dataset.buy=unit;b.dataset.delta=delta;
-          b.setAttribute('aria-label',(delta<0?'Remove one ':'Add one ')+name);return b;
-        });
-        row.append(desc,buttons[0],globalElement('output'),buttons[1]);list.append(row);
-      }
-    }
-    for(const row of list.children){
-      const [remove,add]=row.querySelectorAll('button'),unit=add.dataset.buy,n=match.draft[unit]||0;
-      row.querySelector('output').textContent=n;remove.disabled=!n||confirming;add.disabled=globalUnits[unit][1]>cash-cost||confirming;
-    }
-    const ordered=byId('mobilization');ordered.replaceChildren();
-    if(match.phase!=='purchase'){
-      ordered.append(globalElement('h3','Awaiting mobilization'));
-      const units=Object.entries(match.mobilization[match.power]||{});
-      ordered.append(globalElement('p',units.map(([u,n])=>n+' × '+globalUnits[u][0]).join(' · ')||'No units purchased.'));
-    }
-  }
-  // Re-read under a same-origin lock so concurrent tabs cannot charge the same order twice.
-  async function update(fn){
-    const apply=()=>{
-      const current=read(),next=fn(current)||current;
-      localStorage.setItem(globalKey,JSON.stringify(next));match=next;
-    };
-    try{
-      if(navigator.locks)await navigator.locks.request(globalKey,apply);else apply();
-      byId('globalStatus').textContent='';
-    }catch(err){report(err);try{match=read();}catch{}}
-    render();
-  }
-  byId('beginGlobal').onclick=()=>{
-    const seats=Object.fromEntries([...byId('controllers').querySelectorAll('select')].map(el=>[el.name,Number(el.value)]));
-    update(current=>current||startGlobalMatch(setup,seats));
-  };
-  for(const name of names)byId('globalArea').add(new Option(name,name));
-  byId('globalArea').onchange=e=>{selected=e.target.value;territory();};
-  root.addEventListener('click',event=>{
-    const b=event.target.closest('button');if(!b||!match)return;
-    if(b.dataset.globalTab){tab=b.dataset.globalTab;render();}
-    else if(b.dataset.region){selected=b.dataset.region;territory();byId('areaInfo').scrollIntoView({block:'nearest'});}
-    else if(b.dataset.buy){update(current=>{changePurchase(current,b.dataset.buy,Number(b.dataset.delta));});}
-    else if(b.id==='editOrder'){confirming=false;render();}
-    else if(b.id==='confirmOrder'){
-      if(!confirming){confirming=true;render();return;}
-      const reviewed=JSON.stringify(match.draft);
-      confirming=false;update(current=>{
-        if(JSON.stringify(current.draft)!==reviewed)throw Error('The order changed in another tab. Please review it again.');
-        confirmPurchase(current);
-      });
-    }
-  });
-  window.addEventListener('storage',e=>{
-    if(e.key===globalKey||e.key===null){try{match=read();confirming=false;render();}catch(err){report(err);}}
-  });
-  match=read();render();
+  const sectors=await (await fetch('./assets/world-sectors.json')).json();
+  const saved=localStorage.getItem(globalKey);
+  const match=saved?JSON.parse(saved):startGlobalMatch(setup,Object.fromEntries(Object.keys(globalPowers).map(k=>[k,1])));
+  if(match.version!==1||!match.board?.Germany)throw Error('The saved global match could not be opened.');
+  match.combatStart??=structuredClone(match.board);
+  return {...prepareGlobalBoard(setup,sectors,{...match,board:match.combatStart}),match};
 }
