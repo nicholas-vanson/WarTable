@@ -13,7 +13,7 @@ The downloadable archive contains the complete static site. The single-file HTML
 1. Pan across Europe, pinch to zoom, use the theater overview button, then recenter on the western front.
 2. Tap a German infantry (cross) or armor (ellipse) counter. Adjust the quantity and tap an adjacent French destination. Holland Belgium can reach both French targets. Western Germany can reach France.
 3. Split the remaining stack for another destination, or add a different type to the same route. Select an order to revise or cancel it. Close and reopen mid-plan to check the save.
-4. Hold to commit all attacks. Choose a battle, roll the German attack, then roll French return fire. Each die identifies its unit type and hit or miss. Manually assign German losses. Defenders take the cheapest legal casualties. Between eligible rounds choose to continue or retreat.
+4. Hold to commit all attacks. Choose a battle, roll the German attack, then roll French return fire. Dice show pips grouped under the rolling unit’s symbol. Dark dice are hits. Manually assign German losses. Defenders take the cheapest legal casualties. Between eligible rounds choose to continue or retreat.
 5. After the last battle, review the committed actions. Open the field guide to restart.
 
 ## Run and distribute
@@ -28,6 +28,8 @@ python3 -m http.server 8080
 Open `http://localhost:8080/` on that machine. Service workers require HTTPS or localhost. For rules tests run `node --test tests/*.test.js` in this directory. To package a release, run `python3 tools/package.py /tmp/wartable-release`. Its `site/` directory can be hosted under any HTTPS path. `WarTable-PWA.zip` and `WarTable-Playtest.html` are the release downloads. Bump the cache version in `sw.js` when publishing a revised site.
 
 ## Reading the board
+
+Use **Hide orders** for the full map and **Open orders** to restore the panel. Drag the grip on the panel’s map-facing edge to resize it. The panel remembers its portrait height and landscape width separately.
 
 The border band follows the current controller of each of the four playable territories. Germany uses olive hatching and France uses blue hatching in the opposite direction. Tap a territory to read the controller in the map footer. A capture updates the band when the battle resolves.
 
