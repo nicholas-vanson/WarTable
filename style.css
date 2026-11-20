@@ -100,7 +100,12 @@ aside h3,dialog h3{font:600 18px/1.2 Georgia,serif;margin:16px 0 4px}
   padding:3px;border:1px solid #90977f;border-radius:4px;background:#f8f5e9;color:#505b4c}
 .die i{display:block;width:4px;height:4px;background:currentColor;border-radius:50%}
 .die.hit{background:#834735;color:#fff6df;border-color:#693d30;box-shadow:inset 0 0 0 1px #693d30}
-.counter-face{vertical-align:middle}
+.counter-face{vertical-align:middle;background:#ebe7d7;border-color:#676d5d;color:#474f45}
+.counter-face[data-nation="Germany"]{background:#e6dfbd;color:#334334;border-color:#334334}
+.counter-face[data-nation="France"]{background:#d8e6e5;color:#294c60;border-color:#294c60;box-shadow:1px 1px 0 #94a6a9}
+.roll-card[data-side="defense"] .die.hit{background:#282a29;color:#fffaf0;border-color:#161817;box-shadow:inset 0 0 0 1px #161817}
+.die.pending{visibility:hidden}
+.roll-progress{display:grid;place-items:center;min-height:44px;font:700 13px var(--typewriter);color:var(--sheet-ink)}
 .counter-face:has(.symbol:only-child){min-width:25px}
 .hint .counter-face,.review-item .counter-face,.option small .counter-face{margin-block:2px}
 .review-item{position:relative;border-left:1px solid #a8ab92;margin-left:4px;padding:5px 0 12px 14px;font-size:14px}
@@ -146,4 +151,9 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
 @media(max-width:650px) and (orientation:portrait){
   #resizePanel{left:calc(50% - 40px);top:0;width:80px;height:24px;cursor:row-resize}
   #resizePanel::before{width:32px;height:3px;border:0;border-block:1px solid #767b67}
+}
+
+@media(max-width:650px) and (orientation:portrait){
+  #openPanel{top:auto;bottom:max(27px,env(safe-area-inset-bottom))}
+  .panel-closed .navbox{bottom:calc(56px + max(27px,env(safe-area-inset-bottom)))}
 }
