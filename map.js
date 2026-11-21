@@ -81,15 +81,15 @@ function movementArc(from,to,type,spread,tokenScale,offsets){
 
 // Measure each curved stroke from its broad departure end. Segment count follows
 // the route on the board, so a pinch never adds or removes a break.
-function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed){
+function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detailScale){
   const {from,to,units}=order;
   const centerline=node('path',{d:movementArc(from,to,type,spread,tokenScale,offsets)});
   const length=centerline.getTotalLength();
-  const baseWidth=Math.min(length*.09,6.8*tokenScale*bound(.83+length/570,.94,1.32));
+  const baseWidth=Math.min(length*.09,6.8*tokenScale*bound(.83+length/(570*detailScale),.94,1.32));
   const width=baseWidth*(1+.5*Math.log2(units[type]));
   const departure=formations[from].home[type],arrival=formations[to][from][type];
   const distance=Math.hypot(arrival[0]-departure[0],arrival[1]-departure[1]);
-  const segments=1+Math.floor(distance/125);
+  const segments=1+Math.floor(distance/(125*detailScale));
   const gap=Math.min(6.2*tokenScale,length/segments*.12);
   const headLength=Math.min(length*.17,4.4*tokenScale+width*.56);
   const neck=length-headLength;
@@ -289,14 +289,14 @@ function drawStack(game,parent,id,type,number,nation,role,at,tokenScale,detailed
     ? node('path',{d:'M-15 -6L1 6M-15 6L1 -6',stroke:ink,'stroke-width':1.5})
     : node('ellipse',{cx:-7,cy:0,rx:6.6,ry:3.8,fill:'none',stroke:ink,'stroke-width':1.6}));
   stack.append(node('text',{x:10,y:4,'text-anchor':'middle','font-family':'sans-serif','font-size':13,'font-weight':700,fill:ink},number));
-  if(detailed&&!auxiliary)stack.append(node('text',{x:0,y:24,'text-anchor':'middle','font-family':'sans-serif','font-size':11,'font-weight':650,fill:unitInk,
+  if(detailed&&(!auxiliary||selected))stack.append(node('text',{x:0,y:24,'text-anchor':'middle','font-family':'sans-serif','font-size':11,'font-weight':650,fill:unitInk,
     stroke:'#f5efd8','paint-order':'stroke','stroke-width':3},style.code+' · '+name));
   parent.append(stack);
   return stack;
 }
 const labels=[
   ['NORTH SEA',1,55.2,'water',70,29],['BALTIC SEA',19.7,57.3,'water',94,28],['ATLANTIC OCEAN',-8,47.5,'water',39,50],['MEDITERRANEAN SEA',7.3,38,'water',79.5,76],['BLACK SEA',33.3,43.4,'water',116,62],['NORWEGIAN SEA',.5,66,'water',73,9],
-  ['English Channel',-2.4,50.15,'water',58.5,43.1],['Bay of Biscay',-4.3,45.3,'water',55.9,53.4],['Adriatic Sea',15,43,'water',88.7,61.5],
+  ['English Channel',-2.4,50.15,'water',61.1,44.52],['Bay of Biscay',-4.3,45.3,'water',55.9,53.4],['Adriatic Sea',15,43,'water',88.7,61.5],
   ['Lille',3.06,50.63,'city',69.7,44.7],['Brussels',4.35,50.85,'city',71.2,42.4],['Lyon',4.84,45.76,'city',71.4,52.6],['Köln',6.96,50.94,'city',76.3,42.4],['Vienna',16.37,48.21,'city',89.1,48.4],['Bordeaux',-.58,44.84,'city',61.5,56.3],['Copenhagen',12.57,55.68,'city',77.7,31.2],['Madrid',-3.7,40.42,'city',56.2,65.7],['Stockholm',18.06,59.33,'city',89.1,23.9],['Amsterdam',4.9,52.36,'city',73.4,38.5],['Brest',-4.49,48.39,'city',58.4,48.4]
 ];
 // Curved baselines in the atlas projection. Each span fits the interior of its region.
@@ -337,19 +337,26 @@ function buildLandLabels(map,layer,exercise){
     for(const [id,sector] of Object.entries(exercise.shapes)){
       if(places[id].water)continue;
       const [x,y,span]=sector.label;
-      activeLabels.push([places[id].name,`M${x-span/2} ${y} q${span/2} 3 ${span} 0`,span]);
+      activeLabels.push([places[id].name,`M${x-span/2} ${y} q${span/2} 3 ${span} 0`,span,
+        [sector.label,...sector.alternateLabels]]);
     }
   }
-  return activeLabels.map(([name,curve,span],index)=>{
+  return activeLabels.map(([name,curve,span,positions],index)=>{
     const id='land-name-'+index;
-    defs.append(node('path',{id,d:curve}));
-    const size=Math.min(14,span/(name.length*.68));
+    const path=node('path',{id,d:curve});defs.append(path);
+    const size=Math.min(14*(exercise.projection?.detailScale||1),span/(name.length*.68));
     const length=Math.min(span,size*name.length*.77);
     const text=node('text',{'font-family':'Georgia,serif','font-size':size,'text-anchor':'middle',
       'fill':'#494c3e','paint-order':'stroke',stroke:'#e7e2ce','stroke-width':1.6,'stroke-linejoin':'round'});
     text.append(node('textPath',{href:'#'+id,startOffset:'50%',textLength:length,lengthAdjust:'spacing'},name));
     layer.append(text);
-    return {text,size};
+    const candidates=positions?.map(([x,y,width])=>{
+      const font=Math.min(14*exercise.projection.detailScale,width/(name.length*.68));
+      const inkWidth=Math.min(width,font*name.length*.77);
+      return {x,y,font,inkWidth,box:[x-inkWidth/2,y-font,x+inkWidth/2,y+5],
+        curve:`M${x-width/2} ${y} q${width/2} 3 ${width} 0`};
+    });
+    return {text,size,path,candidates};
   });
 }
 const ownerStyle={
@@ -369,7 +376,7 @@ for(const [nation,[code,counter,paper]] of Object.entries(nationalInks)){
 function styleFor(nation){return ownerStyle[nation]||ownerStyle.Neutral;}
 const counterCodes={transport:'TR',submarine:'SS',destroyer:'DD',cruiser:'CA',carrier:'CV',battleship:'BB',
   harbour:'NB',airfield:'AB',factory_minor:'IC',factory_major:'IC'};
-function worldSeats(exercise){
+function worldSeats(exercise,bands){
   for(const [id,sector] of Object.entries(exercise.shapes)){
     const [x,y]=sector.center;
     formations[id]={center:[x,y],home:sector.home||{inf:[x-18,y+14],tank:[x+18,y-18]}};
@@ -379,19 +386,33 @@ function worldSeats(exercise){
       if(formations[to][from])continue;
       const [x,y]=position(to),[ox,oy]=position(from);
       const length=Math.hypot(ox-x,oy-y)||1,dx=(ox-x)/length,dy=(oy-y)/length;
-      formations[to][from]={inf:[x+dx*64-dy*25,y+dy*64+dx*25],tank:[x+dx*64+dy*25,y+dy*64-dx*25]};
+      const room=exercise.shapes[to].formationScale??exercise.projection.detailScale;
+      const side=Math.sign(-dy*(formations[from].home.inf[0]-ox)+dx*(formations[from].home.inf[1]-oy))||1;
+      const path=bands[to]?.region;
+      let fit=room;
+      const offset=(along,across)=>[x+fit*(along*dx-across*dy),y+fit*(along*dy+across*dx)];
+      // Keep the two approach lanes in departure order and use the available
+      // frontage. On small islands the pair moves inward together.
+      const arrivals=()=>({inf:offset(86,side*43),tank:offset(78,-side*43)});
+      let seats=arrivals();
+      while(path&&fit>.2&&Object.values(seats).some(p=>!path.isPointInFill(new DOMPoint(...p)))){
+        fit*=.85;seats=arrivals();
+      }
+      formations[to][from]=seats;
       const key=from+'-'+to;
-      frontLines[key]=[[x+dx*34-dy*26,y+dy*34+dx*26],[x+dx*34+dy*26,y+dy*34-dx*26]];
+      frontLines[key]=[offset(44,32),offset(44,-32)];
       approaches[key]={};
       for(const type of types){
-        const [a,b]=formations[from].home[type],[c,d]=formations[to][from][type];
-        approaches[key][type]=[[a+(c-a)*.35-dy*8,b+(d-b)*.35+dx*8],[a+(c-a)*.70-dy*9,b+(d-b)*.70+dx*9]];
+        const [a,b]=formations[from].home[type],[c,d]=seats[type];
+        const bend=Math.min(length*.15,40*exercise.projection.detailScale)*(type==='inf'?side:-side);
+        approaches[key][type]=[[a+(c-a)*.32-dy*bend,b+(d-b)*.32+dx*bend],
+          [a+(c-a)*.72-dy*bend*.6,b+(d-b)*.72+dx*bend*.6]];
       }
     }
   }
 }
 // Pick supporting-counter seats once, inside the printed territory where space allows.
-function supportingSeats(path,formation,required){
+function supportingSeats(path,formation,required,detailScale){
   const [x,y]=formation.center,points=[];
   const reserved=Object.entries(formation).filter(([name])=>name!=='center').flatMap(([,pair])=>Object.values(pair));
   const xy=new DOMPoint();
@@ -401,10 +422,10 @@ function supportingSeats(path,formation,required){
       const count=Math.max(1,ring*8);
       for(let i=0;i<count&&points.length<required;i++){
         const angle=i/count*2*Math.PI+ring*.3;
-        const a=x+Math.cos(angle)*ring*15,b=y+Math.sin(angle)*ring*12;
-        if(!inside(a,b)||!inside(a-13*spacing,b-8*spacing)||!inside(a+13*spacing,b+8*spacing))continue;
-        if(reserved.some(([u,v])=>Math.abs(a-u)<43*spacing&&Math.abs(b-v)<27*spacing))continue;
-        if(points.some(([u,v])=>Math.abs(a-u)<36*spacing&&Math.abs(b-v)<21*spacing))continue;
+        const a=x+Math.cos(angle)*ring*17*detailScale,b=y+Math.sin(angle)*ring*15*detailScale;
+        if(!inside(a,b)||!inside(a-15*spacing*detailScale,b-9*spacing*detailScale)||!inside(a+15*spacing*detailScale,b+9*spacing*detailScale))continue;
+        if(reserved.some(([u,v])=>Math.abs(a-u)<49*spacing*detailScale&&Math.abs(b-v)<38*spacing*detailScale))continue;
+        if(points.some(([u,v])=>Math.abs(a-u)<40*spacing*detailScale&&Math.abs(b-v)<25*spacing*detailScale))continue;
         points.push([a,b]);
       }
     }
@@ -461,7 +482,7 @@ function buildSeaZones(map,chart){
     zones.set(String(number),{area,mark,x,y,neighbors,room,ruleRoom});
   }
   if(chart.globalDividers){
-    layer.append(node('path',{d:chart.globalDividers,fill:'none',stroke:'#536f78','stroke-width':.8,
+    layer.append(node('path',{d:chart.globalDividers,fill:'none',stroke:'#365664','stroke-width':1.3,'vector-effect':'non-scaling-stroke',opacity:.73,
       'stroke-dasharray':'6 3','pointer-events':'none'}));
   }
   layer.append(node('path',{d:chart.dividers,fill:'none',stroke:'#365664','stroke-width':1.3,
@@ -508,13 +529,12 @@ export async function atlas(onPick,onView,initial,exercise) {
   const map=document.querySelector('#map'), forces=document.querySelector('#forces'), regions=document.querySelector('#regions'),routes=document.querySelector('#routes');
   const western=await (await fetch('./assets/territories.json')).json();
   const other=await (await fetch('./assets/fronts.json')).json();
-  if(exercise.world)worldSeats(exercise);
   const shapes=Object.fromEntries(Object.keys(exercise.forces).filter(id=>!places[id].water).map(id=>[id,exercise.world?exercise.shapes[id].d:western[id]||other[id]]));
   let chart=await (await fetch('./assets/sea-zones.json')).json();
   if(exercise.world){
     const seas=Object.entries(exercise.shapes).filter(([id])=>places[id].water);
     chart={dividers:'',globalDividers:seas.map(([,sector])=>sector.dividers).join(''),zones:seas.map(([id,sector])=>({
-      number:parseInt(places[id].name),d:sector.d,label:sector.center,room:sector.room,ruleRoom:sector.ruleRoom,
+      number:parseInt(places[id].name),d:sector.d,label:sector.numberAt||sector.center,room:sector.room,ruleRoom:sector.ruleRoom,
       neighbors:places[id].links.filter(n=>n.endsWith(' Sea Zone')).map(n=>parseInt(n))
     }))};
     const worldPlate=document.getElementById('worldPlate');worldPlate.removeAttribute('display');
@@ -524,11 +544,13 @@ export async function atlas(onPick,onView,initial,exercise) {
   }
   const extent=exercise.world?{left:0,top:0,width:exercise.projection.width,height:exercise.projection.height}:{left:0,top:0,width:2006,height:1716};
   const drawSheets=exercise.world?terrainSheets(await (await fetch('./assets/world-terrain.json')).json(),extent):null;
+  const detailScale=exercise.projection?.detailScale||1;
   const bands=buildControlBands(map,shapes,regions), zones=buildSeaZones(map,chart);
   if(exercise.world){
+    worldSeats(exercise,bands);
     for(const [id,sector] of Object.entries(exercise.shapes)){
       const path=bands[id]?.region||zones.get(String(parseInt(places[id].name)))?.area;
-      if(path&&sector.stacks)sector.slots=supportingSeats(path,formations[id],sector.stacks);
+      if(path&&sector.stacks)sector.slots=supportingSeats(path,formations[id],sector.stacks,detailScale);
     }
   }
   const control=map.querySelector('#controlBands'), intel=document.querySelector('#mapIntel');
@@ -538,13 +560,15 @@ export async function atlas(onPick,onView,initial,exercise) {
     inspectedSea=id;
     if(id)zones.get(id).area.setAttribute('fill','#426d8133');
   }
-  const labelGroup=document.querySelector('#labels');
+  const labelGroup=document.querySelector('#labels'),towns=[];
   for(const [name,lon,lat,kind,boardX,boardY] of labels){
     const [x,y]=exercise.world?[boardX*extent.width/320,boardY*extent.height/146]:project(lon,lat);
-    if(kind==='city')labelGroup.append(node('circle',{cx:x,cy:y,r:2.4,fill:'#42463a'}));
-    labelGroup.append(node('text',{x:kind==='city'?x+5:x,y:kind==='city'?y-4:y,'text-anchor':kind==='city'?'start':'middle',
-      fill:kind==='water'?'#506b6c':'#535747','font-family':kind==='city'?'Arial, sans-serif':'Georgia,serif','font-weight':kind==='city'?600:400,'font-size':kind==='city'?7.2:kind==='water'?15:13,'letter-spacing':kind==='city'?0:kind==='water'?2:1.8,'font-style':kind==='water'?'italic':'normal',
-      'paint-order':'stroke','stroke-width':1.8,stroke:kind==='water'?'#bacbcc':'#dcd9c1'},name));
+    if(kind==='city')labelGroup.append(node('circle',{cx:x,cy:y,r:2.4*detailScale,fill:'#42463a'}));
+    const caption=node('text',{x:kind==='city'?x+5*detailScale:x,y:kind==='city'?y-4*detailScale:y,'text-anchor':kind==='city'?'start':'middle',
+      fill:kind==='water'?'#506b6c':'#535747','font-family':kind==='city'?'Arial, sans-serif':'Georgia,serif','font-weight':kind==='city'?600:400,'font-size':(kind==='city'?7.2:kind==='water'?15:13)*detailScale,'letter-spacing':(kind==='city'?0:kind==='water'?2:1.8)*detailScale,'font-style':kind==='water'?'italic':'normal',
+      'paint-order':'stroke','stroke-width':1.8*detailScale,stroke:kind==='water'?'#bacbcc':'#dcd9c1'},name);
+    labelGroup.append(caption);
+    if(exercise.world&&kind==='city')towns.push({caption,x,y,width:name.length*4.6*detailScale});
   }
   const cityMarks=(exercise.cities||theaterVictoryCities).map(city=>{
     const [x,y]=city.point||project(city.lon,city.lat),capital=Boolean(city.capitalOf);
@@ -614,17 +638,17 @@ export async function atlas(onPick,onView,initial,exercise) {
       view.projection=exercise.projection.id;
     }
     document.querySelector('#coordinates').textContent=Math.abs(lat).toFixed(1)+'° '+(lat<0?'S':'N')+'   '+Math.abs(lon).toFixed(1)+'° '+(lon<0?'W':'E');
-    for(const {text,size} of landLabels){
-      text.style.display=view.z>=1.05 && size*scale>=9?'':'none';
+    if(!exercise.world)for(const {text,size} of landLabels){
+      text.style.display=view.z*detailScale>=1.05 && size*scale>=9?'':'none';
     }
     if(scale!==lastScale){
       for(const {mark,name,x,y} of cityMarks){
         mark.setAttribute('transform','translate('+x+' '+y+') scale('+bound(1/scale,.52,3.5)+')');
         name.style.display=scale<.35?'none':'';
       }
-      const width=bound(10/scale,3.2,16);
+      const width=bound(10/scale,3.2,16*detailScale);
       for(const {hatch,angle} of Object.values(ownerStyle)){
-        document.getElementById(hatch).setAttribute('patternTransform','rotate('+angle+') scale('+bound(1/scale,.25,1.4)+')');
+        document.getElementById(hatch).setAttribute('patternTransform','rotate('+angle+') scale('+bound(1/scale,.25,1.4*detailScale)+')');
       }
       control.style.setProperty('--outer',width+'px');
       control.style.setProperty('--inner',width*.48+'px');
@@ -656,11 +680,12 @@ export async function atlas(onPick,onView,initial,exercise) {
       region.setAttribute('stroke',legal?'#895a31':'none');
       region.setAttribute('stroke-width','2');
     }
-    const compact=view.z<.66;
+    const tacticalZoom=view.z*detailScale;
+    const compact=tacticalZoom<.66;
     // Taper counter size at the widest tactical scales; keep the interior seats stable
     // while panning, and tighten their spacing at close zoom.
-    const tokenScale=Math.min(1/scale,1.2);
-    const spread=bound(1/(1.2*scale),.66,1);
+    const tokenScale=Math.min(1/scale,1.2*detailScale);
+    const spread=bound(1/(1.2*scale*detailScale),.66,1);
     const nextRouteKey=[scale,layoutSeed,game.phase,JSON.stringify(game.orders)].join('|');
     if(routeKey!==nextRouteKey){
       const nextStarts=new Map(),now=performance.now();
@@ -671,10 +696,19 @@ export async function atlas(onPick,onView,initial,exercise) {
           const start=routeStarts.get(key)??(routeKey?now:-Infinity);
           nextStarts.set(key,start);
           const planned=game.phase==='plan';
-          routes.append(attackArrow(order,type,spread,tokenScale,offsets,planned,planned?now-start:Infinity));
+          routes.append(attackArrow(order,type,spread,tokenScale,offsets,planned,planned?now-start:Infinity,detailScale));
         }
       }
       routeStarts=nextStarts;routeKey=nextRouteKey;
+    }
+    const occupied=[];
+    function reserveStack([x,y],k,caption){
+      if(!exercise.world)return;
+      occupied.push([x-21*k,y-13*k,x+21*k,y+13*k]);
+      if(caption){
+        const half=(caption.length*3.4+2)*k;
+        occupied.push([x-half,y+13*k,x+half,y+27*k]);
+      }
     }
     const activeFronts=new Set();
     let selectedAt=null,selectionScale=tokenScale;
@@ -699,7 +733,7 @@ export async function atlas(onPick,onView,initial,exercise) {
         if(!exercise.world||game.pieces[id].some(row=>row[2]>0))forces.append(node('circle',{cx:x,cy:y,r:Math.min(7/scale,exercise.world?22:Infinity),fill:styleFor(nation).counter,stroke:'#f7f2df','stroke-width':exercise.world?Math.min(1.6/scale,4):1.6/scale,'data-place':id}));
         continue;
       }
-      const detailed=view.z>=1.55;
+      const detailed=tacticalZoom>=1.55;
       const homeRows=exercise.world?game.pieces[id].filter(row=>row[2]>0):types.filter(t=>units[t]).map(t=>[null,t,units[t]]);
       let extraIndex=0;
       for(const [power,type,n] of homeRows){
@@ -712,21 +746,56 @@ export async function atlas(onPick,onView,initial,exercise) {
         if(primary)at=seat(id,'home',type,spread,offsets);
         else{
           const slots=exercise.shapes[id].slots;
-          const point=slots?.[extraIndex]||[x+(extraIndex%3-1)*36,y+(Math.floor(extraIndex/3)+1)*24];
+          const point=slots?.[extraIndex]||[x+(extraIndex%3-1)*36*detailScale,y+(Math.floor(extraIndex/3)+1)*24*detailScale];
           at=[x+(point[0]-x)*spread,y+(point[1]-y)*spread];extraIndex++;
         }
-        const stack=drawStack(game,forces,id,type,free,country,'home',at,primary?tokenScale:tokenScale*.73,detailed,selected,null,!primary);
+        const stack=drawStack(game,forces,id,type,free,country,'home',at,primary?tokenScale:tokenScale*.80,detailed,selected,null,!primary);
+        reserveStack(at,primary?tokenScale:tokenScale*.80,(primary||selected)&&detailed&&stack.lastChild.textContent);
         if(game.phase==='plan'&&(exercise.world||friendly&&primary)){
           stack.setAttribute('role','button');stack.setAttribute('tabindex','0');
           stack.setAttribute('aria-pressed',String(selected));
         }
-        if(selected){selectedAt=at;selectionScale=primary?tokenScale:tokenScale*.73;}
+        if(selected){selectedAt=at;selectionScale=primary?tokenScale:tokenScale*.80;}
       }
       for(const group of groups){
         for(const type of types){
-          if(group.units[type])drawStack(game,forces,id,type,group.units[type],exercise.attacker,'incoming',
-            seat(id,group.from,type,spread,offsets),tokenScale,detailed,false,group.from);
+          if(!group.units[type])continue;
+          const at=seat(id,group.from,type,spread,offsets);
+          const stack=drawStack(game,forces,id,type,group.units[type],exercise.attacker,'incoming',at,tokenScale,detailed,false,group.from);
+          reserveStack(at,tokenScale,detailed&&stack.lastChild.textContent);
         }
+      }
+    }
+    if(exercise.world){
+      const visible=(x,y)=>Math.abs(x-view.x)<vw/2+75&&Math.abs(y-view.y)<vh/2+45;
+      const clear=([l,t,r,b])=>!occupied.some(([a,c,d,e])=>l<d&&r>a&&t<e&&b>c);
+      for(const {x,y} of cityMarks){
+        const k=bound(1/scale,.52,3.5);
+        occupied.push([x-8*k,y-8*k,x+8*k,y+8*k]);
+      }
+      for(const {caption,x,y,width} of towns){
+        if(!visible(x,y))continue;
+        let placed=false;
+        for(const [side,dy] of [[1,-4],[-1,-4],[1,11],[-1,11]]){
+          const edge=x+side*5*detailScale,base=y+dy*detailScale;
+          const box=[side>0?edge:edge-width,base-8*detailScale,side>0?edge+width:edge,base+2*detailScale];
+          if(!clear(box))continue;
+          caption.setAttribute('x',edge);caption.setAttribute('y',base);
+          caption.setAttribute('text-anchor',side>0?'start':'end');
+          occupied.push(box);placed=true;break;
+        }
+        caption.style.display=placed&&tacticalZoom>=.8?'':'none';
+      }
+      for(const label of landLabels){
+        const choice=tacticalZoom>=1.05&&label.candidates.find(c=>c.font*scale>=9&&visible(c.x,c.y)&&clear(c.box));
+        label.text.style.display=choice?'':'none';
+        if(!choice)continue;
+        occupied.push(choice.box);
+        if(label.choice===choice)continue;
+        label.path.setAttribute('d',choice.curve);
+        label.text.setAttribute('font-size',choice.font);
+        label.text.firstChild.setAttribute('textLength',choice.inkWidth);
+        label.choice=choice;
       }
     }
     for(const [key,mark] of frontMarks){
@@ -787,7 +856,7 @@ export async function atlas(onPick,onView,initial,exercise) {
       inspectedPlace=id||null;
       inspectSea(sea && sea!==inspectedSea ? sea : null);
       if(id){
-        if(view.z<.66){[view.x,view.y]=position(id);view.z=1.25;}
+        if(view.z*detailScale<.66){[view.x,view.y]=position(id);view.z=1.25;}
         onPick(id,type,origin,nation);
       }
       if(!id&&sea&&exercise.world)onPick('world-'+sea+'-sea-zone');
