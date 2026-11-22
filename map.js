@@ -280,7 +280,10 @@ function drawStack(game,parent,id,type,number,nation,role,at,tokenScale,detailed
     'aria-label':label,cursor:'pointer',transform:'translate('+x+' '+y+') scale('+tokenScale+')'});
   if(origin)stack.dataset.origin=origin;
   stack.dataset.nation=nation;
-  stack.append(node('title',{},label),node('rect',{x:-22,y:-22,width:44,height:44,fill:'transparent'}));
+  stack.append(node('title',{},label));
+  // On a crowded global board the territory already extends nearby tap targets.
+  // Keep a neighboring stack's invisible padding clear of the printed symbols.
+  if(game.exercise!=='global')stack.append(node('rect',{x:-22,y:-22,width:44,height:44,fill:'transparent'}));
   stack.append(node('rect',{x:-19,y:-11,width:38,height:22,rx:1,fill:paper,stroke:selected?'#753515':unitInk,'stroke-width':1.6}));
   stack.append(node('rect',{x:-15,y:-6,width:16,height:12,fill:'none',stroke:ink,'stroke-width':1.3}));
   if(!types.includes(type)){
@@ -432,7 +435,7 @@ function supportingSeats(path,formation,required,detailScale){
   }
   return points;
 }
-function buildControlBands(map,shapes,regions){
+function buildControlBands(map,shapes,regions,sectors){
   const defs=map.querySelector('defs'), layer=map.querySelector('#controlBands');
   for(const {ink,hatch,angle} of Object.values(ownerStyle)){
     const pattern=node('pattern',{id:hatch,patternUnits:'userSpaceOnUse',width:4.2,height:4.2,patternTransform:'rotate('+angle+')'});
@@ -446,9 +449,17 @@ function buildControlBands(map,shapes,regions){
     const clip=node('clipPath',{id:'inside-'+id});
     clip.append(node('use',{href}));defs.append(clip);
     const band=node('g',{'clip-path':'url(#inside-'+id+')',fill:'none','stroke-linejoin':'round'});
-    band.append(node('use',{href,stroke:'currentColor','stroke-width':'var(--outer)',opacity:.15}),
-      node('use',{href,stroke:'currentColor','stroke-width':'var(--inner)',opacity:.29}),
-      node('use',{href,'stroke-width':'var(--outer)',opacity:.60}));
+    let border=href;
+    if(sectors){
+      const d=sectors[id].frontier;
+      border='#frontier-'+id;
+      defs.append(node('path',{id:border.slice(1),d}));
+      band.append(node('use',{href,fill:'currentColor','fill-opacity':d ? .035 : .09,
+        stroke:'currentColor','stroke-width':'var(--inner)','stroke-opacity':.16}));
+    }
+    band.append(node('use',{href:border,stroke:'currentColor','stroke-width':'var(--outer)',opacity:.15}),
+      node('use',{href:border,stroke:'currentColor','stroke-width':'var(--inner)',opacity:.29}),
+      node('use',{href:border,'stroke-width':'var(--outer)',opacity:sectors ? .48 : .60}));
     layer.append(band);
     const region=node('path',{d,fill:'transparent','data-place':id});
     region.append(node('title',{}));regions.append(region);
@@ -545,7 +556,7 @@ export async function atlas(onPick,onView,initial,exercise) {
   const extent=exercise.world?{left:0,top:0,width:exercise.projection.width,height:exercise.projection.height}:{left:0,top:0,width:2006,height:1716};
   const drawSheets=exercise.world?terrainSheets(await (await fetch('./assets/world-terrain.json')).json(),extent):null;
   const detailScale=exercise.projection?.detailScale||1;
-  const bands=buildControlBands(map,shapes,regions), zones=buildSeaZones(map,chart);
+  const bands=buildControlBands(map,shapes,regions,exercise.world?exercise.shapes:null), zones=buildSeaZones(map,chart);
   if(exercise.world){
     worldSeats(exercise,bands);
     for(const [id,sector] of Object.entries(exercise.shapes)){
@@ -605,13 +616,18 @@ export async function atlas(onPick,onView,initial,exercise) {
   }
   let game=null,focus=null,target=null,selectedType=null,selectedNation=null;
   let view=initial&&(!exercise.world||initial.projection===exercise.projection.id)&&[initial.x,initial.y,initial.z].every(Number.isFinite)?{...initial}:{...exercise.camera};
-  const maxZoom=2,minZoom=exercise.world ? .025 : .15;
+  // Store zoom in Western Front survey units even though the printed projection
+  // has more map units per comparable view. Older saves used raw board units.
+  const migrate=exercise.world&&view.projection===exercise.projection.id&&!view.surveyZoom;
+  if(migrate)view.z*=detailScale;
+  if(exercise.world)view.surveyZoom=true;
+  const maxZoom=2,minZoom=exercise.world ? .025*detailScale : .15;
   view.z=bound(view.z,minZoom,maxZoom);
-  if(initial&&initial.z!==view.z)onView({...view});
+  if(initial&&(migrate||initial.z!==view.z))onView({...view});
   const pointers=new Map();let gesture=null;
   function metrics(){
     const w=map.clientWidth||1,h=map.clientHeight||1;
-    const base=Math.min(w/650,h/480);
+    const base=Math.min(w/650,h/480)/detailScale;
     const scale=Math.max(Math.min(w/extent.width,h/extent.height),base*view.z);
     return {w,h,scale,vw:w/scale,vh:h/scale,base};
   }
@@ -636,10 +652,11 @@ export async function atlas(onPick,onView,initial,exercise) {
       const blend=k=>(p[k]+(q[k]-p[k])*(gx-i))*(1-gy+j)+(r[k]+(s[k]-r[k])*(gx-i))*(gy-j);
       lon=((blend(0)+540)%360)-180;lat=blend(1);
       view.projection=exercise.projection.id;
+      view.surveyZoom=true;
     }
     document.querySelector('#coordinates').textContent=Math.abs(lat).toFixed(1)+'° '+(lat<0?'S':'N')+'   '+Math.abs(lon).toFixed(1)+'° '+(lon<0?'W':'E');
     if(!exercise.world)for(const {text,size} of landLabels){
-      text.style.display=view.z*detailScale>=1.05 && size*scale>=9?'':'none';
+      text.style.display=view.z>=1.05 && size*scale>=9?'':'none';
     }
     if(scale!==lastScale){
       for(const {mark,name,x,y} of cityMarks){
@@ -680,7 +697,7 @@ export async function atlas(onPick,onView,initial,exercise) {
       region.setAttribute('stroke',legal?'#895a31':'none');
       region.setAttribute('stroke-width','2');
     }
-    const tacticalZoom=view.z*detailScale;
+    const tacticalZoom=view.z;
     const compact=tacticalZoom<.66;
     // Taper counter size at the widest tactical scales; keep the interior seats stable
     // while panning, and tighten their spacing at close zoom.
@@ -856,7 +873,7 @@ export async function atlas(onPick,onView,initial,exercise) {
       inspectedPlace=id||null;
       inspectSea(sea && sea!==inspectedSea ? sea : null);
       if(id){
-        if(view.z*detailScale<.66){[view.x,view.y]=position(id);view.z=1.25;}
+        if(view.z<.66){[view.x,view.y]=position(id);view.z=exercise.world?maxZoom:1.25;}
         onPick(id,type,origin,nation);
       }
       if(!id&&sea&&exercise.world)onPick('world-'+sea+'-sea-zone');
