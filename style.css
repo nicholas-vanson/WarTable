@@ -229,3 +229,11 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
 .counter-face[data-nation="ANZAC"]{background:#c4d8d3;color:#435d63}
 
 .power-seat{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}.power-seat select{min-height:36px;background:var(--sheet);color:inherit}
+
+#regions .selected-territory{
+  fill:rgba(123,78,152,.36);
+  stroke:#694779;
+  stroke-width:1.6px;
+  stroke-linejoin:round;
+  vector-effect:non-scaling-stroke;
+}

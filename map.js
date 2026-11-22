@@ -435,7 +435,7 @@ function supportingSeats(path,formation,required,detailScale){
   }
   return points;
 }
-function buildControlBands(map,shapes,regions,sectors){
+function buildControlBands(map,shapes,regions,sectors,washes){
   const defs=map.querySelector('defs'), layer=map.querySelector('#controlBands');
   for(const {ink,hatch,angle} of Object.values(ownerStyle)){
     const pattern=node('pattern',{id:hatch,patternUnits:'userSpaceOnUse',width:4.2,height:4.2,patternTransform:'rotate('+angle+')'});
@@ -449,12 +449,19 @@ function buildControlBands(map,shapes,regions,sectors){
     const clip=node('clipPath',{id:'inside-'+id});
     clip.append(node('use',{href}));defs.append(clip);
     const band=node('g',{'clip-path':'url(#inside-'+id+')',fill:'none','stroke-linejoin':'round'});
+    const maskId='wash-'+id;
+    const wash=node('mask',{id:maskId,maskUnits:'objectBoundingBox',maskContentUnits:'objectBoundingBox',
+      x:0,y:0,width:1,height:1,'mask-type':'alpha'});
+    wash.append(node('image',{width:1,height:1,preserveAspectRatio:'none',
+      href:'data:image/png;base64,'+washes[sectors?places[id].name:id]}));
+    defs.append(wash);
+    band.append(node('use',{href,fill:'currentColor',mask:'url(#'+maskId+')'}));
     let border=href;
     if(sectors){
       const d=sectors[id].frontier;
       border='#frontier-'+id;
       defs.append(node('path',{id:border.slice(1),d}));
-      band.append(node('use',{href,fill:'currentColor','fill-opacity':d ? .035 : .09,
+      band.append(node('use',{href,
         stroke:'currentColor','stroke-width':'var(--inner)','stroke-opacity':.16}));
     }
     band.append(node('use',{href:border,stroke:'currentColor','stroke-width':'var(--outer)',opacity:.15}),
@@ -556,7 +563,9 @@ export async function atlas(onPick,onView,initial,exercise) {
   const extent=exercise.world?{left:0,top:0,width:exercise.projection.width,height:exercise.projection.height}:{left:0,top:0,width:2006,height:1716};
   const drawSheets=exercise.world?terrainSheets(await (await fetch('./assets/world-terrain.json')).json(),extent):null;
   const detailScale=exercise.projection?.detailScale||1;
-  const bands=buildControlBands(map,shapes,regions,exercise.world?exercise.shapes:null), zones=buildSeaZones(map,chart);
+  const washes=await (await fetch('./assets/control-washes.json')).json();
+  const bands=buildControlBands(map,shapes,regions,exercise.world?exercise.shapes:null,exercise.world?washes.world:washes.exercise);
+  const zones=buildSeaZones(map,chart);
   if(exercise.world){
     worldSeats(exercise,bands);
     for(const [id,sector] of Object.entries(exercise.shapes)){
@@ -565,7 +574,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     }
   }
   const control=map.querySelector('#controlBands'), intel=document.querySelector('#mapIntel');
-  let inspectedPlace=null, inspectedSea=null, lastScale=0;
+  let inspectedPlace=null, inspectedSea=null, lastBattle=null, lastScale=0;
   function inspectSea(id){
     if(inspectedSea)zones.get(inspectedSea).area.setAttribute('fill','transparent');
     inspectedSea=id;
@@ -686,14 +695,16 @@ export async function atlas(onPick,onView,initial,exercise) {
       band.lastChild.setAttribute('stroke','url(#'+styleFor(owner).hatch+')');
       region.firstChild.textContent=places[id].name+' · '+owner+' control';
     }
+    const selectedLand=inspectedSea?null:(game.phase==='plan'?target||focus:inspectedPlace||game.active);
     const info=inspectedSea?'Sea zone '+inspectedSea+' · Adjacent '+zones.get(inspectedSea).neighbors.join(', '):
-      inspectedPlace?places[inspectedPlace].name+' · '+game.owners[inspectedPlace]+' control':'';
+      bands[selectedLand]?places[selectedLand].name+' · '+game.owners[selectedLand]+' control':'';
     if(intel.textContent!==info)intel.textContent=info;
     forces.replaceChildren();
     for(const region of regions.children){
       const id=region.dataset.place;
       const legal=game.phase==='plan'&&places[focus]?.targets.includes(id);
-      region.setAttribute('fill',id===target?'#ba84353a':legal?'#d6b65728':'transparent');
+      region.classList.toggle('selected-territory',id===selectedLand);
+      region.setAttribute('fill',legal?'#d6b65728':'transparent');
       region.setAttribute('stroke',legal?'#895a31':'none');
       region.setAttribute('stroke-width','2');
     }
@@ -870,7 +881,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     pointers.delete(e.pointerId);
     gesture=pointers.size?{...basis(),moved:true}:null;
     if(tapped){
-      inspectedPlace=id||null;
+      inspectedPlace=game.phase==='plan'?null:id||null;
       inspectSea(sea && sea!==inspectedSea ? sea : null);
       if(id){
         if(view.z<.66){[view.x,view.y]=position(id);view.z=exercise.world?maxZoom:1.25;}
@@ -904,6 +915,13 @@ export async function atlas(onPick,onView,initial,exercise) {
   new ResizeObserver(render).observe(map);
   return (s,id,to,type,seed,nation)=>{
     if(seed!==layoutSeed){offsets=homeOffsets(seed);layoutSeed=seed;}
+    if(s.active!==lastBattle){
+      inspectedPlace=null;inspectSea(null);lastBattle=s.active;
+    }
+    if(exercise.world&&s.phase==='plan'&&id!==focus){
+      const sea=places[id]?.water?String(parseInt(places[id].name)):null;
+      if(sea!==inspectedSea)inspectSea(sea);
+    }
     game=s;focus=id;target=to;selectedType=type;selectedNation=nation;render();
   };
 }
