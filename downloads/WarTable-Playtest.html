@@ -247,8 +247,14 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
 
 .activation-order{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-block:8px}
 .activation-order input{width:4em;font:inherit}
-.counter-face:is([data-nation="Pro-Allied neutral"],[data-nation="Allied-aligned, uncontrolled"]){color:#32666e;background:#d4e4da}
-.counter-face:is([data-nation="Pro-Axis neutral"],[data-nation="Axis-aligned, uncontrolled"]){color:#874b37;background:#ecd7b9}
+:root{
+  --neutral-graphite:#383540; --neutral-graphite-paper:#e1dfe5;
+  --neutral-indigo:#51458c; --neutral-indigo-paper:#e1ddf0;
+  --neutral-mulberry:#7b305e; --neutral-mulberry-paper:#efdae5;
+}
+.counter-face:is([data-nation="Strict neutral"],[data-nation="Mongolia"]){color:var(--neutral-graphite);background:var(--neutral-graphite-paper);border-color:currentColor}
+.counter-face:is([data-nation="Pro-Allied neutral"],[data-nation="Allied-aligned, uncontrolled"]){color:var(--neutral-indigo);background:var(--neutral-indigo-paper);border-color:currentColor}
+.counter-face:is([data-nation="Pro-Axis neutral"],[data-nation="Axis-aligned, uncontrolled"]){color:var(--neutral-mulberry);background:var(--neutral-mulberry-paper);border-color:currentColor}
 </style>
 </head>
 <body>
@@ -1035,9 +1041,9 @@ for(const [nation,[code,counter,paper]] of Object.entries(nationalInks)){
   ownerStyle[nation]={code,counter,ink:counter,paper,hatch:'hatch-'+code,angle:code==='JP'?42:-32};
 }
 const neutralPatterns={
-  strict:{ink:'#625843',paper:'#e7dec4',angle:39,code:'N'},
-  allies:{ink:'#32666e',paper:'#d4e4da',angle:39,code:'AL'},
-  axis:{ink:'#874b37',paper:'#ecd7b9',angle:-39,code:'AX'}
+  strict:{ink:'var(--neutral-graphite)',paper:'var(--neutral-graphite-paper)',code:'N',width:9,height:10,lines:'M4.5 0V10',weight:1.15},
+  allies:{ink:'var(--neutral-indigo)',paper:'var(--neutral-indigo-paper)',code:'AL',width:13,height:10,lines:'M4 0V10 M7 0V10',weight:1.1},
+  axis:{ink:'var(--neutral-mulberry)',paper:'var(--neutral-mulberry-paper)',code:'AX',width:9,height:12,lines:'M4.5 1V9',weight:1.55}
 };
 const neutralStyleKey={Neutral_True:'strict',Mongolians:'strict',Neutral_Allies:'allies',Neutral_Axis:'axis',Joined_Allies:'allies',Joined_Axis:'axis'};
 function styleFor(nation){
@@ -1111,8 +1117,8 @@ function buildControlBands(map,shapes,regions,sectors,washes){
     defs.append(pattern);
   }
   if(sectors)for(const [kind,style] of Object.entries(neutralPatterns)){
-    const pattern=node('pattern',{id:'neutral-'+kind,patternUnits:'userSpaceOnUse',width:9,height:9});
-    pattern.append(node('path',{d:kind==='strict'?'M0 4.5H9M4.5 0V9':'M4.5 0V9',stroke:style.ink,'stroke-width':kind==='strict'?.85:1.35}));
+    const pattern=node('pattern',{id:'neutral-'+kind,patternUnits:'userSpaceOnUse',width:style.width,height:style.height});
+    pattern.append(node('path',{d:style.lines,stroke:style.ink,'stroke-width':style.weight}));
     defs.append(pattern);
   }
   const bands={};
@@ -1355,8 +1361,8 @@ async function atlas(onPick,onView,initial,exercise) {
       for(const {hatch,angle} of Object.values(ownerStyle)){
         document.getElementById(hatch).setAttribute('patternTransform','rotate('+angle+') scale('+bound(1/scale,.25,1.4*detailScale)+')');
       }
-      if(exercise.world)for(const [kind,{angle}] of Object.entries(neutralPatterns)){
-        document.getElementById('neutral-'+kind).setAttribute('patternTransform','rotate('+angle+') scale('+bound(1/scale,.3,32)+')');
+      if(exercise.world)for(const kind of Object.keys(neutralPatterns)){
+        document.getElementById('neutral-'+kind).setAttribute('patternTransform','rotate(44) scale('+bound(1/scale,.3,32)+')');
       }
       control.style.setProperty('--outer',width+'px');
       control.style.setProperty('--inner',width*.48+'px');
@@ -2176,7 +2182,7 @@ $('map').setAttribute('aria-label','Pan or pinch the map. Select a unit from '+a
 $('controlKey').innerHTML=(isGlobal?[attacker]:[attacker,defender]).map(n=>'<i data-nation="'+n+'"></i>'+n).join(' ');
 $('closeDialog').onclick=()=>$('dialog').close();
 $('journal').onclick=()=>showDialog(isGlobal?'Combat review':'Exercise review',(s.phase==='review'?timeline():'<p>The record opens after the last battle. It includes committed attacks, dice, casualties, retreats, and control of each territory.</p>'));
-$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The national color fades inward from the hatched border. Full-territory hatching marks neutrals: crossed graphite for strict, teal for pro-Allied and rust for pro-Axis. A committed strict-neutral invasion changes the other eligible strict neutrals immediately. Friendly neutrals can be activated after combat. Tap a territory to mark it in violet and read its status. Tap it again to clear the selection. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><h3>Plan an attack</h3><p>Counters use '+unitCounter('inf',undefined,attacker)+' for infantry and '+unitCounter('tank',undefined,attacker)+' for armor. Select a stack on the map, adjust the quantity, then tap a highlighted enemy territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this board</h3><p>'+ (isGlobal?'Global 1940 uses the opening forces of all nine powers. Tap any territory or counter to inspect it. Infantry and armor can plan adjacent land attacks against powers already at war.':'This local exercise covers adjacent land attacks with infantry and tanks. The forces are arranged for testing.')+'</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+(isGlobal?btn('Local players','players','secondary')+btn('Restart combat','reset','danger'):btn('Restart exercise','reset','danger')));
+$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The national color fades inward from the hatched border. Neutral hatching slopes up to the right across the whole territory. Single graphite lines mark strict neutrals, paired indigo lines mark pro-Allied neutrals, and dashed mulberry lines mark pro-Axis neutrals. A committed strict-neutral invasion changes the other eligible strict neutrals immediately. Friendly neutrals can be activated after combat. Tap a territory to mark it in violet and read its status. Tap it again to clear the selection. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><h3>Plan an attack</h3><p>Counters use '+unitCounter('inf',undefined,attacker)+' for infantry and '+unitCounter('tank',undefined,attacker)+' for armor. Select a stack on the map, adjust the quantity, then tap a highlighted enemy territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this board</h3><p>'+ (isGlobal?'Global 1940 uses the opening forces of all nine powers. Tap any territory or counter to inspect it. Infantry and armor can plan adjacent land attacks against powers already at war.':'This local exercise covers adjacent land attacks with infantry and tanks. The forces are arranged for testing.')+'</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+(isGlobal?btn('Local players','players','secondary')+btn('Restart combat','reset','danger'):btn('Restart exercise','reset','danger')));
 // Store the two panel dimensions separately so rotating the phone restores the last fit.
 function setupOrdersPanel(){
   const main=document.querySelector('main'),sheet=$('ordersPanel'),grip=$('resizePanel');

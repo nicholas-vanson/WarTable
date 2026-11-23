@@ -378,9 +378,9 @@ for(const [nation,[code,counter,paper]] of Object.entries(nationalInks)){
   ownerStyle[nation]={code,counter,ink:counter,paper,hatch:'hatch-'+code,angle:code==='JP'?42:-32};
 }
 const neutralPatterns={
-  strict:{ink:'#625843',paper:'#e7dec4',angle:39,code:'N'},
-  allies:{ink:'#32666e',paper:'#d4e4da',angle:39,code:'AL'},
-  axis:{ink:'#874b37',paper:'#ecd7b9',angle:-39,code:'AX'}
+  strict:{ink:'var(--neutral-graphite)',paper:'var(--neutral-graphite-paper)',code:'N',width:9,height:10,lines:'M4.5 0V10',weight:1.15},
+  allies:{ink:'var(--neutral-indigo)',paper:'var(--neutral-indigo-paper)',code:'AL',width:13,height:10,lines:'M4 0V10 M7 0V10',weight:1.1},
+  axis:{ink:'var(--neutral-mulberry)',paper:'var(--neutral-mulberry-paper)',code:'AX',width:9,height:12,lines:'M4.5 1V9',weight:1.55}
 };
 const neutralStyleKey={Neutral_True:'strict',Mongolians:'strict',Neutral_Allies:'allies',Neutral_Axis:'axis',Joined_Allies:'allies',Joined_Axis:'axis'};
 function styleFor(nation){
@@ -454,8 +454,8 @@ function buildControlBands(map,shapes,regions,sectors,washes){
     defs.append(pattern);
   }
   if(sectors)for(const [kind,style] of Object.entries(neutralPatterns)){
-    const pattern=node('pattern',{id:'neutral-'+kind,patternUnits:'userSpaceOnUse',width:9,height:9});
-    pattern.append(node('path',{d:kind==='strict'?'M0 4.5H9M4.5 0V9':'M4.5 0V9',stroke:style.ink,'stroke-width':kind==='strict'?.85:1.35}));
+    const pattern=node('pattern',{id:'neutral-'+kind,patternUnits:'userSpaceOnUse',width:style.width,height:style.height});
+    pattern.append(node('path',{d:style.lines,stroke:style.ink,'stroke-width':style.weight}));
     defs.append(pattern);
   }
   const bands={};
@@ -697,8 +697,8 @@ export async function atlas(onPick,onView,initial,exercise) {
       for(const {hatch,angle} of Object.values(ownerStyle)){
         document.getElementById(hatch).setAttribute('patternTransform','rotate('+angle+') scale('+bound(1/scale,.25,1.4*detailScale)+')');
       }
-      if(exercise.world)for(const [kind,{angle}] of Object.entries(neutralPatterns)){
-        document.getElementById('neutral-'+kind).setAttribute('patternTransform','rotate('+angle+') scale('+bound(1/scale,.3,32)+')');
+      if(exercise.world)for(const kind of Object.keys(neutralPatterns)){
+        document.getElementById('neutral-'+kind).setAttribute('patternTransform','rotate(44) scale('+bound(1/scale,.3,32)+')');
       }
       control.style.setProperty('--outer',width+'px');
       control.style.setProperty('--inner',width*.48+'px');
