@@ -1,11 +1,12 @@
 import {places,exercises,stats} from './rules.js';
+import {neutralOwners,neutralKey,canEnterNeutral,hostileNeutral,openingLand} from './neutral-rules.js';
 // Global 1940 Second Edition order of play. Both British economies share a controller.
 export const globalPowers={
   Germans:'Germany',Russians:'Soviet Union',Japanese:'Japan',Americans:'United States',
   Chinese:'China',British:'United Kingdom',Italians:'Italy',ANZAC:'ANZAC',French:'France'
 };
 export const ownerNames={...globalPowers,UK_Pacific:'United Kingdom',Dutch:'Netherlands',
-  Neutral_True:'Strict neutral',Neutral_Allies:'Pro-Allied neutral',Neutral_Axis:'Pro-Axis neutral',Mongolians:'Mongolia'};
+  ...neutralOwners};
 export const globalUnits={
   infantry:['Infantry',3],artillery:['Artillery',4],mech_infantry:['Mechanized infantry',4],armour:['Tank',6],aaGun:['AAA',5],
   fighter:['Fighter',10],tactical_bomber:['Tactical bomber',11],bomber:['Strategic bomber',12],
@@ -51,14 +52,19 @@ export function prepareGlobalBoard(setup,atlas,match){
   const attacker=globalPowers[match.power];
   const enemies=new Set(setup.diplomacy.filter(([a,b,rel])=>rel==='War'&&(a===match.power||b===match.power)).map(([a,b])=>a===match.power?b:a));
   if(enemies.has('British'))enemies.add('UK_Pacific');
+  const neighbors={},neutralEntry={},unmovedLand={};
   for(const [name,r] of Object.entries(setup.regions)){
     const id=ids[name],position=match.board[name],owner=r.water?'Sea zone':ownerNames[position.owner]||'Impassable';
-    const targets=r.water||r.owner!==match.power?[]:r.links.filter(to=>{
-      const dest=setup.regions[to];return !dest.water&&!dest.blocked&&enemies.has(dest.owner);
+    neighbors[id]=r.links.map(n=>ids[n]);
+    neutralEntry[id]=canEnterNeutral(match.power,enemies,r);
+    const targets=r.water||position.owner!==match.power?[]:r.links.filter(to=>{
+      const dest=setup.regions[to],controller=match.board[to].owner;
+      return !dest.water&&!dest.blocked&&(enemies.has(controller)||neutralOwners[controller]&&canEnterNeutral(match.power,enemies,dest)&&hostileNeutral(match.power,controller));
     }).map(to=>ids[to]);
     places[id]={name,owner:ownerNames[r.owner]||owner,targets,water:r.water,city:r.city,ipc:r.ipc,links:r.links,original:r.original};
     shapes[id]={...sectors[name],stacks:position.units.filter(([p,t])=>ownerNames[p]!==owner||!['infantry','armour'].includes(t)).length};owners[id]=owner;forces[id]=true;
     pieces[id]=position.units.map(([power,unit,n])=>[power,typeKeys[unit]||unit,n]);
+    if(!r.water)unmovedLand[id]=openingLand(pieces[id],match.power);
     const available={inf:0,tank:0};
     for(const [power,type,n] of pieces[id]){
       if(stats[type]&&!r.water&&(owner!==attacker||power===match.power&&['inf','tank'].includes(type)))available[type]=(available[type]||0)+n;
@@ -76,14 +82,17 @@ export function prepareGlobalBoard(setup,atlas,match){
   ].map(([name,region,lon,lat,capitalOf])=>({name,territory:ids[region],lon,lat,point:sectors[region].city,capitalOf}));
   const west=sectors['Normandy Bordeaux'].center,east=sectors['Western Germany'].center;
   const camera={x:(west[0]+east[0])/2,y:(west[1]+east[1])/2,z:.7*projection.detailScale,surveyZoom:true};
-  const exercise={name:'Global 1940',attacker,defender:'France',camera,forces,shapes,cities,world:true,projection};
+  const exercise={name:'Global 1940',attacker,defender:'France',camera,forces,shapes,cities,world:true,projection,neighbors,neutralEntry,unmovedLand};
   exercises.global=exercise;
-  return {exercise,game:{version:1,exercise:'global',phase:'plan',power:match.power,units,owners,pieces,orders:[],battles:[],active:null,record:[]}};
+  return {exercise,game:{version:1,exercise:'global',phase:'plan',mongolianPactBroken:!!match.mongolianPactBroken,power:match.power,units,owners,pieces,orders:[],battles:[],active:null,record:[]}};
 }
 export function saveGlobalPosition(match,game){
+  match.mongolianPactBroken=!!game.mongolianPactBroken;
   for(const [id,stacks] of Object.entries(game.pieces)){
     const area=match.board[places[id].name];
-    if(game.owners[id]===globalPowers[match.power])area.owner=match.power;
+    if(game.owners[id]===globalPowers[match.power]&&ownerNames[area.owner]!==game.owners[id])area.owner=match.power;
+    else if(neutralKey(game.owners[id]))area.owner=neutralKey(game.owners[id]);
+    else if(game.owners[id]==='Soviet Union'&&places[id].original==='Mongolians')area.owner='Russians';
     area.units=stacks.filter(row=>row[2]>0).map(([p,t,n])=>[p,t==='inf'?'infantry':t==='tank'?'armour':t,n]);
   }
 }
@@ -94,5 +103,6 @@ export async function loadGlobalBoard(){
   const match=saved?JSON.parse(saved):startGlobalMatch(setup,Object.fromEntries(Object.keys(globalPowers).map(k=>[k,1])));
   if(match.version!==1||!match.board?.Germany)throw Error('The saved global match could not be opened.');
   match.combatStart??=structuredClone(match.board);
-  return {...prepareGlobalBoard(setup,sectors,{...match,board:match.combatStart}),match};
+  match.combatStartPactBroken??=!!match.mongolianPactBroken;
+  return {...prepareGlobalBoard(setup,sectors,{...match,board:match.combatStart,mongolianPactBroken:match.combatStartPactBroken}),match};
 }

@@ -1,3 +1,4 @@
+import {invadeNeutrals,settleMongolianPact,neutralKey} from './neutral-rules.js';
 // The local exercise models adjacent overland attacks with infantry and tanks.
 export const places = {
   hb: {name:'Holland Belgium', owner:'Germany', targets:['fr','nb'], lon:5.0, lat:51.6},
@@ -82,7 +83,8 @@ function alterStack(s,id,power,type,delta){
   row[2]+=delta;
 }
 export function commit(s) {
-  check(s.phase==='plan' && s.orders.length,'Plan at least one attack before committing.');
+  check(s.phase==='plan' && (s.orders.length||s.exercise==='global'),'Plan at least one attack before committing.');
+  if(s.exercise==='global')invadeNeutrals(s);
   for(const o of s.orders) {
     let b=s.battles.find(b=>b.to===o.to);
     if(!b){b={to:o.to,origins:[],attack:empty(),round:0,step:'ready',resolved:false};s.battles.push(b);}
@@ -90,7 +92,10 @@ export function commit(s) {
     for(const k of types){b.attack[k]+=o.units[k];s.units[o.from][k]-=o.units[k];alterStack(s,o.from,s.power,k,-o.units[k]);}
     s.record.push({title:places[o.from].name+' → '+places[o.to].name,detail:describe(o.units)});
   }
-  s.phase='combat';
+  s.phase=s.battles.length?'combat':'review';
+  for(const b of s.battles){
+    if(neutralKey(s.owners[b.to])&&!count(s.units[b.to]))captureBattle(s,b,exerciseOf(s).attacker);
+  }
 }
 export function chooseBattle(s,to) {
   const b=s.battles.find(b=>b.to===to);
@@ -111,12 +116,21 @@ function rollForce(force,mode,random) {
 function finishBattle(s,b,result){
   b.resolved=true;b.step='done';b.result=result;s.active=null;
   s.record.push({title:places[b.to].name,detail:result});
-  if(s.battles.every(b=>b.resolved))s.phase='review';
+  if(s.battles.every(b=>b.resolved)){s.phase='review';settleMongolianPact(s);}
 }
 export function defenderLosses(force,hits){
   const lost=empty();
   for(const k of casualtyOrder){if(force[k]){lost[k]=Math.min(force[k],hits);hits-=lost[k];}}
   return lost;
+}
+function captureBattle(s,b,attacker){
+  if(s.pieces){
+    for(const row of s.pieces[b.to]){
+      if(row[2]&&!stats[row[1]]){row[0]=s.power;if(row[1]==='factory_major')row[1]='factory_minor';}
+    }
+    for(const k of types)alterStack(s,b.to,s.power,k,b.attack[k]);
+  }
+  s.owners[b.to]=attacker;s.units[b.to]={...b.attack};finishBattle(s,b,'Captured by '+attacker+' with '+describe(b.attack)+'.');
 }
 function applyLosses(s,b,losses){
   for(const k of types)b.attack[k]-=losses[k];
@@ -138,13 +152,7 @@ function applyLosses(s,b,losses){
     losses:{attack:{...losses},defense:lost},defender,nationalLosses,
     detail:'Losses — '+attacker+': '+describe(losses)+'; '+defender+': '+describe(lost)+'.'});
   if(!count(defenders)&&count(b.attack)){
-    if(s.pieces){
-      for(const row of s.pieces[b.to]){
-        if(row[2]&&!stats[row[1]]){row[0]=s.power;if(row[1]==='factory_major')row[1]='factory_minor';}
-      }
-      for(const k of types)alterStack(s,b.to,s.power,k,b.attack[k]);
-    }
-    s.owners[b.to]=attacker;s.units[b.to]={...b.attack};finishBattle(s,b,'Captured by '+attacker+' with '+describe(b.attack)+'.');
+    captureBattle(s,b,attacker);
   }else if(!count(b.attack)){
     finishBattle(s,b,count(defenders)?defender+' held with '+describe(defenders)+'.':'Both forces lost. '+defender+' retains control.');
   }else b.step='decision';

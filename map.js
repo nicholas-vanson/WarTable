@@ -1,3 +1,4 @@
+import {neutralKey} from './neutral-rules.js';
 import {ownerNames,globalUnits} from './global-game.js';
 import {places,types,stats,available,theaterVictoryCities} from './rules.js';
 const ns='http://www.w3.org/2000/svg';
@@ -376,7 +377,17 @@ const nationalInks={
 for(const [nation,[code,counter,paper]] of Object.entries(nationalInks)){
   ownerStyle[nation]={code,counter,ink:counter,paper,hatch:'hatch-'+code,angle:code==='JP'?42:-32};
 }
-function styleFor(nation){return ownerStyle[nation]||ownerStyle.Neutral;}
+const neutralPatterns={
+  strict:{ink:'#625843',paper:'#e7dec4',angle:39,code:'N'},
+  allies:{ink:'#32666e',paper:'#d4e4da',angle:39,code:'AL'},
+  axis:{ink:'#874b37',paper:'#ecd7b9',angle:-39,code:'AX'}
+};
+const neutralStyleKey={Neutral_True:'strict',Mongolians:'strict',Neutral_Allies:'allies',Neutral_Axis:'axis',Joined_Allies:'allies',Joined_Axis:'axis'};
+function styleFor(nation){
+  const kind=neutralStyleKey[neutralKey(nation)];
+  if(kind){const style=neutralPatterns[kind];return {...style,counter:style.ink,hatch:'neutral-'+kind};}
+  return ownerStyle[nation]||ownerStyle.Neutral;
+}
 const counterCodes={transport:'TR',submarine:'SS',destroyer:'DD',cruiser:'CA',carrier:'CV',battleship:'BB',
   harbour:'NB',airfield:'AB',factory_minor:'IC',factory_major:'IC'};
 function worldSeats(exercise,bands){
@@ -442,6 +453,11 @@ function buildControlBands(map,shapes,regions,sectors,washes){
     pattern.append(node('path',{d:'M2 0V4.2',stroke:ink,'stroke-width':.8}));
     defs.append(pattern);
   }
+  if(sectors)for(const [kind,style] of Object.entries(neutralPatterns)){
+    const pattern=node('pattern',{id:'neutral-'+kind,patternUnits:'userSpaceOnUse',width:9,height:9});
+    pattern.append(node('path',{d:kind==='strict'?'M0 4.5H9M4.5 0V9':'M4.5 0V9',stroke:style.ink,'stroke-width':kind==='strict'?.85:1.35}));
+    defs.append(pattern);
+  }
   const bands={};
   for(const [id,d] of Object.entries(shapes)){
     const href='#territory-'+id;
@@ -456,6 +472,11 @@ function buildControlBands(map,shapes,regions,sectors,washes){
       href:'data:image/png;base64,'+washes[sectors?places[id].name:id]}));
     defs.append(wash);
     band.append(node('use',{href,fill:'currentColor',mask:'url(#'+maskId+')'}));
+    let neutralFill=null;
+    if(sectors&&neutralStyleKey[neutralKey(places[id].owner)]){
+      neutralFill=node('use',{href,fill:'none',opacity:.57});
+      band.append(neutralFill);
+    }
     let border=href;
     if(sectors){
       const d=sectors[id].frontier;
@@ -470,7 +491,7 @@ function buildControlBands(map,shapes,regions,sectors,washes){
     layer.append(band);
     const region=node('path',{d,fill:'transparent','data-place':id});
     region.append(node('title',{}));regions.append(region);
-    bands[id]={band,region};
+    bands[id]={band,region,neutralFill};
   }
   for(const [from,{targets}] of Object.entries(places)){
     if(!shapes[from])continue;
@@ -574,7 +595,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     }
   }
   const control=map.querySelector('#controlBands'), intel=document.querySelector('#mapIntel');
-  let inspectedPlace=null, inspectedSea=null, lastBattle=null, lastScale=0;
+  let inspectedPlace, inspectedSea=null, lastBattle=null, lastScale=0;
   function inspectSea(id){
     if(inspectedSea)zones.get(inspectedSea).area.setAttribute('fill','transparent');
     inspectedSea=id;
@@ -676,6 +697,9 @@ export async function atlas(onPick,onView,initial,exercise) {
       for(const {hatch,angle} of Object.values(ownerStyle)){
         document.getElementById(hatch).setAttribute('patternTransform','rotate('+angle+') scale('+bound(1/scale,.25,1.4*detailScale)+')');
       }
+      if(exercise.world)for(const [kind,{angle}] of Object.entries(neutralPatterns)){
+        document.getElementById('neutral-'+kind).setAttribute('patternTransform','rotate('+angle+') scale('+bound(1/scale,.3,32)+')');
+      }
       control.style.setProperty('--outer',width+'px');
       control.style.setProperty('--inner',width*.48+'px');
       for(const {mark,x,y,room,ruleRoom} of zones.values()){
@@ -687,17 +711,19 @@ export async function atlas(onPick,onView,initial,exercise) {
       lastScale=scale;
     }
     if(!game)return;
-    for(const [id,{band,region}] of Object.entries(bands)){
+    for(const [id,{band,region,neutralFill}] of Object.entries(bands)){
       const owner=game.owners[id];
       if(band.dataset.owner===owner)continue;
       band.dataset.owner=owner;
+      const key=neutralKey(owner);
+      if(neutralFill)neutralFill.setAttribute('fill',key&&!key.startsWith('Joined_')?'url(#neutral-'+neutralStyleKey[key]+')':'none');
       band.style.color=styleFor(owner).ink;
       band.lastChild.setAttribute('stroke','url(#'+styleFor(owner).hatch+')');
-      region.firstChild.textContent=places[id].name+' · '+owner+' control';
+      region.firstChild.textContent=places[id].name+' · '+owner+(key?'':' control');
     }
-    const selectedLand=inspectedSea?null:(game.phase==='plan'?target||focus:inspectedPlace||game.active);
+    const selectedLand=inspectedSea?null:(game.phase==='combat'?(inspectedPlace===undefined?game.active:inspectedPlace):target||focus);
     const info=inspectedSea?'Sea zone '+inspectedSea+' · Adjacent '+zones.get(inspectedSea).neighbors.join(', '):
-      bands[selectedLand]?places[selectedLand].name+' · '+game.owners[selectedLand]+' control':'';
+      bands[selectedLand]?places[selectedLand].name+' · '+game.owners[selectedLand]+(neutralKey(game.owners[selectedLand])?'':' control'):'';
     if(intel.textContent!==info)intel.textContent=info;
     forces.replaceChildren();
     for(const region of regions.children){
@@ -849,7 +875,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     let hit=e.target.closest('[data-place],[data-sea]')?.dataset;
     // At wider zoom the printed faces shrink. Give taps in the surrounding territory
     // a 44 px target, resolving shared space to the nearest counter of that territory.
-    if(hit?.place&&!hit.unit){
+    if(hit?.place&&!hit.unit&&!bands[hit.place]?.region.classList.contains('selected-territory')){
       let nearest=Infinity;
       for(const stack of forces.querySelectorAll('g[data-unit]')){
         if(stack.dataset.place!==hit.place)continue;
@@ -881,7 +907,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     pointers.delete(e.pointerId);
     gesture=pointers.size?{...basis(),moved:true}:null;
     if(tapped){
-      inspectedPlace=game.phase==='plan'?null:id||null;
+      if(game.phase==='combat')inspectedPlace=bands[id]?.region.classList.contains('selected-territory')?null:id||null;
       inspectSea(sea && sea!==inspectedSea ? sea : null);
       if(id){
         if(view.z<.66){[view.x,view.y]=position(id);view.z=exercise.world?maxZoom:1.25;}
@@ -916,7 +942,7 @@ export async function atlas(onPick,onView,initial,exercise) {
   return (s,id,to,type,seed,nation)=>{
     if(seed!==layoutSeed){offsets=homeOffsets(seed);layoutSeed=seed;}
     if(s.active!==lastBattle){
-      inspectedPlace=null;inspectSea(null);lastBattle=s.active;
+      inspectedPlace=undefined;inspectSea(null);lastBattle=s.active;
     }
     if(exercise.world&&s.phase==='plan'&&id!==focus){
       const sea=places[id]?.water?String(parseInt(places[id].name)):null;

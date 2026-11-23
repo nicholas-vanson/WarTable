@@ -237,3 +237,8 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
   stroke-linejoin:round;
   vector-effect:non-scaling-stroke;
 }
+
+.activation-order{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-block:8px}
+.activation-order input{width:4em;font:inherit}
+.counter-face:is([data-nation="Pro-Allied neutral"],[data-nation="Allied-aligned, uncontrolled"]){color:#32666e;background:#d4e4da}
+.counter-face:is([data-nation="Pro-Axis neutral"],[data-nation="Axis-aligned, uncontrolled"]){color:#874b37;background:#ecd7b9}

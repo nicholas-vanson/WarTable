@@ -244,6 +244,11 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
   stroke-linejoin:round;
   vector-effect:non-scaling-stroke;
 }
+
+.activation-order{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-block:8px}
+.activation-order input{width:4em;font:inherit}
+.counter-face:is([data-nation="Pro-Allied neutral"],[data-nation="Allied-aligned, uncontrolled"]){color:#32666e;background:#d4e4da}
+.counter-face:is([data-nation="Pro-Axis neutral"],[data-nation="Axis-aligned, uncontrolled"]){color:#874b37;background:#ecd7b9}
 </style>
 </head>
 <body>
@@ -308,7 +313,109 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
 <div class="dialog-head"><h2 id="dialogTitle"></h2><button id="closeDialog" aria-label="Close">×</button></div>
 <div id="dialogBody"></div>
 </dialog>
-<script type="module">// The local exercise models adjacent overland attacks with infantry and tanks.
+<script type="module">// Global 1940 Second Edition, Europe pp. 10–11 and Global pp. 39–40.
+
+const neutralOwners={
+  Neutral_True:'Strict neutral',Mongolians:'Mongolia',Neutral_Allies:'Pro-Allied neutral',Neutral_Axis:'Pro-Axis neutral',
+  Joined_Allies:'Allied-aligned, uncontrolled',Joined_Axis:'Axis-aligned, uncontrolled'
+};
+const neutralKeys=Object.fromEntries(Object.entries(neutralOwners).map(([key,label])=>[label,key]));
+const neutralKey=owner=>neutralKeys[owner];
+const strictKey=key=>key==='Neutral_True'||key==='Mongolians';
+const allianceOf=power=>['Germans','Italians','Japanese'].includes(power)?'Axis':'Allies';
+const landTypes=['inf','tank','artillery','mech_infantry','aaGun'];
+
+function canEnterNeutral(power,enemies,region){
+  if(power==='Chinese'||!enemies.size)return false;
+  if(power==='Russians')return region.original==='Mongolians'?enemies.has('Japanese'):enemies.has('Germans')||enemies.has('Italians');
+  return true;
+}
+function hostileNeutral(power,key){
+  return strictKey(key)||!!key&&!key.endsWith('_'+allianceOf(power));
+}
+function changeUncontrolledStatus(s,id,key){
+  s.owners[id]=neutralOwners[key];
+  for(const row of s.pieces[id])if(neutralOwners[row[0]])row[0]=key;
+}
+function takeFriendlyControl(s,id,power,nation){
+  s.owners[id]=nation;
+  for(const row of s.pieces[id])if(neutralOwners[row[0]])row[0]=power;
+}
+function invadeNeutrals(s){
+  const {neighbors}=exerciseOf(s);
+  const attacked=[...new Set(s.orders.map(o=>o.to))];
+  const strict=attacked.filter(id=>strictKey(neutralKey(s.owners[id])));
+  const mongo=id=>places[id].original==='Mongolians';
+  const bordersMongolia=id=>neighbors[id].some(mongo);
+  const opposing=allianceOf(s.power)==='Axis'?'Allies':'Axis';
+  if(s.power==='Russians'&&Object.keys(s.owners).some(id=>mongo(id)&&strictKey(neutralKey(s.owners[id])))&&
+      attacked.some(id=>places[id].name==='Korea'||s.owners[id]==='Japan'&&bordersMongolia(id)))s.mongolianPactBroken=true;
+  if(s.power==='Japanese'&&!s.mongolianPactBroken&&attacked.some(id=>s.owners[id]==='Soviet Union'&&bordersMongolia(id)))s.mongolianPactDue=true;
+  if(strict.length){
+    const sovietInvasion=s.power==='Russians'&&strict.some(mongo);
+    for(const id of Object.keys(s.owners)){
+      if(!strictKey(neutralKey(s.owners[id]))||attacked.includes(id))continue;
+      if(mongo(id)&&opposing==='Axis'&&!sovietInvasion)continue;
+      changeUncontrolledStatus(s,id,'Neutral_'+opposing);
+    }
+    s.record.push({title:'Strict neutrality violated',detail:exerciseOf(s).attacker+' attacked '+strict.map(id=>places[id].name).join(', ')+'. Eligible remaining strict neutrals now favor the '+opposing+'.'});
+  }
+  for(const id of attacked){
+    const key=neutralKey(s.owners[id]);
+    if(!key||key.startsWith('Joined_'))continue;
+    changeUncontrolledStatus(s,id,'Joined_'+opposing);
+    s.record.push({title:places[id].name+' joined the '+opposing,detail:'Its standing army defends. Control goes to the invader only on capture.'});
+  }
+}
+function settleMongolianPact(s){
+  if(!s.mongolianPactDue)return;
+  for(const id of Object.keys(s.owners)){
+    if(places[id].original==='Mongolians'&&['Mongolians','Neutral_Allies','Joined_Allies'].includes(neutralKey(s.owners[id]))){
+      takeFriendlyControl(s,id,'Russians','Soviet Union');
+      s.record.push({title:places[id].name,detail:'Entered Soviet control under the Mongolian defense pact.'});
+    }
+  }
+  s.mongolianPactDue=false;
+}
+function activationOptions(s,to){
+  if(s.exercise!=='global'||s.phase!=='review')return [];
+  const key=neutralKey(s.owners[to]),ex=exerciseOf(s);
+  if(!key||hostileNeutral(s.power,key)||!ex.neutralEntry[to])return [];
+  const options=[];
+  for(const from of ex.neighbors[to]){
+    for(const [type,opening] of Object.entries(ex.unmovedLand[from]||{})){
+      const spent=s.orders.filter(o=>o.from===from).reduce((n,o)=>n+(o.units[type]||0),0)+(s.activationMoves?.[from]?.[type]||0);
+      const present=s.pieces[from].filter(([p,t])=>p===s.power&&t===type).reduce((n,row)=>n+row[2],0);
+      const available=Math.min(opening-spent,present);
+      if(available>0)options.push({from,type,available});
+    }
+  }
+  return options;
+}
+function openingLand(stacks,power){
+  const units={};
+  for(const [p,type,n] of stacks)if(p===power&&landTypes.includes(type))units[type]=(units[type]||0)+n;
+  return units;
+}
+function activateFriendly(s,to,from,type,quantity){
+  const option=activationOptions(s,to).find(o=>o.from===from&&o.type===type);
+  if(!option||!Number.isSafeInteger(quantity)||quantity<1||quantity>option.available)throw Error('Choose available land units adjacent to this friendly territory.');
+  const nation=exerciseOf(s).attacker;
+  let remaining=quantity;
+  for(const stack of s.pieces[from]){
+    if(stack[0]!==s.power||stack[1]!==type)continue;
+    const moved=Math.min(remaining,stack[2]);stack[2]-=moved;remaining-=moved;
+  }
+  if(type in s.units[from])s.units[from][type]-=quantity;
+  takeFriendlyControl(s,to,s.power,nation);
+  let arrival=s.pieces[to].find(([p,t])=>p===s.power&&t===type);
+  if(!arrival){arrival=[s.power,type,0];s.pieces[to].push(arrival);}
+  arrival[2]+=quantity;s.units[to][type]=(s.units[to][type]||0)+quantity;
+  s.activationMoves??={};
+  const spent=s.activationMoves[from]??={};spent[type]=(spent[type]||0)+quantity;
+  s.record.push({title:places[to].name+' activated by '+nation,detail:quantity+' land unit'+(quantity===1?'':'s')+' entered from '+places[from].name+'. Surviving local forces are now under '+nation+' control.'});
+}
+// The local exercise models adjacent overland attacks with infantry and tanks.
 const places = {
   hb: {name:'Holland Belgium', owner:'Germany', targets:['fr','nb'], lon:5.0, lat:51.6},
   wg: {name:'Western Germany', owner:'Germany', targets:['fr'], lon:8.9, lat:50.6},
@@ -392,7 +499,8 @@ function alterStack(s,id,power,type,delta){
   row[2]+=delta;
 }
 function commit(s) {
-  check(s.phase==='plan' && s.orders.length,'Plan at least one attack before committing.');
+  check(s.phase==='plan' && (s.orders.length||s.exercise==='global'),'Plan at least one attack before committing.');
+  if(s.exercise==='global')invadeNeutrals(s);
   for(const o of s.orders) {
     let b=s.battles.find(b=>b.to===o.to);
     if(!b){b={to:o.to,origins:[],attack:empty(),round:0,step:'ready',resolved:false};s.battles.push(b);}
@@ -400,7 +508,10 @@ function commit(s) {
     for(const k of types){b.attack[k]+=o.units[k];s.units[o.from][k]-=o.units[k];alterStack(s,o.from,s.power,k,-o.units[k]);}
     s.record.push({title:places[o.from].name+' → '+places[o.to].name,detail:describe(o.units)});
   }
-  s.phase='combat';
+  s.phase=s.battles.length?'combat':'review';
+  for(const b of s.battles){
+    if(neutralKey(s.owners[b.to])&&!count(s.units[b.to]))captureBattle(s,b,exerciseOf(s).attacker);
+  }
 }
 function chooseBattle(s,to) {
   const b=s.battles.find(b=>b.to===to);
@@ -421,12 +532,21 @@ function rollForce(force,mode,random) {
 function finishBattle(s,b,result){
   b.resolved=true;b.step='done';b.result=result;s.active=null;
   s.record.push({title:places[b.to].name,detail:result});
-  if(s.battles.every(b=>b.resolved))s.phase='review';
+  if(s.battles.every(b=>b.resolved)){s.phase='review';settleMongolianPact(s);}
 }
 function defenderLosses(force,hits){
   const lost=empty();
   for(const k of casualtyOrder){if(force[k]){lost[k]=Math.min(force[k],hits);hits-=lost[k];}}
   return lost;
+}
+function captureBattle(s,b,attacker){
+  if(s.pieces){
+    for(const row of s.pieces[b.to]){
+      if(row[2]&&!stats[row[1]]){row[0]=s.power;if(row[1]==='factory_major')row[1]='factory_minor';}
+    }
+    for(const k of types)alterStack(s,b.to,s.power,k,b.attack[k]);
+  }
+  s.owners[b.to]=attacker;s.units[b.to]={...b.attack};finishBattle(s,b,'Captured by '+attacker+' with '+describe(b.attack)+'.');
 }
 function applyLosses(s,b,losses){
   for(const k of types)b.attack[k]-=losses[k];
@@ -448,13 +568,7 @@ function applyLosses(s,b,losses){
     losses:{attack:{...losses},defense:lost},defender,nationalLosses,
     detail:'Losses — '+attacker+': '+describe(losses)+'; '+defender+': '+describe(lost)+'.'});
   if(!count(defenders)&&count(b.attack)){
-    if(s.pieces){
-      for(const row of s.pieces[b.to]){
-        if(row[2]&&!stats[row[1]]){row[0]=s.power;if(row[1]==='factory_major')row[1]='factory_minor';}
-      }
-      for(const k of types)alterStack(s,b.to,s.power,k,b.attack[k]);
-    }
-    s.owners[b.to]=attacker;s.units[b.to]={...b.attack};finishBattle(s,b,'Captured by '+attacker+' with '+describe(b.attack)+'.');
+    captureBattle(s,b,attacker);
   }else if(!count(b.attack)){
     finishBattle(s,b,count(defenders)?defender+' held with '+describe(defenders)+'.':'Both forces lost. '+defender+' retains control.');
   }else b.step='decision';
@@ -920,7 +1034,17 @@ const nationalInks={
 for(const [nation,[code,counter,paper]] of Object.entries(nationalInks)){
   ownerStyle[nation]={code,counter,ink:counter,paper,hatch:'hatch-'+code,angle:code==='JP'?42:-32};
 }
-function styleFor(nation){return ownerStyle[nation]||ownerStyle.Neutral;}
+const neutralPatterns={
+  strict:{ink:'#625843',paper:'#e7dec4',angle:39,code:'N'},
+  allies:{ink:'#32666e',paper:'#d4e4da',angle:39,code:'AL'},
+  axis:{ink:'#874b37',paper:'#ecd7b9',angle:-39,code:'AX'}
+};
+const neutralStyleKey={Neutral_True:'strict',Mongolians:'strict',Neutral_Allies:'allies',Neutral_Axis:'axis',Joined_Allies:'allies',Joined_Axis:'axis'};
+function styleFor(nation){
+  const kind=neutralStyleKey[neutralKey(nation)];
+  if(kind){const style=neutralPatterns[kind];return {...style,counter:style.ink,hatch:'neutral-'+kind};}
+  return ownerStyle[nation]||ownerStyle.Neutral;
+}
 const counterCodes={transport:'TR',submarine:'SS',destroyer:'DD',cruiser:'CA',carrier:'CV',battleship:'BB',
   harbour:'NB',airfield:'AB',factory_minor:'IC',factory_major:'IC'};
 function worldSeats(exercise,bands){
@@ -986,6 +1110,11 @@ function buildControlBands(map,shapes,regions,sectors,washes){
     pattern.append(node('path',{d:'M2 0V4.2',stroke:ink,'stroke-width':.8}));
     defs.append(pattern);
   }
+  if(sectors)for(const [kind,style] of Object.entries(neutralPatterns)){
+    const pattern=node('pattern',{id:'neutral-'+kind,patternUnits:'userSpaceOnUse',width:9,height:9});
+    pattern.append(node('path',{d:kind==='strict'?'M0 4.5H9M4.5 0V9':'M4.5 0V9',stroke:style.ink,'stroke-width':kind==='strict'?.85:1.35}));
+    defs.append(pattern);
+  }
   const bands={};
   for(const [id,d] of Object.entries(shapes)){
     const href='#territory-'+id;
@@ -1000,6 +1129,11 @@ function buildControlBands(map,shapes,regions,sectors,washes){
       href:'data:image/png;base64,'+washes[sectors?places[id].name:id]}));
     defs.append(wash);
     band.append(node('use',{href,fill:'currentColor',mask:'url(#'+maskId+')'}));
+    let neutralFill=null;
+    if(sectors&&neutralStyleKey[neutralKey(places[id].owner)]){
+      neutralFill=node('use',{href,fill:'none',opacity:.57});
+      band.append(neutralFill);
+    }
     let border=href;
     if(sectors){
       const d=sectors[id].frontier;
@@ -1014,7 +1148,7 @@ function buildControlBands(map,shapes,regions,sectors,washes){
     layer.append(band);
     const region=node('path',{d,fill:'transparent','data-place':id});
     region.append(node('title',{}));regions.append(region);
-    bands[id]={band,region};
+    bands[id]={band,region,neutralFill};
   }
   for(const [from,{targets}] of Object.entries(places)){
     if(!shapes[from])continue;
@@ -1119,7 +1253,7 @@ async function atlas(onPick,onView,initial,exercise) {
     }
   }
   const control=map.querySelector('#controlBands'), intel=document.querySelector('#mapIntel');
-  let inspectedPlace=null, inspectedSea=null, lastBattle=null, lastScale=0;
+  let inspectedPlace, inspectedSea=null, lastBattle=null, lastScale=0;
   function inspectSea(id){
     if(inspectedSea)zones.get(inspectedSea).area.setAttribute('fill','transparent');
     inspectedSea=id;
@@ -1221,6 +1355,9 @@ async function atlas(onPick,onView,initial,exercise) {
       for(const {hatch,angle} of Object.values(ownerStyle)){
         document.getElementById(hatch).setAttribute('patternTransform','rotate('+angle+') scale('+bound(1/scale,.25,1.4*detailScale)+')');
       }
+      if(exercise.world)for(const [kind,{angle}] of Object.entries(neutralPatterns)){
+        document.getElementById('neutral-'+kind).setAttribute('patternTransform','rotate('+angle+') scale('+bound(1/scale,.3,32)+')');
+      }
       control.style.setProperty('--outer',width+'px');
       control.style.setProperty('--inner',width*.48+'px');
       for(const {mark,x,y,room,ruleRoom} of zones.values()){
@@ -1232,17 +1369,19 @@ async function atlas(onPick,onView,initial,exercise) {
       lastScale=scale;
     }
     if(!game)return;
-    for(const [id,{band,region}] of Object.entries(bands)){
+    for(const [id,{band,region,neutralFill}] of Object.entries(bands)){
       const owner=game.owners[id];
       if(band.dataset.owner===owner)continue;
       band.dataset.owner=owner;
+      const key=neutralKey(owner);
+      if(neutralFill)neutralFill.setAttribute('fill',key&&!key.startsWith('Joined_')?'url(#neutral-'+neutralStyleKey[key]+')':'none');
       band.style.color=styleFor(owner).ink;
       band.lastChild.setAttribute('stroke','url(#'+styleFor(owner).hatch+')');
-      region.firstChild.textContent=places[id].name+' · '+owner+' control';
+      region.firstChild.textContent=places[id].name+' · '+owner+(key?'':' control');
     }
-    const selectedLand=inspectedSea?null:(game.phase==='plan'?target||focus:inspectedPlace||game.active);
+    const selectedLand=inspectedSea?null:(game.phase==='combat'?(inspectedPlace===undefined?game.active:inspectedPlace):target||focus);
     const info=inspectedSea?'Sea zone '+inspectedSea+' · Adjacent '+zones.get(inspectedSea).neighbors.join(', '):
-      bands[selectedLand]?places[selectedLand].name+' · '+game.owners[selectedLand]+' control':'';
+      bands[selectedLand]?places[selectedLand].name+' · '+game.owners[selectedLand]+(neutralKey(game.owners[selectedLand])?'':' control'):'';
     if(intel.textContent!==info)intel.textContent=info;
     forces.replaceChildren();
     for(const region of regions.children){
@@ -1394,7 +1533,7 @@ async function atlas(onPick,onView,initial,exercise) {
     let hit=e.target.closest('[data-place],[data-sea]')?.dataset;
     // At wider zoom the printed faces shrink. Give taps in the surrounding territory
     // a 44 px target, resolving shared space to the nearest counter of that territory.
-    if(hit?.place&&!hit.unit){
+    if(hit?.place&&!hit.unit&&!bands[hit.place]?.region.classList.contains('selected-territory')){
       let nearest=Infinity;
       for(const stack of forces.querySelectorAll('g[data-unit]')){
         if(stack.dataset.place!==hit.place)continue;
@@ -1426,7 +1565,7 @@ async function atlas(onPick,onView,initial,exercise) {
     pointers.delete(e.pointerId);
     gesture=pointers.size?{...basis(),moved:true}:null;
     if(tapped){
-      inspectedPlace=game.phase==='plan'?null:id||null;
+      if(game.phase==='combat')inspectedPlace=bands[id]?.region.classList.contains('selected-territory')?null:id||null;
       inspectSea(sea && sea!==inspectedSea ? sea : null);
       if(id){
         if(view.z<.66){[view.x,view.y]=position(id);view.z=exercise.world?maxZoom:1.25;}
@@ -1461,7 +1600,7 @@ async function atlas(onPick,onView,initial,exercise) {
   return (s,id,to,type,seed,nation)=>{
     if(seed!==layoutSeed){offsets=homeOffsets(seed);layoutSeed=seed;}
     if(s.active!==lastBattle){
-      inspectedPlace=null;inspectSea(null);lastBattle=s.active;
+      inspectedPlace=undefined;inspectSea(null);lastBattle=s.active;
     }
     if(exercise.world&&s.phase==='plan'&&id!==focus){
       const sea=places[id]?.water?String(parseInt(places[id].name)):null;
@@ -1476,7 +1615,7 @@ const globalPowers={
   Chinese:'China',British:'United Kingdom',Italians:'Italy',ANZAC:'ANZAC',French:'France'
 };
 const ownerNames={...globalPowers,UK_Pacific:'United Kingdom',Dutch:'Netherlands',
-  Neutral_True:'Strict neutral',Neutral_Allies:'Pro-Allied neutral',Neutral_Axis:'Pro-Axis neutral',Mongolians:'Mongolia'};
+  ...neutralOwners};
 const globalUnits={
   infantry:['Infantry',3],artillery:['Artillery',4],mech_infantry:['Mechanized infantry',4],armour:['Tank',6],aaGun:['AAA',5],
   fighter:['Fighter',10],tactical_bomber:['Tactical bomber',11],bomber:['Strategic bomber',12],
@@ -1522,14 +1661,19 @@ function prepareGlobalBoard(setup,atlas,match){
   const attacker=globalPowers[match.power];
   const enemies=new Set(setup.diplomacy.filter(([a,b,rel])=>rel==='War'&&(a===match.power||b===match.power)).map(([a,b])=>a===match.power?b:a));
   if(enemies.has('British'))enemies.add('UK_Pacific');
+  const neighbors={},neutralEntry={},unmovedLand={};
   for(const [name,r] of Object.entries(setup.regions)){
     const id=ids[name],position=match.board[name],owner=r.water?'Sea zone':ownerNames[position.owner]||'Impassable';
-    const targets=r.water||r.owner!==match.power?[]:r.links.filter(to=>{
-      const dest=setup.regions[to];return !dest.water&&!dest.blocked&&enemies.has(dest.owner);
+    neighbors[id]=r.links.map(n=>ids[n]);
+    neutralEntry[id]=canEnterNeutral(match.power,enemies,r);
+    const targets=r.water||position.owner!==match.power?[]:r.links.filter(to=>{
+      const dest=setup.regions[to],controller=match.board[to].owner;
+      return !dest.water&&!dest.blocked&&(enemies.has(controller)||neutralOwners[controller]&&canEnterNeutral(match.power,enemies,dest)&&hostileNeutral(match.power,controller));
     }).map(to=>ids[to]);
     places[id]={name,owner:ownerNames[r.owner]||owner,targets,water:r.water,city:r.city,ipc:r.ipc,links:r.links,original:r.original};
     shapes[id]={...sectors[name],stacks:position.units.filter(([p,t])=>ownerNames[p]!==owner||!['infantry','armour'].includes(t)).length};owners[id]=owner;forces[id]=true;
     pieces[id]=position.units.map(([power,unit,n])=>[power,typeKeys[unit]||unit,n]);
+    if(!r.water)unmovedLand[id]=openingLand(pieces[id],match.power);
     const available={inf:0,tank:0};
     for(const [power,type,n] of pieces[id]){
       if(stats[type]&&!r.water&&(owner!==attacker||power===match.power&&['inf','tank'].includes(type)))available[type]=(available[type]||0)+n;
@@ -1547,14 +1691,17 @@ function prepareGlobalBoard(setup,atlas,match){
   ].map(([name,region,lon,lat,capitalOf])=>({name,territory:ids[region],lon,lat,point:sectors[region].city,capitalOf}));
   const west=sectors['Normandy Bordeaux'].center,east=sectors['Western Germany'].center;
   const camera={x:(west[0]+east[0])/2,y:(west[1]+east[1])/2,z:.7*projection.detailScale,surveyZoom:true};
-  const exercise={name:'Global 1940',attacker,defender:'France',camera,forces,shapes,cities,world:true,projection};
+  const exercise={name:'Global 1940',attacker,defender:'France',camera,forces,shapes,cities,world:true,projection,neighbors,neutralEntry,unmovedLand};
   exercises.global=exercise;
-  return {exercise,game:{version:1,exercise:'global',phase:'plan',power:match.power,units,owners,pieces,orders:[],battles:[],active:null,record:[]}};
+  return {exercise,game:{version:1,exercise:'global',phase:'plan',mongolianPactBroken:!!match.mongolianPactBroken,power:match.power,units,owners,pieces,orders:[],battles:[],active:null,record:[]}};
 }
 function saveGlobalPosition(match,game){
+  match.mongolianPactBroken=!!game.mongolianPactBroken;
   for(const [id,stacks] of Object.entries(game.pieces)){
     const area=match.board[places[id].name];
-    if(game.owners[id]===globalPowers[match.power])area.owner=match.power;
+    if(game.owners[id]===globalPowers[match.power]&&ownerNames[area.owner]!==game.owners[id])area.owner=match.power;
+    else if(neutralKey(game.owners[id]))area.owner=neutralKey(game.owners[id]);
+    else if(game.owners[id]==='Soviet Union'&&places[id].original==='Mongolians')area.owner='Russians';
     area.units=stacks.filter(row=>row[2]>0).map(([p,t,n])=>[p,t==='inf'?'infantry':t==='tank'?'armour':t,n]);
   }
 }
@@ -1565,7 +1712,8 @@ async function loadGlobalBoard(){
   const match=saved?JSON.parse(saved):startGlobalMatch(setup,Object.fromEntries(Object.keys(globalPowers).map(k=>[k,1])));
   if(match.version!==1||!match.board?.Germany)throw Error('The saved global match could not be opened.');
   match.combatStart??=structuredClone(match.board);
-  return {...prepareGlobalBoard(setup,sectors,{...match,board:match.combatStart}),match};
+  match.combatStartPactBroken??=!!match.mongolianPactBroken;
+  return {...prepareGlobalBoard(setup,sectors,{...match,board:match.combatStart,mongolianPactBroken:match.combatStartPactBroken}),match};
 }
 async function loadExercise(){
 const $=id=>document.getElementById(id);
@@ -1640,6 +1788,7 @@ function selectTarget(id){
 }
 function pick(id,type,origin,nation){
   if(s.phase==='plan'){run(()=>{
+    if(!type&&(ui.to||ui.inspect||ui.from)===id){ui=freshUI();return;}
     if(isGlobal&&ui.inspect===id&&type&&type===ui.inspectedType&&nation===ui.inspectedNation){ui=freshUI();return;}
     if(ui.stack&&places[ui.from].targets.includes(id))selectTarget(id);
     else if(isGlobal&&type&&(!types.includes(type)||nation&&nation!==s.owners[id])){
@@ -1654,6 +1803,10 @@ function pick(id,type,origin,nation){
       if(type)message=s.formationNames[origin||id][type]+' · '+stats[type].name+' · '+s.owners[origin||id];
     }
   });}
+  else if(s.phase==='review')run(()=>{
+    ui.inspect=ui.inspect===id?null:id;
+    if(isGlobal)ui.activation=!!ui.inspect&&activationOptions(s,id).length>0;
+  });
   else if(s.phase==='combat'&&!s.active&&s.battles.some(b=>b.to===id&&!b.resolved))run(()=>chooseBattle(s,id));
 }
 function run(fn){
@@ -1739,16 +1892,27 @@ function planPanel(){
     const origin=ui.inspectedOrigin||id,nation=ui.inspectedNation||s.owners[id];
     const name=(ui.inspectedType&&s.formationNames[nation===places[origin].owner?origin:origin+'/'+nation]?.[ui.inspectedType])||
       (ui.inspectedType?(stats[ui.inspectedType]?.name||globalUnits[ui.inspectedType]?.[0]):place.name);
+    const status=neutralKey(s.owners[id]);
+    let note='';
+    if(strictKey(status))note='An invasion brings the remaining eligible strict neutrals into the opposing camp.';
+    else if(status?.startsWith('Joined_'))note='Uncontrolled. The surviving garrison stays here until a friendly power takes control.';
+    else if(status)note=hostileNeutral(s.power,status)?'The standing army defends this territory against an invasion.':'An eligible friendly land unit can enter during noncombat movement to take control and mobilize the standing army.';
     html=title(esc(name||place.name),esc((ui.inspectedNation||s.owners[id])+' · '+place.name))+
-      boardGarrison(id)+btn('Back to orders','clear');
+      (note?'<p class="hint">'+note+'</p>':'')+boardGarrison(id)+btn('Back to orders','clear');
   }
-  if(!ui.to&&s.orders.length)html+=plannedAttacks();
-  $('action').innerHTML=!ui.to&&!ui.stack?'<button class="primary" id="hold" '+(s.orders.length?'':'disabled')+'>Hold to commit attacks</button>':'';
+  if(!ui.to&&s.orders.length){
+    html+=plannedAttacks();
+    if(isGlobal&&s.orders.some(o=>strictKey(neutralKey(s.owners[o.to])))){
+      html+='<p class="hint">Committing this invasion shifts eligible strict neutrals to the '+(allianceOf(s.power)==='Axis'?'Allied':'Axis')+' side.</p>';
+    }
+  }
+  if(!ui.to&&!ui.stack)$('action').innerHTML='<button class="primary" id="hold" '+(s.orders.length||isGlobal?'':'disabled')+'>'+(isGlobal&&!s.orders.length?'Hold to finish combat moves':'Hold to commit attacks')+'</button>';
   return html;
 }
 function rollCard(rolls,side,play){
   const defendingPowers=[...new Set(rolls.map(d=>d.power).filter(Boolean))];
-  const label=side==='attack'?adjectives[attacker]+' attack':defendingPowers.length>1?'Allied defense':adjectives[ownerNames[defendingPowers[0]]||defender]+' defense';
+  const defending=ownerNames[defendingPowers[0]]||s.owners[s.active]||defender;
+  const label=side==='attack'?adjectives[attacker]+' attack':defendingPowers.length>1?'Allied defense':(adjectives[defending]||defending)+' defense';
   let hits=0;
   const groups=Object.keys(stats).map(type=>{
     const group=rolls.filter(d=>d.type===type);
@@ -1915,6 +2079,19 @@ window.addEventListener('blur',()=>stopHold());
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden){stopHold();if(playback){endPlayback();render();}}
 });
+function friendlyMovesPanel(){
+  const id=ui.inspect,options=activationOptions(s,id);
+  if(!options.length){
+    const reachable=Object.keys(s.owners).filter(to=>activationOptions(s,to).length);
+    return title('Friendly neutral moves','Select a territory on the map or below to enter it with an unmoved adjacent land unit.')+
+      reachable.map(to=>btn(esc(places[to].name),'activation-place','secondary','data-id="'+to+'"')).join('');
+  }
+  return title(esc(places[id].name),'Noncombat move · '+s.owners[id])+boardGarrison(id)+
+    block('Move units in and take control')+options.map(({from,type,available})=>
+      '<div class="activation-order"><label>'+esc(places[from].name)+' '+unitCounter(type,undefined,attacker)+
+      ' <input aria-label="Units entering from '+esc(places[from].name)+'" type="number" value="1" min="1" max="'+available+'"></label>'+
+      btn('Activate','activate-neutral','secondary','data-id="'+from+'" data-k="'+type+'"')+'</div>').join('');
+}
 let panelView;
 function render(){
   stopHold();$('action').innerHTML='';
@@ -1922,7 +2099,12 @@ function render(){
   else if(s.phase==='combat')$('panel').innerHTML=battlePanel();
   else{
     $('panel').innerHTML=title(isGlobal?'Combat review':'Exercise review','Committed attacks and resolved outcomes.')+timeline();
-    $('action').innerHTML=btn(isGlobal?'Restart combat':'Start another exercise','reset');
+    if(isGlobal&&ui.activation){
+      $('panel').innerHTML=friendlyMovesPanel();$('action').innerHTML=btn('Back to combat review','clear');
+    }else{
+      const canActivate=isGlobal&&Object.keys(s.owners).some(to=>activationOptions(s,to).length);
+      $('action').innerHTML=(canActivate?btn('Friendly neutral moves','open-activation'):'')+btn(isGlobal?'Restart combat':'Start another exercise','reset');
+    }
   }
   updateBattleForces();
   const nextView=[s.phase,s.active,currentBattle(s)?.step,ui.from,ui.to,ui.stack].join('|');
@@ -1944,6 +2126,11 @@ document.addEventListener('click',e=>{
   const {act,id,k,n}=b.dataset;
   run(()=>{
     switch(act){
+      case 'open-activation': ui=freshUI();ui.activation=true;break;
+      case 'activation-place': ui.inspect=id;break;
+      case 'activate-neutral':
+        activateFriendly(s,ui.inspect,id,k,Number(b.closest('.activation-order').querySelector('input').value));
+        message=places[ui.inspect].name+' is now controlled by '+attacker+'.';ui.activation=false;break;
       case 'quantity': ui.quantity=Math.max(1,Math.min(available(s,ui.from)[ui.stack],ui.quantity+Number(n)));break;
       case 'target': selectTarget(id);break;
       case 'assign': ui.units[k]+=Number(n);break;
@@ -1989,7 +2176,7 @@ $('map').setAttribute('aria-label','Pan or pinch the map. Select a unit from '+a
 $('controlKey').innerHTML=(isGlobal?[attacker]:[attacker,defender]).map(n=>'<i data-nation="'+n+'"></i>'+n).join(' ');
 $('closeDialog').onclick=()=>$('dialog').close();
 $('journal').onclick=()=>showDialog(isGlobal?'Combat review':'Exercise review',(s.phase==='review'?timeline():'<p>The record opens after the last battle. It includes committed attacks, dice, casualties, retreats, and control of each territory.</p>'));
-$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The national color fades inward from the hatched border. Tap a territory to mark it in violet and read its controller. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><h3>Plan an attack</h3><p>Counters use '+unitCounter('inf',undefined,attacker)+' for infantry and '+unitCounter('tank',undefined,attacker)+' for armor. Select a stack on the map, adjust the quantity, then tap a highlighted enemy territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this board</h3><p>'+ (isGlobal?'Global 1940 uses the opening forces of all nine powers. Tap any territory or counter to inspect it. Infantry and armor can plan adjacent land attacks against powers already at war.':'This local exercise covers adjacent land attacks with infantry and tanks. The forces are arranged for testing.')+'</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+(isGlobal?btn('Local players','players','secondary')+btn('Restart combat','reset','danger'):btn('Restart exercise','reset','danger')));
+$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The national color fades inward from the hatched border. Full-territory hatching marks neutrals: crossed graphite for strict, teal for pro-Allied and rust for pro-Axis. A committed strict-neutral invasion changes the other eligible strict neutrals immediately. Friendly neutrals can be activated after combat. Tap a territory to mark it in violet and read its status. Tap it again to clear the selection. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><h3>Plan an attack</h3><p>Counters use '+unitCounter('inf',undefined,attacker)+' for infantry and '+unitCounter('tank',undefined,attacker)+' for armor. Select a stack on the map, adjust the quantity, then tap a highlighted enemy territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this board</h3><p>'+ (isGlobal?'Global 1940 uses the opening forces of all nine powers. Tap any territory or counter to inspect it. Infantry and armor can plan adjacent land attacks against powers already at war.':'This local exercise covers adjacent land attacks with infantry and tanks. The forces are arranged for testing.')+'</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+(isGlobal?btn('Local players','players','secondary')+btn('Restart combat','reset','danger'):btn('Restart exercise','reset','danger')));
 // Store the two panel dimensions separately so rotating the phone restores the last fit.
 function setupOrdersPanel(){
   const main=document.querySelector('main'),sheet=$('ordersPanel'),grip=$('resizePanel');
