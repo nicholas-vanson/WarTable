@@ -305,9 +305,9 @@ function drawStack(game,parent,id,type,number,nation,role,at,tokenScale,detailed
   return stack;
 }
 const labels=[
-  ['NORTH SEA',1,55.2,'water',70,29],['BALTIC SEA',19.7,57.3,'water',94,28],['ATLANTIC OCEAN',-8,47.5,'water',39,50],['MEDITERRANEAN SEA',7.3,38,'water',79.5,76],['BLACK SEA',33.3,43.4,'water',116,62],['NORWEGIAN SEA',.5,66,'water',73,9],
+  ['NORTH SEA',1,55.2,'water',70,29],['BALTIC SEA',19.7,57.3,'water',89.0,31.5],['ATLANTIC OCEAN',-8,47.5,'water',39,50],['MEDITERRANEAN SEA',7.3,38,'water',79.5,76],['BLACK SEA',33.3,43.4,'water',116,62],['NORWEGIAN SEA',.5,66,'water',73,9],
   ['English Channel',-2.4,50.15,'water',61.1,44.52],['Bay of Biscay',-4.3,45.3,'water',55.9,53.4],['Adriatic Sea',15,43,'water',88.7,61.5],
-  ['Lille',3.06,50.63,'city',69.7,44.7],['Brussels',4.35,50.85,'city',71.2,42.4],['Lyon',4.84,45.76,'city',71.4,52.6],['Köln',6.96,50.94,'city',76.3,42.4],['Vienna',16.37,48.21,'city',89.1,48.4],['Bordeaux',-.58,44.84,'city',61.5,56.3],['Copenhagen',12.57,55.68,'city',77.7,31.2],['Madrid',-3.7,40.42,'city',56.2,65.7],['Stockholm',18.06,59.33,'city',89.1,23.9],['Amsterdam',4.9,52.36,'city',73.4,38.5],['Brest',-4.49,48.39,'city',58.4,48.4]
+  ['Lille',3.06,50.63,'city',69.7,44.7],['Brussels',4.35,50.85,'city',71.2,42.4],['Lyon',4.84,45.76,'city',71.4,52.6],['Köln',6.96,50.94,'city',76.3,42.4],['Vienna',16.37,48.21,'city',89.1,48.4],['Bordeaux',-.58,44.84,'city',61.5,56.3],['Copenhagen',12.57,55.68,'city',81.536,31.534],['Madrid',-3.7,40.42,'city',56.2,65.7],['Stockholm',18.06,59.33,'city',87.456,24.672],['Amsterdam',4.9,52.36,'city',73.4,38.5],['Brest',-4.49,48.39,'city',58.4,48.4]
 ];
 // Curved baselines in the atlas projection. Each span fits the interior of its region.
 const landNames=[
