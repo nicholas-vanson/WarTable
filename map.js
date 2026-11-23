@@ -305,8 +305,8 @@ function drawStack(game,parent,id,type,number,nation,role,at,tokenScale,detailed
   return stack;
 }
 const labels=[
-  ['NORTH SEA',1,55.2,'water',70,29],['BALTIC SEA',19.7,57.3,'water',89.0,31.5],['ATLANTIC OCEAN',-8,47.5,'water',39,50],['MEDITERRANEAN SEA',7.3,38,'water',79.5,76],['BLACK SEA',33.3,43.4,'water',116,62],['NORWEGIAN SEA',.5,66,'water',73,9],
-  ['English Channel',-2.4,50.15,'water',60.30,43.93],['Bay of Biscay',-4.3,45.3,'water',55.9,53.4],['Adriatic Sea',15,43,'water',88.7,61.5],
+  ['NORTH SEA',1,55.2,'water',70,29],['BALTIC SEA',19.7,57.3,'water',89.0,31.5],['ATLANTIC OCEAN',-8,47.5,'water',39,50],['MEDITERRANEAN SEA',7.3,38,'water',77.0,73.4],['BLACK SEA',33.3,43.4,'water',116,62],['NORWEGIAN SEA',.5,66,'water',73,9],
+  ['English Channel',-2.4,50.15,'water',60.30,43.93],['Bay of Biscay',-4.3,45.3,'water',55.9,53.4],['Adriatic Sea',15,43,'water',90.14,60.92,42],
   ['Lille',3.06,50.63,'city',69.7,44.7],['Brussels',4.35,50.85,'city',71.2,42.4],['Lyon',4.84,45.76,'city',71.4,52.6],['Köln',6.96,50.94,'city',76.3,42.4],['Vienna',16.37,48.21,'city',89.1,48.4],['Bordeaux',-.58,44.84,'city',62.084,55.21],['Copenhagen',12.57,55.68,'city',81.536,31.534],['Madrid',-3.7,40.42,'city',56.2,65.7],['Stockholm',18.06,59.33,'city',87.456,24.672],['Amsterdam',4.9,52.36,'city',72.61,38.12],['Brest',-4.49,48.39,'city',57.95,46.81]
 ];
 // Curved baselines in the atlas projection. Each span fits the interior of its region.
@@ -683,12 +683,13 @@ export async function atlas(onPick,onView,initial,exercise) {
     if(id)zones.get(id).area.setAttribute('fill','#426d8133');
   }
   const labelGroup=document.querySelector('#labels'),towns=[];
-  for(const [name,lon,lat,kind,boardX,boardY] of labels){
+  for(const [name,lon,lat,kind,boardX,boardY,boardAngle] of labels){
     const [x,y]=exercise.world?[boardX*extent.width/320,boardY*extent.height/146]:project(lon,lat);
     if(kind==='city')labelGroup.append(node('circle',{cx:x,cy:y,r:2.4*detailScale,fill:'#42463a'}));
     const caption=node('text',{x:kind==='city'?x+5*detailScale:x,y:kind==='city'?y-4*detailScale:y,'text-anchor':kind==='city'?'start':'middle',
       fill:kind==='water'?'#506b6c':'#535747','font-family':kind==='city'?'Arial, sans-serif':'Georgia,serif','font-weight':kind==='city'?600:400,'font-size':(kind==='city'?7.2:kind==='water'?15:13)*detailScale,'letter-spacing':(kind==='city'?0:kind==='water'?2:1.8)*detailScale,'font-style':kind==='water'?'italic':'normal',
       'paint-order':'stroke','stroke-width':1.8*detailScale,stroke:kind==='water'?'#bacbcc':'#dcd9c1'},name);
+    if(exercise.world&&boardAngle)caption.setAttribute('transform','rotate('+boardAngle+' '+x+' '+y+')');
     labelGroup.append(caption);
     if(exercise.world&&kind==='city')towns.push({caption,x,y,width:name.length*4.6*detailScale});
   }
