@@ -54,17 +54,17 @@ export function prepareGlobalBoard(setup,atlas,match){
   if(enemies.has('British'))enemies.add('UK_Pacific');
   const neighbors={},neutralEntry={},unmovedLand={};
   for(const [name,r] of Object.entries(setup.regions)){
-    const id=ids[name],position=match.board[name],owner=r.water?'Sea zone':ownerNames[position.owner]||'Impassable';
+    const id=ids[name],position=match.board[name],owner=r.blocked?'Impassable':r.water?'Sea zone':ownerNames[position.owner]||'Impassable';
     neighbors[id]=r.links.map(n=>ids[n]);
-    neutralEntry[id]=canEnterNeutral(match.power,enemies,r);
-    const targets=r.water||position.owner!==match.power?[]:r.links.filter(to=>{
+    neutralEntry[id]=!r.blocked&&canEnterNeutral(match.power,enemies,r);
+    const targets=r.blocked||r.water||position.owner!==match.power?[]:r.links.filter(to=>{
       const dest=setup.regions[to],controller=match.board[to].owner;
       return !dest.water&&!dest.blocked&&(enemies.has(controller)||neutralOwners[controller]&&canEnterNeutral(match.power,enemies,dest)&&hostileNeutral(match.power,controller));
     }).map(to=>ids[to]);
-    places[id]={name,owner:ownerNames[r.owner]||owner,targets,water:r.water,city:r.city,ipc:r.ipc,links:r.links,original:r.original};
+    places[id]={name,owner:r.blocked?owner:ownerNames[r.owner]||owner,blocked:r.blocked,targets,water:r.water,city:r.city,ipc:r.ipc,links:r.links,original:r.original};
     shapes[id]={...sectors[name],stacks:position.units.filter(([p,t])=>ownerNames[p]!==owner||!['infantry','armour'].includes(t)).length};owners[id]=owner;forces[id]=true;
     pieces[id]=position.units.map(([power,unit,n])=>[power,typeKeys[unit]||unit,n]);
-    if(!r.water)unmovedLand[id]=openingLand(pieces[id],match.power);
+    if(!r.water&&!r.blocked)unmovedLand[id]=openingLand(pieces[id],match.power);
     const available={inf:0,tank:0};
     for(const [power,type,n] of pieces[id]){
       if(stats[type]&&!r.water&&(owner!==attacker||power===match.power&&['inf','tank'].includes(type)))available[type]=(available[type]||0)+n;
@@ -104,5 +104,19 @@ export async function loadGlobalBoard(){
   if(match.version!==1||!match.board?.Germany)throw Error('The saved global match could not be opened.');
   match.combatStart??=structuredClone(match.board);
   match.combatStartPactBroken??=!!match.mongolianPactBroken;
-  return {...prepareGlobalBoard(setup,sectors,{...match,board:match.combatStart,mongolianPactBroken:match.combatStartPactBroken}),match};
+  // Older saves omit the Sahara and display the Himalayas with China's setup color.
+  for(const [name,region] of Object.entries(setup.regions)){
+    if(!region.blocked)continue;
+    match.board[name]??={owner:region.owner,units:[]};
+    match.combatStart[name]??={owner:region.owner,units:[]};
+  }
+  const board=prepareGlobalBoard(setup,sectors,{...match,board:match.combatStart,mongolianPactBroken:match.combatStartPactBroken});
+  const savedGame=match.combat?.game;
+  if(savedGame)for(const id of Object.keys(board.game.owners)){
+    if(!places[id].blocked)continue;
+    savedGame.owners[id]=board.game.owners[id];
+    savedGame.units[id]??=board.game.units[id];
+    savedGame.pieces[id]??=board.game.pieces[id];
+  }
+  return {...board,match};
 }

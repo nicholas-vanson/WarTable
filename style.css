@@ -241,10 +241,10 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
 .activation-order{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-block:8px}
 .activation-order input{width:4em;font:inherit}
 :root{
-  --neutral-graphite:#383540; --neutral-graphite-paper:#e1dfe5;
-  --neutral-indigo:#51458c; --neutral-indigo-paper:#e1ddf0;
-  --neutral-mulberry:#7b305e; --neutral-mulberry-paper:#efdae5;
+  --neutral-graphite:#545552; --neutral-graphite-paper:#e2e1db;
+  --neutral-slate:#50575a; --neutral-slate-paper:#dfe2e1;
+  --neutral-warm-gray:#605a57; --neutral-warm-gray-paper:#e5e0da;
 }
 .counter-face:is([data-nation="Strict neutral"],[data-nation="Mongolia"]){color:var(--neutral-graphite);background:var(--neutral-graphite-paper);border-color:currentColor}
-.counter-face:is([data-nation="Pro-Allied neutral"],[data-nation="Allied-aligned, uncontrolled"]){color:var(--neutral-indigo);background:var(--neutral-indigo-paper);border-color:currentColor}
-.counter-face:is([data-nation="Pro-Axis neutral"],[data-nation="Axis-aligned, uncontrolled"]){color:var(--neutral-mulberry);background:var(--neutral-mulberry-paper);border-color:currentColor}
+.counter-face:is([data-nation="Pro-Allied neutral"],[data-nation="Allied-aligned, uncontrolled"]){color:var(--neutral-slate);background:var(--neutral-slate-paper);border-color:currentColor}
+.counter-face:is([data-nation="Pro-Axis neutral"],[data-nation="Axis-aligned, uncontrolled"]){color:var(--neutral-warm-gray);background:var(--neutral-warm-gray-paper);border-color:currentColor}

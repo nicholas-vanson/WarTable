@@ -379,8 +379,8 @@ for(const [nation,[code,counter,paper]] of Object.entries(nationalInks)){
 }
 const neutralPatterns={
   strict:{ink:'var(--neutral-graphite)',paper:'var(--neutral-graphite-paper)',code:'N',width:9,height:10,lines:'M4.5 0V10',weight:1.15},
-  allies:{ink:'var(--neutral-indigo)',paper:'var(--neutral-indigo-paper)',code:'AL',width:13,height:10,lines:'M4 0V10 M7 0V10',weight:1.1},
-  axis:{ink:'var(--neutral-mulberry)',paper:'var(--neutral-mulberry-paper)',code:'AX',width:9,height:12,lines:'M4.5 1V9',weight:1.55}
+  allies:{ink:'var(--neutral-slate)',paper:'var(--neutral-slate-paper)',code:'AL',width:13,height:10,lines:'M4 0V10 M7 0V10',weight:1.1},
+  axis:{ink:'var(--neutral-warm-gray)',paper:'var(--neutral-warm-gray-paper)',code:'AX',width:9,height:12,lines:'M4.5 1V9',weight:1.55}
 };
 const neutralStyleKey={Neutral_True:'strict',Mongolians:'strict',Neutral_Allies:'allies',Neutral_Axis:'axis',Joined_Allies:'allies',Joined_Axis:'axis'};
 function styleFor(nation){
@@ -458,10 +458,26 @@ function buildControlBands(map,shapes,regions,sectors,washes){
     pattern.append(node('path',{d:style.lines,stroke:style.ink,'stroke-width':style.weight}));
     defs.append(pattern);
   }
+  if(sectors){
+    const dots=node('pattern',{id:'impassable-stipple',patternUnits:'userSpaceOnUse',width:8,height:8});
+    for(const [cx,cy] of [[2,2],[6,6]])dots.append(node('circle',{cx,cy,r:.95,fill:'#585852'}));
+    defs.append(dots);
+  }
   const bands={};
   for(const [id,d] of Object.entries(shapes)){
     const href='#territory-'+id;
     defs.append(node('path',{id:href.slice(1),d}));
+    const region=node('path',{d,fill:'transparent','data-place':id});
+    region.append(node('title',{}));regions.append(region);
+    if(places[id].blocked){
+      const band=node('g',{'data-owner':'Impassable'});
+      band.append(node('use',{href,fill:'#c2c0b8',opacity:.32}),
+        node('use',{href,fill:'url(#impassable-stipple)',opacity:.68,stroke:'#67665f','stroke-width':.8,'vector-effect':'non-scaling-stroke'}));
+      layer.append(band);
+      region.firstChild.textContent=places[id].name+' · Impassable terrain';
+      bands[id]={band,region};
+      continue;
+    }
     const clip=node('clipPath',{id:'inside-'+id});
     clip.append(node('use',{href}));defs.append(clip);
     const band=node('g',{'clip-path':'url(#inside-'+id+')',fill:'none','stroke-linejoin':'round'});
@@ -474,7 +490,7 @@ function buildControlBands(map,shapes,regions,sectors,washes){
     band.append(node('use',{href,fill:'currentColor',mask:'url(#'+maskId+')'}));
     let neutralFill=null;
     if(sectors&&neutralStyleKey[neutralKey(places[id].owner)]){
-      neutralFill=node('use',{href,fill:'none',opacity:.57});
+      neutralFill=node('use',{href,fill:'none',opacity:.50});
       band.append(neutralFill);
     }
     let border=href;
@@ -489,8 +505,6 @@ function buildControlBands(map,shapes,regions,sectors,washes){
       node('use',{href:border,stroke:'currentColor','stroke-width':'var(--inner)',opacity:.29}),
       node('use',{href:border,'stroke-width':'var(--outer)',opacity:sectors ? .48 : .60}));
     layer.append(band);
-    const region=node('path',{d,fill:'transparent','data-place':id});
-    region.append(node('title',{}));regions.append(region);
     bands[id]={band,region,neutralFill};
   }
   for(const [from,{targets}] of Object.entries(places)){
@@ -697,8 +711,12 @@ export async function atlas(onPick,onView,initial,exercise) {
       for(const {hatch,angle} of Object.values(ownerStyle)){
         document.getElementById(hatch).setAttribute('patternTransform','rotate('+angle+') scale('+bound(1/scale,.25,1.4*detailScale)+')');
       }
-      if(exercise.world)for(const kind of Object.keys(neutralPatterns)){
-        document.getElementById('neutral-'+kind).setAttribute('patternTransform','rotate(44) scale('+bound(1/scale,.3,32)+')');
+      if(exercise.world){
+        const screenScale='scale('+bound(1/scale,.3,32)+')';
+        for(const kind of Object.keys(neutralPatterns)){
+          document.getElementById('neutral-'+kind).setAttribute('patternTransform','rotate(44) '+screenScale);
+        }
+        document.getElementById('impassable-stipple').setAttribute('patternTransform',screenScale);
       }
       control.style.setProperty('--outer',width+'px');
       control.style.setProperty('--inner',width*.48+'px');
@@ -723,7 +741,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     }
     const selectedLand=inspectedSea?null:(game.phase==='combat'?(inspectedPlace===undefined?game.active:inspectedPlace):target||focus);
     const info=inspectedSea?'Sea zone '+inspectedSea+' · Adjacent '+zones.get(inspectedSea).neighbors.join(', '):
-      bands[selectedLand]?places[selectedLand].name+' · '+game.owners[selectedLand]+(neutralKey(game.owners[selectedLand])?'':' control'):'';
+      bands[selectedLand]?bands[selectedLand].region.firstChild.textContent:'';
     if(intel.textContent!==info)intel.textContent=info;
     forces.replaceChildren();
     for(const region of regions.children){
