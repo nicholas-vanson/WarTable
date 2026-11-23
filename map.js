@@ -140,9 +140,7 @@ function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detail
     glints.push('M'+strokes[1].join(' L'));
   }
   const group=node('g',{'data-from':from,'data-to':to,'data-unit':type});
-  // The printed North American seats meet at different latitudes on the two
-  // margins. Let a seam route span that offset as one continuous pencil arc.
-  if(!originShift)group.setAttribute('clip-path','url(#route-'+from+'-'+to+')');
+  group.setAttribute('clip-path','url(#route-'+from+'-'+to+')');
   const ink=node('g',{filter:'url(#route-grain)','stroke-linecap':'round','stroke-linejoin':'round'});
   ink.append(node('path',{d:bodies.join(' '),fill:planned?'#ad5540':'#943d2e','fill-opacity':planned?.60:.79,
     stroke:'#833929','stroke-width':1.15*tokenScale}),
@@ -456,7 +454,7 @@ function supportingSeats(path,formation,required,detailScale){
   }
   return points;
 }
-function buildControlBands(map,shapes,regions,sectors,washes){
+function buildControlBands(map,shapes,regions,sectors,washes,extent){
   const defs=map.querySelector('defs'), layer=map.querySelector('#controlBands');
   for(const {ink,hatch,angle} of Object.values(ownerStyle)){
     const pattern=node('pattern',{id:hatch,patternUnits:'userSpaceOnUse',width:4.2,height:4.2,patternTransform:'rotate('+angle+')'});
@@ -490,14 +488,23 @@ function buildControlBands(map,shapes,regions,sectors,washes){
     }
     const clip=node('clipPath',{id:'inside-'+id});
     clip.append(node('use',{href}));defs.append(clip);
-    const band=node('g',{'clip-path':'url(#inside-'+id+')',fill:'none','stroke-linejoin':'round'});
+    const wrapped=sectors?.[id].wrapped;
+    const paint=wrapped?'#joined-'+id:href;
+    let paintClip=clip;
+    if(wrapped){
+      defs.append(node('path',{id:paint.slice(1),d:wrapped.d}));
+      paintClip=node('clipPath',{id:'inside-joined-'+id});
+      paintClip.append(node('use',{href:paint}));defs.append(paintClip);
+      region.classList.add('wrapped-territory');
+    }
+    const band=node('g',{'clip-path':'url(#'+paintClip.id+')',fill:'none','stroke-linejoin':'round'});
     const maskId='wash-'+id;
     const wash=node('mask',{id:maskId,maskUnits:'objectBoundingBox',maskContentUnits:'objectBoundingBox',
       x:0,y:0,width:1,height:1,'mask-type':'alpha'});
     wash.append(node('image',{width:1,height:1,preserveAspectRatio:'none',
       href:'data:image/png;base64,'+washes[sectors?places[id].name:id]}));
     defs.append(wash);
-    band.append(node('use',{href,fill:'currentColor',mask:'url(#'+maskId+')'}));
+    band.append(node('use',{href:paint,fill:'currentColor',mask:'url(#'+maskId+')'}));
     let neutralFill=null;
     if(sectors&&neutralStyleKey[neutralKey(places[id].owner)]){
       neutralFill=node('use',{href,fill:'none',opacity:.50});
@@ -505,23 +512,32 @@ function buildControlBands(map,shapes,regions,sectors,washes){
     }
     let border=href;
     if(sectors){
-      const d=sectors[id].frontier;
+      const d=(wrapped||sectors[id]).frontier;
       border='#frontier-'+id;
       defs.append(node('path',{id:border.slice(1),d}));
-      band.append(node('use',{href,
+      band.append(node('use',{href:paint,
         stroke:'currentColor','stroke-width':'var(--inner)','stroke-opacity':.16}));
     }
     band.append(node('use',{href:border,stroke:'currentColor','stroke-width':'var(--outer)',opacity:.15}),
       node('use',{href:border,stroke:'currentColor','stroke-width':'var(--inner)',opacity:.29}),
       node('use',{href:border,'stroke-width':'var(--outer)',opacity:sectors ? .48 : .60}));
-    layer.append(band);
-    bands[id]={band,region,neutralFill};
+    const destination=wrapped?map.querySelector('#joined-controls'):layer;
+    destination.append(band);
+    let selectedOutline=null;
+    if(wrapped){
+      selectedOutline=node('use',{href:paint,class:'joined-selection',display:'none'});
+      destination.append(selectedOutline);
+    }
+    bands[id]={band,region,neutralFill,selectedOutline};
   }
   for(const [from,{targets}] of Object.entries(places)){
     if(!shapes[from])continue;
     for(const to of targets){
       const clip=node('clipPath',{id:'route-'+from+'-'+to});
-      clip.append(node('use',{href:'#territory-'+from}),node('use',{href:'#territory-'+to}));
+      const shift=sectors?sheetOffset(sectors[from].center[0],sectors[to].center[0],extent.width):0;
+      for(const x of shift?[0,shift]:[0]){
+        clip.append(node('use',{href:'#territory-'+from,x}),node('use',{href:'#territory-'+to,x}));
+      }
       defs.append(clip);
     }
   }
@@ -560,18 +576,35 @@ const modulo=(n,period)=>((n%period)+period)%period;
 function wrapWorld(map,extent){
   const defs=map.querySelector('defs'),clip=node('clipPath',{id:'world-frame'});
   clip.append(node('rect',{width:extent.width,height:extent.height}));defs.append(clip);
+  // Terrain bleeds through the cut. A territory spanning it gets a single
+  // continuous wash and outline, below the sheet of selectable map features.
+  const overview=node('pattern',{id:'world-overview',patternUnits:'userSpaceOnUse',width:extent.width,height:extent.height});
+  overview.append(map.querySelector('#worldPlate'));defs.append(overview);
+  const ground=node('rect',{y:0,height:extent.height,fill:'url(#world-overview)','pointer-events':'none'});
+  const paper=node('g',{id:'world-paper','pointer-events':'none'});
+  paper.append(map.querySelector('#worldTiles'),map.querySelector('#worldEngraving'));
+  const joined=node('g',{id:'joined-controls','pointer-events':'none'});
   const sheet=node('g',{id:'world-sheet','clip-path':'url(#world-frame)'});
-  sheet.append(...Array.from(map.children).filter(el=>el!==defs));map.append(sheet);
-  const copies=new Map();
+  sheet.append(...Array.from(map.children).filter(el=>el!==defs));
+  map.append(ground);
+  const layers=[paper,joined,sheet].map(source=>{
+    const group=node('g',{});group.append(source);map.append(group);
+    return {source,group,copies:new Map()};
+  });
   return (left,right)=>{
     const first=Math.floor(left/extent.width),last=Math.ceil(right/extent.width)-1;
-    for(const [lap,copy] of copies){
-      if(lap<first||lap>last){copy.remove();copies.delete(lap);}
-    }
-    for(let lap=first;lap<=last;lap++){
-      if(!lap||copies.has(lap))continue;
-      const copy=node('use',{href:'#world-sheet',x:lap*extent.width,'aria-hidden':'true','pointer-events':'none'});
-      copies.set(lap,copy);map.append(copy);
+    ground.setAttribute('x',first*extent.width);
+    ground.setAttribute('width',(last-first+1)*extent.width);
+    for(const {source,group,copies} of layers){
+      const margin=source===joined?1:0;
+      for(const [lap,copy] of copies){
+        if(lap<first-margin||lap>last+margin){copy.remove();copies.delete(lap);}
+      }
+      for(let lap=first-margin;lap<=last+margin;lap++){
+        if(!lap||copies.has(lap))continue;
+        const copy=node('use',{href:'#'+source.id,x:lap*extent.width,'aria-hidden':'true','pointer-events':'none'});
+        copies.set(lap,copy);group.append(copy);
+      }
     }
   };
 }
@@ -633,7 +666,7 @@ export async function atlas(onPick,onView,initial,exercise) {
   const drawSheets=exercise.world?terrainSheets(await (await fetch('./assets/world-terrain.json')).json(),extent):null;
   const detailScale=exercise.projection?.detailScale||1;
   const washes=await (await fetch('./assets/control-washes.json')).json();
-  const bands=buildControlBands(map,shapes,regions,exercise.world?exercise.shapes:null,exercise.world?washes.world:washes.exercise);
+  const bands=buildControlBands(map,shapes,regions,exercise.world?exercise.shapes:null,exercise.world?washes.world:washes.exercise,extent);
   const zones=buildSeaZones(map,chart);
   if(exercise.world){
     worldSeats(exercise,bands);
@@ -642,7 +675,7 @@ export async function atlas(onPick,onView,initial,exercise) {
       if(path&&sector.stacks)sector.slots=supportingSeats(path,formations[id],sector.stacks,detailScale);
     }
   }
-  const control=map.querySelector('#controlBands'), intel=document.querySelector('#mapIntel');
+  const intel=document.querySelector('#mapIntel');
   let inspectedPlace, inspectedSea=null, lastBattle=null, lastScale=0;
   function inspectSea(id){
     if(inspectedSea)zones.get(inspectedSea).area.setAttribute('fill','transparent');
@@ -753,8 +786,8 @@ export async function atlas(onPick,onView,initial,exercise) {
         }
         document.getElementById('impassable-stipple').setAttribute('patternTransform',screenScale);
       }
-      control.style.setProperty('--outer',width+'px');
-      control.style.setProperty('--inner',width*.48+'px');
+      map.style.setProperty('--outer',width+'px');
+      map.style.setProperty('--inner',width*.48+'px');
       for(const {mark,x,y,room,ruleRoom} of zones.values()){
         const size=Math.min(1/scale,room);
         mark.setAttribute('transform','translate('+x+' '+y+') scale('+size+')');
@@ -783,6 +816,8 @@ export async function atlas(onPick,onView,initial,exercise) {
       const id=region.dataset.place;
       const legal=game.phase==='plan'&&places[focus]?.targets.includes(id);
       region.classList.toggle('selected-territory',id===selectedLand);
+      const outline=bands[id].selectedOutline;
+      if(outline)outline.setAttribute('display',id===selectedLand?'inline':'none');
       region.setAttribute('fill',legal?'#d6b65728':'transparent');
       region.setAttribute('stroke',legal?'#895a31':'none');
       region.setAttribute('stroke-width','2');
