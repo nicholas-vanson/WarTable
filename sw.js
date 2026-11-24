@@ -1,10 +1,13 @@
 const prefix='wartable:'+self.registration.scope+':';
-const cacheName=prefix+'map-selection-55';
-const files=['./','./index.html','./menu.js','./app.js','./global-game.js','./neutral-rules.js','./rules.js','./formation-names.js','./map.js','./style.css','./manifest.webmanifest','./assets/wartable-mark.svg','./assets/staff-map.svg','./assets/staff-overview.webp','./assets/territories.json','./assets/fronts.json','./assets/control-washes.json','./assets/world-chart.webp','./assets/global-setup.json','./assets/world-sectors.json','./assets/world-staff.webp','./assets/world-engraving.svg','./assets/world-terrain.json','./assets/sea-zones.json','./assets/icon-192.png','./assets/icon-512.png'];
+const cacheName=prefix+'main-menu-56';
+const files=['./','./index.html','./menu.js','./preferences.js','./app.js','./global-game.js','./neutral-rules.js','./rules.js','./formation-names.js','./map.js','./style.css','./manifest.webmanifest','./assets/wartable-mark.svg','./assets/staff-map.svg','./assets/staff-overview.webp','./assets/territories.json','./assets/fronts.json','./assets/control-washes.json','./assets/menu-staff-table.webp','./assets/global-setup.json','./assets/world-sectors.json','./assets/world-staff.webp','./assets/world-engraving.svg','./assets/world-terrain.json','./assets/sea-zones.json','./assets/icon-192.png','./assets/icon-512.png'];
 self.addEventListener('install',event=>{
   event.waitUntil((async()=>{
     const cache=await caches.open(cacheName);
-    await cache.addAll(files);
+    // Revalidate the application shell when an installed playtest changes version.
+    const shell=files.map(path=>path.startsWith('./assets/')?path:
+      new Request(new URL(path,self.registration.scope),{cache:'reload'}));
+    await cache.addAll(shell);
     const layout=await (await cache.match('./assets/world-terrain.json')).json();
     // Bound simultaneous requests on phones. A newly installed build is
     // ready for offline panning even in a previously unvisited theater.

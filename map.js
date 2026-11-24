@@ -1,3 +1,4 @@
+import {reducedMotion} from './preferences.js';
 import {neutralKey} from './neutral-rules.js';
 import {ownerNames,globalUnits} from './global-game.js';
 import {places,types,stats,available,theaterVictoryCities} from './rules.js';
@@ -149,7 +150,7 @@ function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detail
       'stroke-dasharray':planned?4.5*tokenScale+' '+5.5*tokenScale:'none',opacity:.84}));
   group.append(ink);
   const duration=320+90*segments;
-  if(elapsed<duration&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+  if(elapsed<duration&&!reducedMotion()){
     const id='pencil-route-'+from+'-'+to+'-'+type;
     const mask=node('mask',{id,maskContentUnits:'userSpaceOnUse'});
     centerline.setAttribute('pathLength',1);
@@ -227,7 +228,7 @@ function updateFront(mark,units){
   if(left===mark.left&&right===mark.right)return;
   const fresh=mark.left===null;
   const growing=fresh||left<mark.left||right>mark.right;
-  const animate=growing&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const animate=growing&&!reducedMotion();
   // Read the visible extent before interrupting a quick succession of reinforcements.
   const style=getComputedStyle(windowRect);
   const start=fresh?(units.inf?left:right):parseFloat(style.x);
@@ -772,7 +773,7 @@ export async function atlas(onPick,onView,initial,exercise) {
       reveal.getAnimations().forEach(animation=>animation.cancel());
       if(key){
         selection.append(pencilMark());
-        if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+        if(!reducedMotion())
           reveal.animate([{strokeDashoffset:1},{strokeDashoffset:0}],{duration:480,easing:'ease-out'});
       }
       selectionKey=key;

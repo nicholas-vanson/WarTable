@@ -1,3 +1,4 @@
+import {ordersPanelKey,reducedMotion} from './preferences.js';
 import {neutralKey,strictKey,allianceOf,hostileNeutral,activationOptions,activateFriendly} from './neutral-rules.js';
 import {globalKey,loadGlobalBoard,saveGlobalPosition,globalUnits,boardUnitType,globalPowers,ownerNames} from './global-game.js';
 import {places,stats,types,exercises,adjectives,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,rollAttack,rollDefense,casualties,retreat,theaterVictoryCities} from './rules.js';
@@ -237,7 +238,7 @@ function rollsBox(dice,play=null){
 // The game has already rolled and saved. Only the presentation is timed.
 let playback=null,rollTimer;
 function beginRoll(side){
-  if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  if(reducedMotion())return;
   const rolls=currentBattle(s).dice[side],unitTypes=Object.keys(stats).filter(t=>rolls.some(d=>d.type===t));
   if(!unitTypes.length)return;
   playback={side,rolls,types:unitTypes,index:0,stage:'rolling',frame:0};
@@ -470,13 +471,12 @@ $('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan 
 function setupOrdersPanel(){
   const main=document.querySelector('main'),sheet=$('ordersPanel'),grip=$('resizePanel');
   const open=$('openPanel'),hide=$('hidePanel'),stacked=matchMedia('(max-width:650px) and (orientation:portrait)');
-  const prefKey='wartable.orders-panel.v1';
   let prefs={};
   try{
-    const saved=JSON.parse(localStorage.getItem(prefKey));
+    const saved=JSON.parse(localStorage.getItem(ordersPanelKey));
     if(saved&&typeof saved==='object')prefs=saved;
   }catch{}
-  const persist=()=>{try{localStorage.setItem(prefKey,JSON.stringify(prefs));}catch{}};
+  const persist=()=>{try{localStorage.setItem(ordersPanelKey,JSON.stringify(prefs));}catch{}};
   function dimensions(){
     const vertical=stacked.matches,axis=vertical?'height':'width';
     const extent=main.getBoundingClientRect()[axis];

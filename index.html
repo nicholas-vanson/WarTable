@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="application-version" content="0.1.55">
 <meta name="theme-color" content="#202c27"><meta name="description" content="WarTable · Global 1940 Second Edition and local playtest exercises.">
 <title>WarTable · Global 1940</title>
 <link rel="icon" href="./assets/icon-192.png"><link rel="manifest" href="./manifest.webmanifest">
@@ -9,22 +10,69 @@
 </head>
 <body>
 <section id="launcher" class="launcher" aria-label="Main menu">
-  <div class="menu-chart"><img src="./assets/world-chart.webp" alt=""></div>
-  <div class="menu-paper">
+  <svg class="menu-symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <symbol id="m-settings" viewBox="0 0 24 24"><path d="m10 3-.5 2.2-2 .9-2.1-.7-2 3.3 1.7 1.6-.2 2.3L3.4 14l2 3.5 2.2-.6 1.9 1.2.6 2.3h3.8l.7-2.3 1.8-1.2 2.3.6 2-3.5-1.6-1.4-.2-2.3 1.7-1.6-2-3.3-2.2.7-2-.9L14 3z"/><circle cx="12" cy="11.8" r="3"/></symbol>
+      <symbol id="m-fronts" viewBox="0 0 28 28"><path d="m2.5 7 7-3 9 3 7-3v17l-7 3-9-3-7 3zM9.5 4v17m9-14v17"/><path d="m4.5 16 3-3m4.5 0 3 2 2-3m3-1 3-2"/></symbol>
+      <symbol id="m-guide" viewBox="0 0 28 28"><path d="M3 5c4-1 8-.4 11 2 3-2.4 7-3 11-2v16c-4-1-8-.3-11 2-3-2.3-7-3-11-2zM14 7v16M6 9l5 1.2m-5 3 5 1.2m6-4.2L22 9m-5 5.2 5-1.2"/></symbol>
+      <symbol id="m-arrow" viewBox="0 0 24 24"><path d="M4 12h15m-6-6 6 6-6 6"/></symbol>
+    </defs>
+  </svg>
+  <div class="menu-mast"><div class="menu-width mast-inner">
+    <a href="#" class="menu-wordmark" aria-label="WarTable main menu"><img src="./assets/wartable-mark.svg" alt="">WarTable</a>
+    <button id="menuSettings" class="mast-button"><svg class="menu-icon" aria-hidden="true"><use href="#m-settings"/></svg>Settings</button>
+  </div></div>
+  <div class="menu-width menu-content">
     <div id="modeChoices">
-      <h1 class="launcher-brand"><img class="mark" src="./assets/wartable-mark.svg" alt="">WarTable</h1><p class="edition">Global 1940 · Second Edition</p>
-      <nav class="mode-list" aria-label="Game modes">
-        <a href="#global" class="mode major-mode"><span><strong>Full Game</strong><small id="globalSubtitle">Start a nine-power match</small></span><span aria-hidden="true">→</span></a>
-        <a href="#exercises" class="mode"><span><strong>Small Exercise</strong><small>Test combat on a single front</small></span><span aria-hidden="true">→</span></a>
+      <section class="campaign-card" aria-labelledby="campaignTitle">
+        <img class="campaign-art" src="./assets/menu-staff-table.webp" alt="">
+        <div class="campaign-copy">
+          <p class="menu-kicker">Second Edition</p>
+          <h1 id="campaignTitle">Global <span>1940</span></h1>
+          <p class="campaign-summary" id="campaignSummary">Nine powers across the European and Pacific theaters.</p>
+          <div class="campaign-actions">
+            <a class="campaign-primary" id="continueGlobal" href="#global" hidden>Continue game <svg class="menu-icon" aria-hidden="true"><use href="#m-arrow"/></svg></a>
+            <button class="campaign-primary" id="newGlobal">New game <svg class="menu-icon" aria-hidden="true"><use href="#m-arrow"/></svg></button>
+          </div>
+        </div>
+      </section>
+      <nav class="menu-tools" aria-label="Practice and reference">
+        <a class="menu-tool" href="#exercises"><span class="tool-icon"><svg aria-hidden="true"><use href="#m-fronts"/></svg></span><span><strong>Combat exercises</strong><small>Practice on a single front</small></span><span class="tool-arrow" aria-hidden="true">↗</span></a>
+        <button class="menu-tool" id="menuGuide"><span class="tool-icon"><svg aria-hidden="true"><use href="#m-guide"/></svg></span><span><strong>Field guide</strong><small>Map controls and playtest rules</small></span><span class="tool-arrow" aria-hidden="true">↗</span></button>
       </nav>
     </div>
-    <div id="exerciseChoices" hidden>
+    <section id="exerciseChoices" class="exercise-index" hidden>
       <a class="back-link" href="#">← Main menu</a>
-      <h1>Small Exercise</h1><p class="edition">Choose a front for testing</p>
-      <nav class="mode-list" id="frontList" aria-label="Exercises"></nav>
-    </div>
+      <h1>Combat exercises</h1><p>Choose a front to practice land combat.</p>
+      <nav id="frontList" aria-label="Exercises"></nav>
+    </section>
+    <footer class="menu-foot"><span><i aria-hidden="true"></i>Local playtest</span><button id="menuAbout">Version <span data-version></span></button></footer>
   </div>
 </section>
+<dialog id="menuDialog" class="menu-dialog" aria-labelledby="menuDialogTitle">
+  <div class="menu-dialog-head"><h2 id="menuDialogTitle"></h2><button id="menuClose" class="menu-close" aria-label="Close window">×</button></div>
+  <div class="menu-dialog-body">
+    <section id="setupWindow" hidden>
+      <p class="form-intro">Global 1940 · Second Edition</p>
+      <dl class="setup-list"><div><dt>Board</dt><dd>Full world map</dd></div><div><dt>Opening power</dt><dd>Germany · Round 1</dd></div><div><dt>Opening phase</dt><dd>Combat Move</dd></div></dl>
+      <p class="dialog-note">All nine powers start with Player 1 on this device. You can assign local players in the board’s Guide.</p>
+      <p id="replaceNote" class="save-notice" hidden>Starting a new game will replace the global match saved on this device.</p>
+      <div class="dialog-actions"><button class="plain-action" id="cancelGame">Cancel</button><button class="ink-action" id="startGame">Start local game</button></div>
+    </section>
+    <section id="settingsWindow" hidden>
+      <label class="setting-row" for="menuMotion"><strong>Map and dice animation</strong><select id="menuMotion"><option value="system">Use device setting</option><option value="reduce">Reduce motion</option></select></label>
+      <label class="setting-row" for="menuOrders"><strong>Orders panel on opening</strong><select id="menuOrders"><option value="shown">Expanded</option><option value="hidden">Minimized</option></select></label>
+      <p class="dialog-note">Settings apply to games and exercises on this device. Changing the panel on the board also updates this preference.</p>
+    </section>
+    <section id="guideWindow" class="guide-copy" hidden>
+      <h3>Read the staff map</h3><p>Drag to pan. Pinch or use + and − to zoom. Tap a territory or sea zone to inspect it. Tap it again to deselect.</p>
+      <h3>Plan and resolve combat</h3><p>Select an infantry or tank counter and an adjacent legal target. Revise your orders, then hold to commit. Choose the battle order and resolve the dice in the orders panel.</p>
+      <h3>Return to your match</h3><p>Your position, orders and map view save on this device. Choose Continue game from the main menu to return.</p>
+    </section>
+    <section id="aboutWindow" class="guide-copy" hidden><h3>WarTable · Version <span data-version></span></h3><p>This local playtest opens on Germany’s combat move. The global board and three combat exercises are available to play.</p></section>
+    <p id="menuError" role="alert" hidden></p>
+  </div>
+</dialog>
 <header id="exerciseHeader" hidden><div class="brand"><img class="mark" src="./assets/wartable-mark.svg" alt=""> WarTable</div><span class="divider"></span><h1 class="theater">Western Front</h1><div class="head-end"><span class="local" id="storage">Local playtest</span><button id="exerciseMenu" class="header-button" aria-label="Main menu">Menu</button><button id="journal" class="header-button">Review</button><button id="help" class="header-button" aria-label="Playtest guide">Guide</button></div></header>
 <main id="exerciseBoard" hidden>
 <section class="board" aria-label="European staff map">

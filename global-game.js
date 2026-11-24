@@ -82,8 +82,8 @@ export function prepareGlobalBoard(setup,atlas,match){
     ['Tokyo','Japan',139.69,35.68,'Japan'],['Shanghai','Kiangsu',121.47,31.23],['Hong Kong','Kwangtung',114.17,22.32],
     ['Manila','Philippines',120.98,14.6],['Calcutta','India',88.36,22.57,'UK Pacific'],['Sydney','New South Wales',151.21,-33.87,'ANZAC']
   ].map(([name,region,lon,lat,capitalOf])=>({name,territory:ids[region],lon,lat,point:sectors[region].city,capitalOf}));
-  const west=sectors['Normandy Bordeaux'].center,east=sectors['Western Germany'].center;
-  const camera={x:(west[0]+east[0])/2,y:(west[1]+east[1])/2,z:.7*projection.detailScale,surveyZoom:true};
+  const [x,y]=sectors.Germany.center;
+  const camera={x,y,z:.7*projection.detailScale,surveyZoom:true};
   const exercise={name:'Global 1940',attacker,defender:'France',camera,forces,shapes,cities,world:true,projection,neighbors,neutralEntry,unmovedLand};
   exercises.global=exercise;
   return {exercise,game:{version:1,exercise:'global',phase:'plan',mongolianPactBroken:!!match.mongolianPactBroken,power:match.power,units,owners,pieces,orders:[],battles:[],active:null,record:[]}};
@@ -98,8 +98,11 @@ export function saveGlobalPosition(match,game){
     area.units=stacks.filter(row=>row[2]>0).map(([p,t,n])=>[p,t==='inf'?'infantry':t==='tank'?'armour':t,n]);
   }
 }
+export async function loadGlobalSetup(){
+  return await (await fetch('./assets/global-setup.json')).json();
+}
 export async function loadGlobalBoard(){
-  const setup=await (await fetch('./assets/global-setup.json')).json();
+  const setup=await loadGlobalSetup();
   const sectors=await (await fetch('./assets/world-sectors.json')).json();
   const saved=localStorage.getItem(globalKey);
   const match=saved?JSON.parse(saved):startGlobalMatch(setup,Object.fromEntries(Object.keys(globalPowers).map(k=>[k,1])));
