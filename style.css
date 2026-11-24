@@ -333,3 +333,15 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
  .hero-mark{width:25px;float:left;margin:9px 10px 0 0}.mode-tabs{margin-top:8px}
  .campaign-card{min-height:155px}.local-session{padding:10px 16px}
 }
+
+/* The purchase ledger stays inside the existing orders sheet. */
+.order-tools,.economy-switch{display:flex;gap:7px;margin:8px 0}
+.order-tools select,.order-tools button,.economy-switch button{min-height:38px}
+.order-tools select{flex:1;min-width:0;padding:4px 8px;background:var(--sheet);border:1px solid var(--sheet-rule);font:700 14px var(--typewriter)}
+.economy-switch button{flex:1}.economy-switch [aria-pressed="true"]{background:var(--olive);color:var(--paper)}
+.order-line{display:grid;grid-template-columns:auto minmax(0,1fr) 36px 20px 36px;align-items:center;gap:4px;min-height:50px;border-bottom:1px solid var(--sheet-rule)}
+.order-line>span:nth-child(2){padding:5px 2px}.order-line strong,.order-line small{display:block}
+.order-line strong{font-size:13px;line-height:1.2}.order-line small{font:11px/1.5 var(--typewriter);color:#56624f}
+.order-line output{text-align:center;font-weight:bold}.order-step{min-height:38px;border:1px solid var(--sheet-rule);border-radius:2px;background:var(--sheet);font-size:20px}
+.order-step:disabled{opacity:.4}.order-totals{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding-bottom:7px}
+.order-totals span{font:700 11px/1.3 var(--typewriter);color:#495443}.order-totals b{display:block;font-size:17px}.order-totals small{font-size:10px}
