@@ -265,6 +265,27 @@ function groupRolls(rolls,side){
   return [...groups].sort(([a],[b])=>a-b);
 }
 const hitRange=threshold=>threshold===1?'1':'1–'+threshold;
+function rollStacks(group,nations){
+  const stacks=new Map();
+  for(const die of group){
+    const nation=ownerNames[die.power]||die.power||nations[0]||'Defenders';
+    const key=die.type+'/'+nation;
+    if(!stacks.has(key))stacks.set(key,{type:die.type,nation,rolls:[]});
+    stacks.get(key).rolls.push(die);
+  }
+  return [...stacks.values()].sort((a,b)=>
+    stats[a.type].name.localeCompare(stats[b.type].name,'en')||a.nation.localeCompare(b.nation,'en'));
+}
+function rollDice(ordered,stage,frame){
+  return ordered.flatMap(({nation,rolls})=>rolls.map((d,i)=>{
+    if(stage==='waiting')return '<span class="die pending" aria-hidden="true"></span>';
+    return dieFace(d,stage==='rolling'?1+(frame+i*2)%6:d.face,stage,nation);
+  })).join('');
+}
+function rollTotal(hits,play){
+  if(play&&play.index===0&&play.stage!=='marked')return 'Rolling…';
+  return hits+' '+(hits===1?'hit':'hits');
+}
 function rollCard(rolls,side,play,nations){
   const label=side==='defense'?'Defense Rolls':(adjectives[nations[0]]||nations[0])+' attack';
   let hits=0;
@@ -272,26 +293,14 @@ function rollCard(rolls,side,play,nations){
     let stage='marked';
     if(play&&index>=play.index)stage=index===play.index?play.stage:'waiting';
     if(stage==='marked')hits+=group.filter(d=>d.hit).length;
-    const byNation=new Map();
-    for(const die of group){
-      const nation=ownerNames[die.power]||die.power||nations[0]||'Defenders';
-      if(!byNation.has(nation))byNation.set(nation,[]);
-      byNation.get(nation).push(die);
-    }
-    const rows=[...byNation].map(([nation,nationalRolls])=>{
-      const strengths={};
-      const dice=nationalRolls.map((d,i)=>{
-        strengths[d.type]=(strengths[d.type]||0)+1;
-        if(stage==='waiting')return '<span class="die pending" aria-hidden="true"></span>';
-        return dieFace(d,stage==='rolling'?1+(play.frame+i*2)%6:d.face,stage,nation);
-      }).join('');
-      const counters=Object.entries(strengths).map(([type,n])=>
-        unitCounter(type,n,nation,stats[type].name+' · '+nation+' × '+n)).join(' ');
-      return '<div class="roll-country" data-nation="'+esc(nation)+'">'+counters+'<div class="dice-row">'+dice+'</div></div>';
-    }).join('');
-    return '<div class="roll-unit" data-threshold="'+threshold+'" data-stage="'+stage+'"><strong>Hits on '+hitRange(threshold)+'</strong>'+rows+'</div>';
+    const ordered=rollStacks(group,nations);
+    const counters=ordered.map(({type,nation,rolls})=>
+      unitCounter(type,rolls.length,nation,stats[type].name+' · '+nation+' × '+rolls.length)).join('');
+    const dice=rollDice(ordered,stage,play?.frame);
+    return '<div class="roll-unit" data-threshold="'+threshold+'" data-stage="'+stage+'"><strong>Hits on '+hitRange(threshold)+
+      '</strong><div class="roll-counters">'+counters+'</div><div class="dice-row">'+dice+'</div></div>';
   }).join('');
-  const total=play&&play.index===0&&play.stage!=='marked'?'Rolling…':hits+' '+(hits===1?'hit':'hits');
+  const total=rollTotal(hits,play);
   return '<section class="roll-card" data-side="'+side+'" '+combatColors(nations.length===1?nations[0]:null)+'><h4>'+label+'<span>'+total+'</span></h4>'+groups+'</section>';
 }
 function rollsBox(dice,play,attacking,defending){
@@ -304,7 +313,7 @@ function beginRoll(side){
   if(reducedMotion())return;
   const rolls=currentBattle(s).dice[side],groups=groupRolls(rolls,side);
   if(!groups.length)return;
-  playback={side,rolls,groups,index:0,stage:'rolling',frame:0};
+  playback={side,groups,index:0,stage:'rolling',frame:0};
   rollTimer=setTimeout(advanceRoll,100);
 }
 function endPlayback(){
@@ -326,10 +335,16 @@ function advanceRoll(){
   }
   const card=$('panel').querySelector('.roll-card[data-side="'+play.side+'"]');
   const battle=currentBattle(s);
-  card.outerHTML=rollCard(play.rolls,play.side,play,play.side==='attack'?[attacker]:defendingNations(battle.dice,liveDefenders(battle)));
+  const nations=play.side==='attack'?[attacker]:defendingNations(battle.dice,liveDefenders(battle));
   const [threshold,rolls]=play.groups[play.index];
+  const activeGroup=card.querySelector('[data-threshold="'+threshold+'"]');
+  activeGroup.dataset.stage=play.stage;
+  activeGroup.querySelector('.dice-row').innerHTML=rollDice(rollStacks(rolls,nations),play.stage,play.frame);
+  const revealed=play.groups.slice(0,play.index+Number(play.stage==='marked'));
+  const totalHits=revealed.reduce((sum,[,group])=>sum+group.filter(d=>d.hit).length,0);
+  card.querySelector('h4 span').textContent=rollTotal(totalHits,play);
   if((play.frame===0||play.index===0&&play.frame===1)&&play.stage==='rolling'){
-    $('panel').querySelector('[data-side="'+play.side+'"] [data-threshold="'+threshold+'"]').scrollIntoView({block:'nearest'});
+    activeGroup.scrollIntoView({block:'nearest'});
   }
   const hits=rolls.filter(d=>d.hit).length;
   const note=play.stage==='marked'?'Hits on '+hitRange(threshold)+' · '+hits+(hits===1?' hit':' hits'):'Rolling for '+hitRange(threshold)+'…';

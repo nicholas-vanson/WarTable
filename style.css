@@ -103,7 +103,7 @@ aside h3,dialog h3{font:600 18px/1.2 Georgia,serif;margin:16px 0 4px}
 }
 .roll-card h4 span{font:700 11px var(--typewriter);text-transform:uppercase}
 .roll-unit{padding:6px 9px;font-size:13px}.roll-unit+.roll-unit{border-top:1px dotted var(--sheet-rule)}
-.roll-country{margin-top:4px}.roll-country+.roll-country{margin-top:7px}
+.roll-counters{display:flex;gap:4px;overflow-x:auto;margin-top:4px;padding:1px 1px 2px}
 .dice-row{display:flex;gap:5px;flex-wrap:wrap;margin-top:4px}
 .die{width:26px;height:26px;display:inline-grid;grid-template:repeat(3,1fr)/repeat(3,1fr);place-items:center;
   padding:3px;border:1px solid #90977f;border-radius:4px;background:#f8f5e9;color:#505b4c}
