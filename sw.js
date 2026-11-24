@@ -1,5 +1,5 @@
 const prefix='wartable:'+self.registration.scope+':';
-const cacheName=prefix+'himalayan-rivers-54';
+const cacheName=prefix+'map-selection-55';
 const files=['./','./index.html','./menu.js','./app.js','./global-game.js','./neutral-rules.js','./rules.js','./formation-names.js','./map.js','./style.css','./manifest.webmanifest','./assets/wartable-mark.svg','./assets/staff-map.svg','./assets/staff-overview.webp','./assets/territories.json','./assets/fronts.json','./assets/control-washes.json','./assets/world-chart.webp','./assets/global-setup.json','./assets/world-sectors.json','./assets/world-staff.webp','./assets/world-engraving.svg','./assets/world-terrain.json','./assets/sea-zones.json','./assets/icon-192.png','./assets/icon-512.png'];
 self.addEventListener('install',event=>{
   event.waitUntil((async()=>{

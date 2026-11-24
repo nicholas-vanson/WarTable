@@ -1838,10 +1838,7 @@ async function atlas(onPick,onView,initial,exercise) {
         exerciseSea=sea&&sea!==exerciseSea?sea:null;
         if(sea&&game.phase!=='combat')onPick(null);
       }
-      if(id){
-        if(view.z<.66&&!sea){[view.x,view.y]=position(id);view.z=exercise.world?maxZoom:1.25;}
-        onPick(id,type,origin,nation);
-      }
+      if(id)onPick(id,type,origin,nation);
       render();
     }
     onView({...view});
