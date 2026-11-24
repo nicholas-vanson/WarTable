@@ -63,8 +63,9 @@ export function prepareGlobalBoard(setup,atlas,match){
       return !dest.water&&!dest.blocked&&(enemies.has(controller)||neutralOwners[controller]&&canEnterNeutral(match.power,enemies,dest)&&hostileNeutral(match.power,controller));
     }).map(to=>ids[to]);
     places[id]={name,owner:r.blocked?owner:ownerNames[r.owner]||owner,blocked:r.blocked,targets,water:r.water,city:r.city,ipc:r.ipc,links:r.links,original:r.original};
-    shapes[id]={...sectors[name],stacks:position.units.filter(([p,t])=>ownerNames[p]!==owner||!['infantry','armour'].includes(t)).length};owners[id]=owner;forces[id]=true;
     pieces[id]=position.units.map(([power,unit,n])=>[power,boardUnitType(unit),n]);
+    shapes[id]={...sectors[name],garrison:pieces[id].filter(row=>row[2]>0),homePower:position.owner};
+    owners[id]=owner;forces[id]=true;
     if(!r.water&&!r.blocked)unmovedLand[id]=openingLand(pieces[id],match.power);
     const available={inf:0,tank:0};
     for(const [power,type,n] of pieces[id]){
