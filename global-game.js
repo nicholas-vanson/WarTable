@@ -57,6 +57,7 @@ export const purchaseGroups={
   Sea:['submarine','transport','destroyer','cruiser','carrier','battleship'],
   Facilities:['factory_minor','factory_major','airfield','harbour']
 };
+export const isFacility=type=>purchaseGroups.Facilities.includes(type);
 // Global rules pp. 34–35. West India is UK Pacific and mainland North America is UK Europe.
 const pacificOriginals=new Set(['UK_Pacific','Japanese','Chinese','ANZAC','Mongolians']);
 const otherPacificLand=new Set(['French Indo China','New Hebrides','Celebes','Java','Dutch New Guinea','Sumatra',

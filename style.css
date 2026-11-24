@@ -65,6 +65,9 @@ aside h3,dialog h3{font:600 18px/1.2 Georgia,serif;margin:16px 0 4px}
   height:22px;min-width:34px;padding:2px;background:#e6dfbd;border:1.5px solid #465440;
   color:#344331;box-shadow:1px 1px 0 #9a9a7c;font:700 12px/1 var(--typewriter);
 }
+:root{--facility-ink:#454545;--facility-paper:#d9d9d9}
+.counter-face.facility{width:38px;height:22px;padding:0;background:var(--facility-paper);color:var(--facility-ink);border-color:currentColor;box-shadow:1px 1px 0 #999}
+.facility>svg{display:block;width:100%;height:100%}
 .symbol{display:block;flex:none;width:18px;height:14px;border:1px solid currentColor}
 .counter-designator{font-family:var(--typewriter);font-weight:700;text-anchor:middle;fill:currentColor}
 .unit-key summary{cursor:pointer;font-weight:700;padding:6px 0}

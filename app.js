@@ -1,6 +1,6 @@
 import {ordersPanelKey,reducedMotion} from './preferences.js';
 import {neutralKey,strictKey,allianceOf,hostileNeutral,activationOptions,activateFriendly} from './neutral-rules.js';
-import {globalKey,loadGlobalBoard,saveGlobalPosition,purchaseGroups,spendingEconomies,purchasePlan,eligibleShipRepairs,changePurchase,changeFacilityOrder,confirmPurchase,openingAddress,seasonForRound,nextPower,nextPlaytestTurn,globalUnits,boardUnitType,globalPowers,ownerNames} from './global-game.js';
+import {globalKey,loadGlobalBoard,saveGlobalPosition,purchaseGroups,spendingEconomies,purchasePlan,eligibleShipRepairs,changePurchase,changeFacilityOrder,confirmPurchase,openingAddress,seasonForRound,nextPower,nextPlaytestTurn,globalUnits,boardUnitType,isFacility,globalPowers,ownerNames} from './global-game.js';
 import {places,stats,types,exercises,adjectives,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,rollAttack,rollDefense,casualties,retreat,theaterVictoryCities} from './rules.js';
 import {drawFormationNames} from './formation-names.js';
 import {atlas,styleFor} from './map.js';
@@ -129,6 +129,9 @@ function title(t,sub){return '<h2>'+t+'</h2><p class="hint">'+sub+'</p>';}
 function block(t){return '<div class="block-title">'+t+'</div>';}
 function unitCounter(type,amount,nation){
   const name=stats[type]?.name||globalUnits[type]?.[0]||type;
+  if(isFacility(type)){
+    return '<span class="counter-face facility" role="img" aria-label="'+esc(name)+'" title="'+esc(name)+'"><svg viewBox="0 0 24 14" aria-hidden="true"><use href="#unit-'+esc(type)+'" width="24" height="14"/></svg></span>';
+  }
   const label=amount===undefined?name:amount+' '+(type==='tank'&&amount!==1?'tanks':name.toLowerCase());
   return '<span class="counter-face" data-nation="'+esc(nation||'')+'" role="img" aria-label="'+esc(label)+'" title="'+esc(label)+'"><svg class="symbol" viewBox="0 0 16 12" aria-hidden="true"><use href="#unit-'+esc(type)+'" width="16" height="12"/></svg>'+
     (amount===undefined?'':'<b>'+amount+'</b>')+'</span>';
@@ -162,7 +165,17 @@ function armiesAt(id,combatOnly=false){
   return armies;
 }
 function boardGarrison(id){
-  return Object.entries(armiesAt(id)).map(([name,army])=>block(esc(name))+unitLine(army,name)).join('')||'<p class="hint">No units present.</p>';
+  const forces=[],facilities=new Set();
+  for(const [nation,army] of Object.entries(armiesAt(id))){
+    const units={};
+    for(const [type,n] of Object.entries(army)){
+      if(isFacility(type))facilities.add(type);
+      else units[type]=n;
+    }
+    if(Object.keys(units).length)forces.push(block(esc(nation))+unitLine(units,nation));
+  }
+  if(facilities.size)forces.push(block('Facilities')+[...facilities].map(type=>unitCounter(type)).join(' '));
+  return forces.join('')||'<p class="hint">No units present.</p>';
 }
 function plannedAttacks(){
   const destinations=new Map();
@@ -454,7 +467,7 @@ function orderSummary(){
   const match=globalBoard.match;
   return spendingEconomies(match).map(wallet=>{
     const plan=purchasePlan(match,wallet);
-    const items=Object.entries(plan.orders).map(([unit,n])=>'<p>'+unitCounter(boardUnitType(unit),n,attacker)+' '+globalUnits[unit][0]+'</p>');
+    const items=Object.entries(plan.orders).map(([unit,n])=>'<p>'+unitCounter(boardUnitType(unit),n,attacker)+' '+(isFacility(unit)?n+' × ':'')+globalUnits[unit][0]+'</p>');
     for(const r of plan.repairs)if(r.quantity)items.push('<p>'+esc(r.name)+' · '+globalUnits[r.unit][0]+' · Repair '+r.quantity+'</p>');
     for(const u of plan.upgrades)if(u.selected)items.push('<p>'+esc(u.name)+' · Upgrade to major complex</p>');
     return '<h3>'+(match.power==='British'?(wallet==='British'?'UK Europe':'UK Pacific'):attacker)+' · '+plan.cost+' IPCs</h3>'+
