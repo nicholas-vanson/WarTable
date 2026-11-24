@@ -103,7 +103,7 @@ aside h3,dialog h3{font:600 18px/1.2 Georgia,serif;margin:16px 0 4px}
 }
 .roll-card h4 span{font:700 11px var(--typewriter);text-transform:uppercase}
 .roll-unit{padding:6px 9px;font-size:13px}.roll-unit+.roll-unit{border-top:1px dotted var(--sheet-rule)}
-.roll-unit small{margin-left:7px;color:#57604e}
+.roll-country{margin-top:4px}.roll-country+.roll-country{margin-top:7px}
 .dice-row{display:flex;gap:5px;flex-wrap:wrap;margin-top:4px}
 .die{width:26px;height:26px;display:inline-grid;grid-template:repeat(3,1fr)/repeat(3,1fr);place-items:center;
   padding:3px;border:1px solid #90977f;border-radius:4px;background:#f8f5e9;color:#505b4c}
@@ -349,7 +349,7 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
 #ordersPanel .panelhead{border-color:var(--nation-ink)}
 #ordersPanel :is(.power-tab,.primary,.economy-switch [aria-pressed="true"]){background:var(--nation-ink);border-color:var(--sheet-ink);color:#fffbee}
 #ordersPanel .hold-to-confirm::before{background:var(--sheet-ink)}
-#ordersPanel :is(.hint,.block-title,.briefing-round,.order-totals span,.order-line small,.force-heading small,.force-total,.roll-unit small,.option small,.end,.review-item p){color:var(--panel-muted)}
+#ordersPanel :is(.hint,.block-title,.briefing-round,.order-totals span,.order-line small,.force-heading small,.force-total,.option small,.end,.review-item p){color:var(--panel-muted)}
 #ordersPanel :is(.secondary,.stepper button,#hidePanel,.unitcode,.review-item,.review-round>summary::after,#resizePanel::before){border-color:var(--panel-border)}
 #ordersPanel :is(#hidePanel,.unitcode){color:var(--panel-muted)}
 #ordersPanel :is(.option.active,.option:active,#action:not(:empty)){background:var(--panel-wash)}

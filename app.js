@@ -254,31 +254,42 @@ function defendingNations(dice,fallback){
 function liveDefenders(b){
   return s.pieces?Object.keys(armiesAt(b.to,true)):[s.owners[b.to]];
 }
+function groupRolls(rolls,side){
+  const groups=new Map();
+  for(const die of rolls){
+    // Older saved rounds only recorded the unit type and side.
+    const threshold=die.threshold??stats[die.type][side];
+    if(!groups.has(threshold))groups.set(threshold,[]);
+    groups.get(threshold).push(die);
+  }
+  return [...groups].sort(([a],[b])=>a-b);
+}
+const hitRange=threshold=>threshold===1?'1':'1–'+threshold;
 function rollCard(rolls,side,play,nations){
   const label=side==='defense'?'Defense Rolls':(adjectives[nations[0]]||nations[0])+' attack';
   let hits=0;
-  const groups=Object.keys(stats).map(type=>{
-    const group=rolls.filter(d=>d.type===type);
-    if(!group.length)return '';
+  const groups=(play?.groups||groupRolls(rolls,side)).map(([threshold,group],index)=>{
     let stage='marked';
-    if(play){
-      const index=play.types.indexOf(type);
-      if(index>play.index)stage='waiting';
-      if(index===play.index)stage=play.stage;
-    }
+    if(play&&index>=play.index)stage=index===play.index?play.stage:'waiting';
     if(stage==='marked')hits+=group.filter(d=>d.hit).length;
-    const strengths={};
-    const dice=group.map((d,i)=>{
-      const nation=ownerNames[d.power]||d.power||nations[0]||'Defenders';
-      strengths[nation]=(strengths[nation]||0)+1;
-      if(stage==='waiting')return '<span class="die pending" aria-hidden="true"></span>';
-      return dieFace(d,stage==='rolling'?1+(play.frame+i*2)%6:d.face,stage,nation);
+    const byNation=new Map();
+    for(const die of group){
+      const nation=ownerNames[die.power]||die.power||nations[0]||'Defenders';
+      if(!byNation.has(nation))byNation.set(nation,[]);
+      byNation.get(nation).push(die);
+    }
+    const rows=[...byNation].map(([nation,nationalRolls])=>{
+      const strengths={};
+      const dice=nationalRolls.map((d,i)=>{
+        strengths[d.type]=(strengths[d.type]||0)+1;
+        if(stage==='waiting')return '<span class="die pending" aria-hidden="true"></span>';
+        return dieFace(d,stage==='rolling'?1+(play.frame+i*2)%6:d.face,stage,nation);
+      }).join('');
+      const counters=Object.entries(strengths).map(([type,n])=>
+        unitCounter(type,n,nation,stats[type].name+' · '+nation+' × '+n)).join(' ');
+      return '<div class="roll-country" data-nation="'+esc(nation)+'">'+counters+'<div class="dice-row">'+dice+'</div></div>';
     }).join('');
-    const threshold=stats[type][side];
-    const counter=side==='defense'?defenseCounters(type,strengths):unitCounter(type,group.length,nations[0]);
-    const heading=(side==='attack'?esc(nations[0])+' · ':'')+'Hits on '+(threshold===1?'1':'1–'+threshold);
-    return '<div class="roll-unit" data-unit="'+type+'" data-stage="'+stage+'">'+
-      counter+'<small>'+heading+'</small><div class="dice-row">'+dice+'</div></div>';
+    return '<div class="roll-unit" data-threshold="'+threshold+'" data-stage="'+stage+'"><strong>Hits on '+hitRange(threshold)+'</strong>'+rows+'</div>';
   }).join('');
   const total=play&&play.index===0&&play.stage!=='marked'?'Rolling…':hits+' '+(hits===1?'hit':'hits');
   return '<section class="roll-card" data-side="'+side+'" '+combatColors(nations.length===1?nations[0]:null)+'><h4>'+label+'<span>'+total+'</span></h4>'+groups+'</section>';
@@ -291,9 +302,9 @@ function rollsBox(dice,play,attacking,defending){
 let playback=null,rollTimer;
 function beginRoll(side){
   if(reducedMotion())return;
-  const rolls=currentBattle(s).dice[side],unitTypes=Object.keys(stats).filter(t=>rolls.some(d=>d.type===t));
-  if(!unitTypes.length)return;
-  playback={side,rolls,types:unitTypes,index:0,stage:'rolling',frame:0};
+  const rolls=currentBattle(s).dice[side],groups=groupRolls(rolls,side);
+  if(!groups.length)return;
+  playback={side,rolls,groups,index:0,stage:'rolling',frame:0};
   rollTimer=setTimeout(advanceRoll,100);
 }
 function endPlayback(){
@@ -310,18 +321,18 @@ function advanceRoll(){
   }else if(play.stage==='settled'){
     play.stage='marked';delay=1000;
   }else{
-    if(++play.index===play.types.length){endPlayback();render();return;}
+    if(++play.index===play.groups.length){endPlayback();render();return;}
     play.stage='rolling';play.frame=0;
   }
   const card=$('panel').querySelector('.roll-card[data-side="'+play.side+'"]');
   const battle=currentBattle(s);
   card.outerHTML=rollCard(play.rolls,play.side,play,play.side==='attack'?[attacker]:defendingNations(battle.dice,liveDefenders(battle)));
+  const [threshold,rolls]=play.groups[play.index];
   if((play.frame===0||play.index===0&&play.frame===1)&&play.stage==='rolling'){
-    $('panel').querySelector('[data-side="'+play.side+'"] [data-unit="'+play.types[play.index]+'"]').scrollIntoView({block:'nearest'});
+    $('panel').querySelector('[data-side="'+play.side+'"] [data-threshold="'+threshold+'"]').scrollIntoView({block:'nearest'});
   }
-  const name=stats[play.types[play.index]].name;
-  const hits=play.rolls.filter(d=>d.type===play.types[play.index]&&d.hit).length;
-  const note=play.stage==='marked'?name+' · '+hits+(hits===1?' hit':' hits'):'Rolling '+name.toLowerCase()+'…';
+  const hits=rolls.filter(d=>d.hit).length;
+  const note=play.stage==='marked'?'Hits on '+hitRange(threshold)+' · '+hits+(hits===1?' hit':' hits'):'Rolling for '+hitRange(threshold)+'…';
   if($('rollStatus').textContent!==note)$('rollStatus').textContent=note;
   rollTimer=setTimeout(advanceRoll,delay);
 }
@@ -363,7 +374,7 @@ function battlePanel(){
   const info='<h2>'+places[b.to].name+'</h2>'+block(b.round?'Battle round '+b.round:'Land battle')+
     (b.round?'':cityObjective(b.to))+rollsBox(b.dice,playback,attacker,nations);
   if(playback){
-    $('action').innerHTML='<div class="roll-progress" id="rollStatus" role="status">Rolling '+stats[playback.types[playback.index]].name.toLowerCase()+'…</div>';
+    $('action').innerHTML='<div class="roll-progress" id="rollStatus" role="status">Rolling for '+hitRange(playback.groups[playback.index][0])+'…</div>';
     return info;
   }
   if(b.step==='defense'){

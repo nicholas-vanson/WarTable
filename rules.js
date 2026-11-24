@@ -108,10 +108,12 @@ function die(){
   do { crypto.getRandomValues(bytes); } while(bytes[0]>=252);
   return bytes[0]%6+1;
 }
+function rollUnit(type,threshold,random){
+  const face=random();
+  return {type,threshold,face,hit:face<=threshold};
+}
 function rollForce(force,mode,random) {
-  return (mode==='attack'?types:Object.keys(stats).filter(k=>stats[k].defense)).flatMap(type=>Array.from({length:force[type]||0},()=>{
-    const face=random(); return {type,face,hit:face<=stats[type][mode]};
-  }));
+  return (mode==='attack'?types:Object.keys(stats).filter(k=>stats[k].defense)).flatMap(type=>Array.from({length:force[type]||0},()=>rollUnit(type,stats[type][mode],random)));
 }
 function finishBattle(s,b,result,heldBy){
   b.resolved=true;b.step='done';b.result=result;s.active=null;
@@ -173,9 +175,7 @@ export function rollDefense(s,random=die){
   // Defenders hit by the attack still return fire in this land battle.
   b.dice.defense=s.pieces?s.pieces[b.to].flatMap(([power,type,n])=>{
     if(!stats[type]?.defense)return [];
-    return Array.from({length:n},()=>{
-      const face=random();return {type,face,hit:face<=stats[type].defense,power};
-    });
+    return Array.from({length:n},()=>({...rollUnit(type,stats[type].defense,random),power}));
   }):rollForce(s.units[b.to],'defense',random);
   b.hits=Math.min(count(b.attack),b.dice.defense.filter(d=>d.hit).length);
   b.step='losses';
