@@ -28,8 +28,9 @@ function takeFriendlyControl(s,id,power,nation){
   for(const row of s.pieces[id])if(neutralOwners[row[0]])row[0]=power;
 }
 export function invadeNeutrals(s){
-  const {neighbors}=exerciseOf(s);
-  const attacked=[...new Set(s.orders.map(o=>o.to))];
+  const {neighbors,friends}=exerciseOf(s);
+  const entered=s.orders.flatMap(o=>o.via?[o.via,o.to]:[o.to]);
+  const attacked=[...new Set(entered.filter(id=>!friends[s.power].includes(s.owners[id])))];
   const strict=attacked.filter(id=>strictKey(neutralKey(s.owners[id])));
   const mongo=id=>places[id].original==='Mongolians';
   const bordersMongolia=id=>neighbors[id].some(mongo);

@@ -166,8 +166,18 @@ function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detail
 
 // Battles pool casualties by type. Apportion the surviving counters to their committed
 // approaches for display, preserving the exact total without assigning a new game rule.
+function combineLegs(legs){
+  const grouped=new Map();
+  for(const {from,to,units} of legs){
+    const key=from+'/'+to;
+    if(!grouped.has(key))grouped.set(key,{from,to,units:{}});
+    const total=grouped.get(key).units;
+    for(const [t,n] of Object.entries(units))total[t]=(total[t]||0)+n;
+  }
+  return [...grouped.values()];
+}
 function arrivals(game,to){
-  const orders=game.orders.filter(o=>o.to===to);
+  const orders=combineLegs(game.orders.filter(o=>o.to===to).map(o=>({...o,from:o.via||o.from})));
   if(game.phase==='plan')return orders;
   const battle=game.battles.find(b=>b.to===to&&!b.resolved);
   if(!battle)return [];
@@ -405,7 +415,7 @@ function worldSeats(exercise,bands,zones){
     formations[id]={center:[x,y],home:sector.home?{...sector.home}:{inf:[x-18,y+14],tank:[x+18,y-18]}};
   }
   for(const from of Object.keys(exercise.forces)){
-    for(const to of places[from].targets){
+    for(const to of places[from].movementEdges||places[from].targets){
       if(formations[to][from])continue;
       const [x,y]=position(to),[ox,oy]=position(from);
       const shift=sheetOffset(ox,x,exercise.projection.width);
@@ -597,9 +607,9 @@ function buildControlBands(map,shapes,regions,sectors,washes,extent){
     }
     bands[id]={band,region,neutralFill,selectedOutline};
   }
-  for(const [from,{targets}] of Object.entries(places)){
+  for(const [from,place] of Object.entries(places)){
     if(!shapes[from])continue;
-    for(const to of targets){
+    for(const to of place.movementEdges||place.targets){
       const clip=node('clipPath',{id:'route-'+from+'-'+to});
       const shift=sectors?sheetOffset(sectors[from].center[0],sectors[to].center[0],extent.width):0;
       for(const x of shift?[0,shift]:[0]){
@@ -791,7 +801,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     }
     if(key)selection.setAttribute('transform','translate('+at.join(' ')+') scale('+tokenScale+')');
   }
-  let game=null,focus=null,target=null,selectedType=null,selectedNation=null,surveying=false;
+  let game=null,focus=null,target=null,selectedType=null,selectedNation=null,surveying=false,routeChoices=null;
   let view=initial&&(!exercise.world||initial.projection===exercise.projection.id)&&[initial.x,initial.y,initial.z].every(Number.isFinite)?{...initial}:{...exercise.camera};
   // Store zoom in Western Front survey units even though the printed projection
   // has more map units per comparable view. Older saves used raw board units.
@@ -905,7 +915,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     forces.replaceChildren();
     for(const region of regions.children){
       const id=region.dataset.place;
-      const legal=!surveying&&game.phase==='plan'&&focus&&(selectedType?targetsFor(game,focus,selectedType):places[focus].targets).includes(id);
+      const legal=!surveying&&game.phase==='plan'&&focus&&(routeChoices||(selectedType?targetsFor(game,focus,selectedType):places[focus].targets)).includes(id);
       region.classList.toggle('selected-territory',id===selected);
       const outline=bands[id].selectedOutline;
       if(outline)outline.setAttribute('display',id===selected?'inline':'none');
@@ -926,7 +936,8 @@ export async function atlas(onPick,onView,initial,exercise) {
     if(routeKey!==nextRouteKey){
       const nextStarts=new Map(),now=performance.now();
       routes.replaceChildren();
-      for(const order of game.orders){
+      const legs=game.orders.flatMap(o=>o.via?[{...o,to:o.via},{...o,from:o.via}]:[o]);
+      for(const order of combineLegs(legs)){
         for(const type of Object.keys(order.units).filter(t=>order.units[t]>0)){
           const key=order.from+'-'+order.to+'-'+type;
           const start=routeStarts.get(key)??(routeKey?now:-Infinity);
@@ -960,6 +971,7 @@ export async function atlas(onPick,onView,initial,exercise) {
       const units=game.phase==='plan'?available(game,id):game.units[id];
       const groups=arrivals(game,id).filter(group=>Object.values(group.units).some(n=>n>0));
       for(const group of groups){
+        if(exercise.world&&exercise.friends[game.power].includes(places[id].startOwner))continue;
         const key=group.from+'-'+id;
         activeFronts.add(key);
         if(!frontMarks.has(key)){
@@ -1179,9 +1191,9 @@ export async function atlas(onPick,onView,initial,exercise) {
   button('recenter',()=>{view={...exercise.camera};});
   button('overview',()=>{const m=metrics();view={x:extent.left+extent.width/2,y:extent.top+extent.height/2,z:Math.min(m.w/extent.width,m.h/extent.height)/m.base};});
   new ResizeObserver(render).observe(map);
-  return (s,id,to,type,seed,nation,briefing=false)=>{
+  return (s,id,to,type,seed,nation,briefing=false,choices=null)=>{
     if(surveying!==briefing)lastScale=0;
-    surveying=briefing;
+    surveying=briefing;routeChoices=choices;
     if(seed!==layoutSeed){offsets=homeOffsets(seed);layoutSeed=seed;}
     if(s.active!==lastBattle){
       inspectedPlace=undefined;exerciseSea=null;lastBattle=s.active;

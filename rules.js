@@ -82,9 +82,9 @@ export function newGame(exercise='west') {
   return {version:1,exercise,phase:'plan',units,owners,orders:[],battles:[],active:null,record:[]};
 }
 function check(ok, message) { if (!ok) throw new Error(message); }
-export function available(s, from, exceptTarget=null) {
+export function available(s, from, exceptTarget=null,via=null) {
   const free=s.pieces?strengthOf(s.pieces[from].filter(([p,t])=>samePower(p,s.power)&&mobileTypes.includes(t))):{...s.units[from]};
-  for (const order of s.orders.filter(o=>o.from===from && o.to!==exceptTarget)) {
+  for (const order of s.orders.filter(o=>o.from===from && !(o.to===exceptTarget&&(o.via||null)===via))) {
     for(const [k,n] of Object.entries(order.units))if(n)free[k]-=n;
   }
   return free;
@@ -92,15 +92,20 @@ export function available(s, from, exceptTarget=null) {
 function validUnits(units,limit) {
   return Object.entries(units).every(([k,n])=>mobileTypes.includes(k)&&Number.isSafeInteger(n)&&n>=0&&n<=(limit[k]||0));
 }
-export function plan(s,from,to,units) {
+export function plan(s,from,to,units,via=null) {
   check(s.phase==='plan','Movement has already been committed.');
   const selected=Object.keys(units).filter(t=>units[t]>0);
-  const valid=s.pieces?selected.every(t=>targetsFor(s,from,t).includes(to)):
-    s.owners[from]===exerciseOf(s).attacker&&s.owners[to]===exerciseOf(s).defender&&selected.every(t=>types.includes(t));
-  check(valid&&places[from]?.targets.includes(to),'These units cannot attack that space from this origin.');
-  check(validUnits(units,available(s,from,to)),'This order exceeds the forces available at its origin.');
-  s.orders=s.orders.filter(o=>o.from!==from||o.to!==to);
-  if(count(units)) s.orders.push({from,to,units:{...units}});
+  if(via){
+    check(s.exercise==='global'&&places[from]?.tankRoutes?.[to]?.includes(via)&&selected.every(t=>t==='tank'),
+      'Choose a legal two-space tank route.');
+  }else{
+    const valid=s.pieces?selected.every(t=>targetsFor(s,from,t).includes(to)):
+      s.owners[from]===exerciseOf(s).attacker&&s.owners[to]===exerciseOf(s).defender&&selected.every(t=>types.includes(t));
+    check(valid&&places[from]?.targets.includes(to),'These units cannot attack that space from this origin.');
+  }
+  check(validUnits(units,available(s,from,to,via)),'This order exceeds the forces available at its origin.');
+  s.orders=s.orders.filter(o=>o.from!==from||o.to!==to||(o.via||null)!==via);
+  if(count(units)) s.orders.push({from,to,...(via?{via}:{}),units:{...units}});
 }
 function alterStack(s,id,power,type,delta){
   if(!s.pieces||!delta)return;
@@ -136,10 +141,24 @@ export function commit(s) {
     }
     invadeNeutrals(s);
   }
+  const ex=exerciseOf(s);
+  for(const via of new Set(s.orders.map(o=>o.via).filter(Boolean))){
+    if(ex.friends[s.power].includes(s.owners[via]))continue;
+    s.owners[via]=ex.attacker;
+    s.record.push({title:places[via].name,detail:'Captured by '+ex.attacker+' during a tank blitz.'});
+  }
   for(const o of s.orders) {
+    const path=[o.from,o.via,o.to].filter(Boolean).map(id=>places[id].name).join(' → ');
+    s.record.push({title:path,detail:describe(o.units)});
+    if(o.via&&ex.friends[s.power].includes(places[o.to].startOwner)){
+      alterStack(s,o.from,s.power,'tank',-o.units.tank);
+      alterStack(s,o.to,s.power,'tank',o.units.tank);
+      s.units[o.from].tank-=o.units.tank;s.units[o.to].tank+=o.units.tank;
+      continue;
+    }
     let b=s.battles.find(b=>b.to===o.to);
     if(!b){b={to:o.to,origins:[],attack:empty(),round:0,step:'ready',resolved:false};s.battles.push(b);}
-    b.origins.push(o.from);
+    if(!b.origins.includes(o.via||o.from))b.origins.push(o.via||o.from);
     for(const [k,n] of Object.entries(o.units)){
       if(!n)continue;
       b.attack[k]=(b.attack[k]||0)+n;
@@ -151,12 +170,13 @@ export function commit(s) {
         if(moved){b.damage??={};b.damage[k]=(b.damage[k]||0)+moved;damage[k]-=moved;}
       }
     }
-    s.record.push({title:places[o.from].name+' → '+places[o.to].name,detail:describe(o.units)});
   }
   s.phase=s.battles.length?'combat':'review';
+  if(s.phase==='review')settleMongolianPact(s);
   for(const b of s.battles){
     if(s.pieces)s.units[b.to]=strengthOf(defendingRows(s,b.to));
-    if(neutralKey(s.owners[b.to])&&!count(s.units[b.to]))captureBattle(s,b,exerciseOf(s).attacker);
+    const landOccupation=s.pieces&&!places[b.to].water&&Object.entries(b.attack).some(([type,n])=>n&&!aircraft.includes(type));
+    if(landOccupation&&!count(s.units[b.to]))captureBattle(s,b,ex.attacker);
   }
 }
 export function chooseBattle(s,to) {
@@ -449,7 +469,7 @@ export function casualties(s,losses){
 export function retreatSites(s,b){
   const surface=Object.entries(b.attack).some(([t,n])=>n&&!aircraft.includes(t));
   return b.origins.filter(id=>!surface||places[id].water===places[b.to].water&&
-    s.orders.some(o=>o.from===id&&o.to===b.to&&Object.entries(o.units).some(([t,n])=>n&&!aircraft.includes(t))));
+    s.orders.some(o=>(o.via||o.from)===id&&o.to===b.to&&Object.entries(o.units).some(([t,n])=>n&&!aircraft.includes(t))));
 }
 export function retreat(s,origin){
   const b=currentBattle(s);

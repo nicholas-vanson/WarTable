@@ -258,6 +258,25 @@ export function prepareGlobalBoard(setup,atlas,match){
   const gates={'64-89':['Central America'],'81-98':['Egypt','Trans-Jordan'],'99-100':['Turkey'],'91-92':['Gibraltar'],'112-113':['Denmark']};
   const shipDamage={};
   const neighbors={},neutralEntry={},unmovedLand={};
+  function hostileLand(name){
+    const region=setup.regions[name],owner=match.board[name].owner;
+    return enemies.has(owner)||neutralOwners[owner]&&canEnterNeutral(match.power,enemies,region)&&hostileNeutral(match.power,owner);
+  }
+  function tankRoutesFrom(region){
+    const routes={};
+    for(const via of region.links){
+      const middle=setup.regions[via],area=match.board[via];
+      if(middle.water||middle.blocked)continue;
+      const blitz=enemies.has(area.owner)&&!area.units.some(([, ,n])=>n>0);
+      if(!blitz&&!allies.has(area.owner))continue;
+      const ends=middle.links.filter(to=>{
+        const dest=setup.regions[to];
+        return !dest.water&&!dest.blocked&&(hostileLand(to)||blitz&&allies.has(match.board[to].owner));
+      });
+      for(const end of ends)(routes[ids[end]]??=[]).push(ids[via]);
+    }
+    return routes;
+  }
   for(const [name,r] of Object.entries(setup.regions)){
     const id=ids[name],position=match.board[name],owner=r.blocked?'Impassable':r.water?'Sea zone':ownerNames[position.owner]||'Impassable';
     neighbors[id]=r.links.map(n=>ids[n]);
@@ -280,16 +299,27 @@ export function prepareGlobalBoard(setup,atlas,match){
           return area.units.some(([p,t,n])=>n&&enemies.has(p)&&ships.includes(t));
         }
         if(ships.includes(type)||r.water&&!aircraft.includes(type))return false;
-        return enemies.has(area.owner)||neutralOwners[area.owner]&&canEnterNeutral(match.power,enemies,dest)&&hostileNeutral(match.power,area.owner);
+        return hostileLand(to);
       }).map(to=>ids[to]);
     }
     const targets=[...new Set(Object.values(unitTargets).flat())];
     places[id]={name,owner:r.blocked?owner:ownerNames[r.owner]||owner,startOwner:owner,blocked:r.blocked,targets,unitTargets,water:r.water,city:r.city,ipc:r.ipc,links:r.links,original:r.original};
+    if(unitTargets.tank&&match.power!=='Chinese')places[id].tankRoutes=tankRoutesFrom(r);
     shapes[id]={...sectors[name],garrison:pieces[id].filter(row=>row[2]>0),homePower:position.owner};
     owners[id]=owner;forces[id]=true;
     if(!r.water&&!r.blocked)unmovedLand[id]=openingLand(pieces[id],match.power);
     units[id]=strengthOf(pieces[id].filter(([power,type])=>stats[type]&&
       (r.water?enemies.has(power):owner!==attacker||samePower(power,match.power))));
+  }
+  // Draw each physical leg separately, including the approach from an empty transit territory.
+  for(const id of Object.keys(forces))places[id].movementEdges=new Set(places[id].targets);
+  for(const id of Object.keys(forces)){
+    for(const [end,middles] of Object.entries(places[id].tankRoutes||{})){
+      for(const via of middles){
+        places[id].movementEdges.add(via);
+        places[via].movementEdges.add(end);
+      }
+    }
   }
   const cities=[
     ['London','United Kingdom',-.12,51.51,'United Kingdom'],['Paris','France',2.35,48.86,'France'],
