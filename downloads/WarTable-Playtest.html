@@ -67,9 +67,10 @@ aside h3,dialog h3{font:600 18px/1.2 Georgia,serif;margin:16px 0 4px}
   height:22px;min-width:34px;padding:2px;background:#e6dfbd;border:1.5px solid #465440;
   color:#344331;box-shadow:1px 1px 0 #9a9a7c;font:700 12px/1 var(--typewriter);
 }
-.symbol{position:relative;width:15px;height:11px;display:inline-block;border:1.3px solid currentColor}
-.symbol.inf{background:linear-gradient(to top right,transparent 45%,currentColor 47% 53%,transparent 55%),linear-gradient(to bottom right,transparent 45%,currentColor 47% 53%,transparent 55%)}
-.symbol.tank{border-radius:50%;height:9px}
+.symbol{display:block;flex:none;width:18px;height:14px;border:1px solid currentColor}
+.unit-key summary{cursor:pointer;font-weight:700;padding:6px 0}
+.unit-key ul{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px 12px;list-style:none;padding:0}
+.unit-key li{display:flex;align-items:center;gap:5px}
 .option{min-height:44px;gap:9px;padding:7px 2px;border-bottom:1px solid var(--sheet-rule)}
 .option.active,.option:active{background:#d9ddc7}
 .unitcode{display:grid;place-items:center;min-width:26px;height:26px;border:1px solid #a1a38c;color:#654b39;font:600 17px/1 Georgia,serif}
@@ -172,7 +173,7 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
 .force-heading{font-size:12px;margin-bottom:2px}
 .force-heading small{font-size:10px;color:#505949}
 .force-strength .counter-face{min-width:28px;height:19px;gap:2px}
-.force-strength .symbol{width:13px;height:9px}
+.force-strength .symbol{width:16px;height:12px}
 .force-total{font:10px var(--typewriter);color:#4c5548;white-space:nowrap}
 .objective{font:13px/1.4 Georgia,serif;color:#614331}
 .objective span{color:#85452d}
@@ -228,7 +229,6 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
   .menu-paper{padding:13px 22px}.mode-list{margin-top:12px}.mode{padding-block:8px}.back-link{margin-bottom:3px}
 }
 
-.counter-face .symbol:not(.inf):not(.tank){width:auto;min-width:16px;height:auto;padding:1px;font:700 8px/1.2 monospace}
 .counter-face[data-nation="United Kingdom"]{background:#ead6ac;color:#76603e}
 .counter-face[data-nation="Japan"]{background:#eddba0;color:#86651e}
 .counter-face[data-nation="United States"]{background:#d7dfb0;color:#455939}
@@ -280,6 +280,68 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
 <section class="board" aria-label="European staff map">
 <svg id="map" role="group" aria-label="Pan or pinch the map. Select a German force and a French destination." tabindex="0">
 <defs>
+<!-- Shared counter artwork in a 16 by 12 field. Map and orders supply the ink color. -->
+<symbol id="unit-inf" viewBox="0 0 16 12">
+  <path d="M0 0L16 12M0 12L16 0" fill="none" stroke="currentColor" stroke-width="1.5"/>
+</symbol>
+<symbol id="unit-tank" viewBox="0 0 16 12">
+  <ellipse cx="8" cy="6" rx="6.6" ry="3.8" fill="none" stroke="currentColor" stroke-width="1.6"/>
+</symbol>
+<symbol id="unit-mech_infantry" viewBox="0 0 16 12">
+  <path d="M1 .8L15 8.2M1 8.2L15 .8" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <rect x="2" y="9" width="12" height="2.2" rx="1.1" fill="currentColor"/>
+</symbol>
+<symbol id="unit-artillery" viewBox="0 0 16 12">
+  <circle cx="8" cy="6" r="3.5" fill="currentColor"/>
+</symbol>
+<symbol id="unit-aaGun" viewBox="0 0 16 12">
+  <path d="M1.5 10Q4.5 2 8 2Q11.5 2 14.5 10M8 2V9" fill="none" stroke="currentColor" stroke-width="1.6"/>
+</symbol>
+<symbol id="unit-fighter" viewBox="0 0 16 12">
+  <path d="M8 .4L9 1.8 9 4.7 14.8 7.3 14.8 8.5 9 7.1 8.8 9.3 10.8 10.7 10.8 11.4 8 10.6 5.2 11.4 5.2 10.7 7.2 9.3 7 7.1 1.2 8.5 1.2 7.3 7 4.7 7 1.8Z" fill="currentColor"/>
+</symbol>
+<symbol id="unit-tactical_bomber" viewBox="0 0 16 12">
+  <path d="M1 1L5 3.5 6.6 1.1 8 1.6 7.6 4.7 14.8 8.7 14.6 10 9.1 8.4 5.5 10.8 4.2 10.3 6.5 7.2 2.2 5.4Z" fill="currentColor"/>
+</symbol>
+<symbol id="unit-bomber" viewBox="0 0 16 12">
+  <path d="M8 .5Q9.1 .7 9.3 4.6L15 5.8V7.5L9 7.1 8.8 9.2 11 10V11H5V10L7.2 9.2 7 7.1 1 7.5V5.8L6.7 4.6Q6.9 .7 8 .5Z" fill="currentColor"/>
+  <path d="M3 4V8M5.3 3.4V7M10.7 3.4V7M13 4V8" stroke="currentColor" stroke-width="1.3"/>
+</symbol>
+<symbol id="unit-submarine" viewBox="0 0 16 12">
+  <path d="M1 7.4Q2 5.7 5.5 5.7H11Q14 5.7 15 7.4Q14 9.3 11 9.3H5Q2.3 9.3 1 7.4ZM6.6 6V3.5H8V1.7H11V3H9.6V6Z" fill="currentColor"/>
+</symbol>
+<symbol id="unit-transport" viewBox="0 0 16 12">
+  <path d="M.8 7H15.3L12.8 10H3ZM2.3 3.2H5.5V6H2.3ZM6.6 3.2H9.8V6H6.6ZM11 1.7H13.5V6H11Z" fill="currentColor"/>
+</symbol>
+<symbol id="unit-destroyer" viewBox="0 0 16 12">
+  <path d="M1 8L9.5 6.8 15.5 4.9 12.3 9 3.1 10ZM4.5 7V4.4H6.2V6.8L7.6 6.5V2.1H9V6.8Z" fill="currentColor"/>
+</symbol>
+<symbol id="unit-cruiser" viewBox="0 0 16 12">
+  <path d="M.7 7H15.4L13 10H3.2ZM3.6 6.3L4.3 2H6.6L5.9 6.3ZM8 6.3L8.7 2H11L10.3 6.3Z" fill="currentColor"/>
+</symbol>
+<symbol id="unit-battleship" viewBox="0 0 16 12">
+  <path d="M.7 7H15.4L13.2 10.7H3ZM2 5.5H5.5V7H2ZM6 7V3.7H7V1.3H9V3.7H10V7ZM10.5 5H14V7H10.5Z" fill="currentColor"/>
+  <path d="M4 5.8L1 4.4M12.2 5.4L15 3.8" stroke="currentColor" stroke-width="1.25"/>
+</symbol>
+<symbol id="unit-carrier" viewBox="0 0 16 12">
+  <path d="M2 2.6H12.7L15 4.8 13 9.2H2Z" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <path d="M4 7.7L11.8 4.2M7.4 2.5V1H10.3V2.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+</symbol>
+<symbol id="unit-factory_minor" viewBox="0 0 16 12">
+  <path d="M3.5 10V2H5.7V6.7L11.8 3.8V10Z" fill="none" stroke="currentColor" stroke-width="1.5"/>
+</symbol>
+<symbol id="unit-factory_major" viewBox="0 0 16 12">
+  <path d="M1 10.7V2H3.8V6L8.6 3.7V6.3L14.8 3.7V10.7Z" fill="currentColor"/>
+</symbol>
+<symbol id="unit-airfield" viewBox="0 0 16 12">
+  <path d="M3.2 9.4L10.4 1.2 13.2 3.5 6 11Z" fill="none" stroke="currentColor" stroke-width="1.6"/>
+  <path d="M1 6.8L2.8 4.7M12.7 7.4L14.5 5.3" stroke="currentColor" stroke-width="1.5"/>
+</symbol>
+<symbol id="unit-harbour" viewBox="0 0 16 12">
+  <circle cx="8" cy="2.5" r="1.55" fill="none" stroke="currentColor" stroke-width="1.4"/>
+  <path d="M8 4V10.6M5.4 5H10.6M2.2 6.1Q2.8 9.6 8 10.7Q13.2 9.6 13.8 6.1" fill="none" stroke="currentColor" stroke-width="1.5"/>
+</symbol>
+
 <linearGradient id="fadeX"><stop stop-color="black"/><stop offset=".024" stop-color="white"/><stop offset=".976" stop-color="white"/><stop offset="1" stop-color="black"/></linearGradient>
 <linearGradient id="fadeY" x2="0" y2="1"><stop stop-color="black"/><stop offset=".028" stop-color="white"/><stop offset=".972" stop-color="white"/><stop offset="1" stop-color="black"/></linearGradient>
 <mask id="plateFadeX"><rect width="2006" height="1716" fill="url(#fadeX)"/></mask><mask id="plateFadeY"><rect width="2006" height="1716" fill="url(#fadeY)"/></mask>
@@ -956,11 +1018,7 @@ function drawStack(game,parent,id,type,number,nation,role,at,tokenScale,detailed
   if(game.exercise!=='global')stack.append(node('rect',{x:-22,y:-22,width:44,height:44,fill:'transparent'}));
   stack.append(node('rect',{x:-19,y:-11,width:38,height:22,rx:1,fill:paper,stroke:selected?'#753515':unitInk,'stroke-width':1.6}));
   stack.append(node('rect',{x:-15,y:-6,width:16,height:12,fill:'none',stroke:ink,'stroke-width':1.3}));
-  if(!types.includes(type)){
-    stack.append(node('text',{x:-7,y:2.8,'text-anchor':'middle','font-family':'sans-serif','font-size':6.5,'font-weight':700,fill:ink},stats[type]?.code||counterCodes[type]||'•'));
-  }else stack.append(type==='inf'
-    ? node('path',{d:'M-15 -6L1 6M-15 6L1 -6',stroke:ink,'stroke-width':1.5})
-    : node('ellipse',{cx:-7,cy:0,rx:6.6,ry:3.8,fill:'none',stroke:ink,'stroke-width':1.6}));
+  stack.append(node('use',{href:'#unit-'+type,x:-15,y:-6,width:16,height:12,color:ink,'pointer-events':'none'}));
   stack.append(node('text',{x:10,y:4,'text-anchor':'middle','font-family':'sans-serif','font-size':13,'font-weight':700,fill:ink},number));
   if(detailed&&(!auxiliary||selected))stack.append(node('text',{x:0,y:24,'text-anchor':'middle','font-family':'sans-serif','font-size':11,'font-weight':650,fill:unitInk,
     stroke:'#f5efd8','paint-order':'stroke','stroke-width':3},style.code+' · '+name));
@@ -1057,8 +1115,6 @@ function styleFor(nation){
   if(kind){const style=neutralPatterns[kind];return {...style,counter:style.ink,hatch:'neutral-'+kind};}
   return ownerStyle[nation]||ownerStyle.Neutral;
 }
-const counterCodes={transport:'TR',submarine:'SS',destroyer:'DD',cruiser:'CA',carrier:'CV',battleship:'BB',
-  harbour:'NB',airfield:'AB',factory_minor:'IC',factory_major:'IC'};
 function worldSeats(exercise,bands){
   for(const [id,sector] of Object.entries(exercise.shapes)){
     const [x,y]=sector.center;
@@ -1108,9 +1164,9 @@ function supportingSeats(path,formation,required,detailScale){
       for(let i=0;i<count&&points.length<required;i++){
         const angle=i/count*2*Math.PI+ring*.3;
         const a=x+Math.cos(angle)*ring*17*detailScale,b=y+Math.sin(angle)*ring*15*detailScale;
-        if(!inside(a,b)||!inside(a-15*spacing*detailScale,b-9*spacing*detailScale)||!inside(a+15*spacing*detailScale,b+9*spacing*detailScale))continue;
+        if(!inside(a,b)||!inside(a-23*spacing*detailScale,b-14*spacing*detailScale)||!inside(a+23*spacing*detailScale,b+14*spacing*detailScale))continue;
         if(reserved.some(([u,v])=>Math.abs(a-u)<49*spacing*detailScale&&Math.abs(b-v)<38*spacing*detailScale))continue;
-        if(points.some(([u,v])=>Math.abs(a-u)<40*spacing*detailScale&&Math.abs(b-v)<25*spacing*detailScale))continue;
+        if(points.some(([u,v])=>Math.abs(a-u)<48*spacing*detailScale&&Math.abs(b-v)<30*spacing*detailScale))continue;
         points.push([a,b]);
       }
     }
@@ -1524,7 +1580,7 @@ async function atlas(onPick,onView,initial,exercise) {
       }
     }
     const activeFronts=new Set();
-    let selectedAt=null,selectionScale=tokenScale;
+    let selectedAt=null;
     for(const id of Object.keys(game.units)){
       const [x,y]=position(id),nation=game.owners[id],friendly=nation===exercise.attacker;
       if(exercise.world&&(Math.abs(x+sheetOffset(x,view.x,extent.width)-view.x)>vw/2+180||Math.abs(y-view.y)>vh/2+180))continue;
@@ -1562,13 +1618,13 @@ async function atlas(onPick,onView,initial,exercise) {
           const point=slots?.[extraIndex]||[x+(extraIndex%3-1)*36*detailScale,y+(Math.floor(extraIndex/3)+1)*24*detailScale];
           at=[x+(point[0]-x)*spread,y+(point[1]-y)*spread];extraIndex++;
         }
-        const stack=drawStack(game,forces,id,type,free,country,'home',at,primary?tokenScale:tokenScale*.80,detailed,selected,null,!primary);
-        reserveStack(at,primary?tokenScale:tokenScale*.80,(primary||selected)&&detailed&&stack.lastChild.textContent);
+        const stack=drawStack(game,forces,id,type,free,country,'home',at,tokenScale,detailed,selected,null,!primary);
+        reserveStack(at,tokenScale,(primary||selected)&&detailed&&stack.lastChild.textContent);
         if(game.phase==='plan'&&(exercise.world||friendly&&primary)){
           stack.setAttribute('role','button');stack.setAttribute('tabindex','0');
           stack.setAttribute('aria-pressed',String(selected));
         }
-        if(selected){selectedAt=at;selectionScale=primary?tokenScale:tokenScale*.80;}
+        if(selected)selectedAt=at;
       }
       for(const group of groups){
         for(const type of types){
@@ -1619,7 +1675,7 @@ async function atlas(onPick,onView,initial,exercise) {
     }
     // The overlay survives frequent force-layer redraws, so pan or quantity changes
     // reposition the mark without restarting the pencil.
-    showSelection(selectedAt?focus+'-'+selectedType+'-'+(selectedNation||''):'',selectedAt,selectionScale);
+    showSelection(selectedAt?focus+'-'+selectedType+'-'+(selectedNation||''):'',selectedAt,tokenScale);
   }
   function zoom(factor,px=map.clientWidth/2,py=map.clientHeight/2) {
     const old=metrics();const wx=view.x+(px-old.w/2)/old.scale,wy=view.y+(py-old.h/2)/old.scale;
@@ -1795,6 +1851,7 @@ const globalKey='wartable.global1940.match.v1';
 const regionAliases={'Holland Belgium':'hb','Western Germany':'wg','Normandy Bordeaux':'nb','France':'fr',
   'Northern Italy':'ni','Southern France':'sf','Baltic States':'bs','Eastern Poland':'ep','Bessarabia':'be','Poland':'pl','Romania':'ro'};
 const typeKeys={infantry:'inf',armour:'tank'};
+const boardUnitType=type=>typeKeys[type]||type;
 function prepareGlobalBoard(setup,atlas,match){
   const {sectors,projection}=atlas;
   const forces={},shapes={},units={},owners={},pieces={};
@@ -1813,7 +1870,7 @@ function prepareGlobalBoard(setup,atlas,match){
     }).map(to=>ids[to]);
     places[id]={name,owner:r.blocked?owner:ownerNames[r.owner]||owner,blocked:r.blocked,targets,water:r.water,city:r.city,ipc:r.ipc,links:r.links,original:r.original};
     shapes[id]={...sectors[name],stacks:position.units.filter(([p,t])=>ownerNames[p]!==owner||!['infantry','armour'].includes(t)).length};owners[id]=owner;forces[id]=true;
-    pieces[id]=position.units.map(([power,unit,n])=>[power,typeKeys[unit]||unit,n]);
+    pieces[id]=position.units.map(([power,unit,n])=>[power,boardUnitType(unit),n]);
     if(!r.water&&!r.blocked)unmovedLand[id]=openingLand(pieces[id],match.power);
     const available={inf:0,tank:0};
     for(const [power,type,n] of pieces[id]){
@@ -1979,7 +2036,7 @@ function block(t){return '<div class="block-title">'+t+'</div>';}
 function unitCounter(type,amount,nation){
   const name=stats[type]?.name||globalUnits[type]?.[0]||type;
   const label=amount===undefined?name:amount+' '+(type==='tank'&&amount!==1?'tanks':name.toLowerCase());
-  return '<span class="counter-face" data-nation="'+(nation||'')+'" role="img" aria-label="'+label+'" title="'+label+'"><i class="symbol '+type+'">'+(types.includes(type)?'':(stats[type]?.code||name.slice(0,3)).toUpperCase())+'</i>'+
+  return '<span class="counter-face" data-nation="'+esc(nation||'')+'" role="img" aria-label="'+esc(label)+'" title="'+esc(label)+'"><svg class="symbol" viewBox="0 0 16 12" aria-hidden="true"><use href="#unit-'+esc(type)+'" width="16" height="12"/></svg>'+
     (amount===undefined?'':'<b>'+amount+'</b>')+'</span>';
 }
 function unitLine(units,nation){
@@ -2332,7 +2389,7 @@ $('map').setAttribute('aria-label','Pan or pinch the map. Select a unit from '+a
 $('controlKey').innerHTML=(isGlobal?[attacker]:[attacker,defender]).map(n=>'<i data-nation="'+n+'"></i>'+n).join(' ');
 $('closeDialog').onclick=()=>$('dialog').close();
 $('journal').onclick=()=>showDialog(isGlobal?'Combat review':'Exercise review',(s.phase==='review'?timeline():'<p>The record opens after the last battle. It includes committed attacks, dice, casualties, retreats, and control of each territory.</p>'));
-$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. '+(isGlobal?'The global map wraps east and west across the Americas. ':'')+'Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The national color fades inward from the hatched border. Neutral hatching slopes up to the right across the whole territory. Single grey lines mark strict neutrals, paired lines mark pro-Allied neutrals, and dashed lines mark pro-Axis neutrals. Grey stippling marks impassable terrain. Units cannot enter or cross these spaces. A committed strict-neutral invasion changes the other eligible strict neutrals immediately. Friendly neutrals can be activated after combat. Tap a territory to mark it in violet and read its status. Tap it again to clear the selection. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><h3>Plan an attack</h3><p>Counters use '+unitCounter('inf',undefined,attacker)+' for infantry and '+unitCounter('tank',undefined,attacker)+' for armor. Select a stack on the map, adjust the quantity, then tap a highlighted enemy territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this board</h3><p>'+ (isGlobal?'Global 1940 uses the opening forces of all nine powers. Tap any territory or counter to inspect it. Infantry and armor can plan adjacent land attacks against powers already at war.':'This local exercise covers adjacent land attacks with infantry and tanks. The forces are arranged for testing.')+'</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+(isGlobal?btn('Local players','players','secondary')+btn('Restart combat','reset','danger'):btn('Restart exercise','reset','danger')));
+$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. '+(isGlobal?'The global map wraps east and west across the Americas. ':'')+'Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The national color fades inward from the hatched border. Neutral hatching slopes up to the right across the whole territory. Single grey lines mark strict neutrals, paired lines mark pro-Allied neutrals, and dashed lines mark pro-Axis neutrals. Grey stippling marks impassable terrain. Units cannot enter or cross these spaces. A committed strict-neutral invasion changes the other eligible strict neutrals immediately. Friendly neutrals can be activated after combat. Tap a territory to mark it in violet and read its status. Tap it again to clear the selection. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><details class="unit-key"><summary>Unit symbols</summary><ul>'+Object.entries(globalUnits).map(([type,[name]])=>'<li>'+unitCounter(boardUnitType(type))+' '+name+'</li>').join('')+'</ul></details><h3>Plan an attack</h3><p>Select a stack on the map, adjust the quantity, then tap a highlighted enemy territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this board</h3><p>'+ (isGlobal?'Global 1940 uses the opening forces of all nine powers. Tap any territory or counter to inspect it. Infantry and armor can plan adjacent land attacks against powers already at war.':'This local exercise covers adjacent land attacks with infantry and tanks. The forces are arranged for testing.')+'</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+(isGlobal?btn('Local players','players','secondary')+btn('Restart combat','reset','danger'):btn('Restart exercise','reset','danger')));
 // Store the two panel dimensions separately so rotating the phone restores the last fit.
 function setupOrdersPanel(){
   const main=document.querySelector('main'),sheet=$('ordersPanel'),grip=$('resizePanel');

@@ -60,9 +60,10 @@ aside h3,dialog h3{font:600 18px/1.2 Georgia,serif;margin:16px 0 4px}
   height:22px;min-width:34px;padding:2px;background:#e6dfbd;border:1.5px solid #465440;
   color:#344331;box-shadow:1px 1px 0 #9a9a7c;font:700 12px/1 var(--typewriter);
 }
-.symbol{position:relative;width:15px;height:11px;display:inline-block;border:1.3px solid currentColor}
-.symbol.inf{background:linear-gradient(to top right,transparent 45%,currentColor 47% 53%,transparent 55%),linear-gradient(to bottom right,transparent 45%,currentColor 47% 53%,transparent 55%)}
-.symbol.tank{border-radius:50%;height:9px}
+.symbol{display:block;flex:none;width:18px;height:14px;border:1px solid currentColor}
+.unit-key summary{cursor:pointer;font-weight:700;padding:6px 0}
+.unit-key ul{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px 12px;list-style:none;padding:0}
+.unit-key li{display:flex;align-items:center;gap:5px}
 .option{min-height:44px;gap:9px;padding:7px 2px;border-bottom:1px solid var(--sheet-rule)}
 .option.active,.option:active{background:#d9ddc7}
 .unitcode{display:grid;place-items:center;min-width:26px;height:26px;border:1px solid #a1a38c;color:#654b39;font:600 17px/1 Georgia,serif}
@@ -165,7 +166,7 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
 .force-heading{font-size:12px;margin-bottom:2px}
 .force-heading small{font-size:10px;color:#505949}
 .force-strength .counter-face{min-width:28px;height:19px;gap:2px}
-.force-strength .symbol{width:13px;height:9px}
+.force-strength .symbol{width:16px;height:12px}
 .force-total{font:10px var(--typewriter);color:#4c5548;white-space:nowrap}
 .objective{font:13px/1.4 Georgia,serif;color:#614331}
 .objective span{color:#85452d}
@@ -221,7 +222,6 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
   .menu-paper{padding:13px 22px}.mode-list{margin-top:12px}.mode{padding-block:8px}.back-link{margin-bottom:3px}
 }
 
-.counter-face .symbol:not(.inf):not(.tank){width:auto;min-width:16px;height:auto;padding:1px;font:700 8px/1.2 monospace}
 .counter-face[data-nation="United Kingdom"]{background:#ead6ac;color:#76603e}
 .counter-face[data-nation="Japan"]{background:#eddba0;color:#86651e}
 .counter-face[data-nation="United States"]{background:#d7dfb0;color:#455939}

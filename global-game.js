@@ -45,6 +45,7 @@ export const globalKey='wartable.global1940.match.v1';
 const regionAliases={'Holland Belgium':'hb','Western Germany':'wg','Normandy Bordeaux':'nb','France':'fr',
   'Northern Italy':'ni','Southern France':'sf','Baltic States':'bs','Eastern Poland':'ep','Bessarabia':'be','Poland':'pl','Romania':'ro'};
 const typeKeys={infantry:'inf',armour:'tank'};
+export const boardUnitType=type=>typeKeys[type]||type;
 export function prepareGlobalBoard(setup,atlas,match){
   const {sectors,projection}=atlas;
   const forces={},shapes={},units={},owners={},pieces={};
@@ -63,7 +64,7 @@ export function prepareGlobalBoard(setup,atlas,match){
     }).map(to=>ids[to]);
     places[id]={name,owner:r.blocked?owner:ownerNames[r.owner]||owner,blocked:r.blocked,targets,water:r.water,city:r.city,ipc:r.ipc,links:r.links,original:r.original};
     shapes[id]={...sectors[name],stacks:position.units.filter(([p,t])=>ownerNames[p]!==owner||!['infantry','armour'].includes(t)).length};owners[id]=owner;forces[id]=true;
-    pieces[id]=position.units.map(([power,unit,n])=>[power,typeKeys[unit]||unit,n]);
+    pieces[id]=position.units.map(([power,unit,n])=>[power,boardUnitType(unit),n]);
     if(!r.water&&!r.blocked)unmovedLand[id]=openingLand(pieces[id],match.power);
     const available={inf:0,tank:0};
     for(const [power,type,n] of pieces[id]){

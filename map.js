@@ -293,11 +293,7 @@ function drawStack(game,parent,id,type,number,nation,role,at,tokenScale,detailed
   if(game.exercise!=='global')stack.append(node('rect',{x:-22,y:-22,width:44,height:44,fill:'transparent'}));
   stack.append(node('rect',{x:-19,y:-11,width:38,height:22,rx:1,fill:paper,stroke:selected?'#753515':unitInk,'stroke-width':1.6}));
   stack.append(node('rect',{x:-15,y:-6,width:16,height:12,fill:'none',stroke:ink,'stroke-width':1.3}));
-  if(!types.includes(type)){
-    stack.append(node('text',{x:-7,y:2.8,'text-anchor':'middle','font-family':'sans-serif','font-size':6.5,'font-weight':700,fill:ink},stats[type]?.code||counterCodes[type]||'•'));
-  }else stack.append(type==='inf'
-    ? node('path',{d:'M-15 -6L1 6M-15 6L1 -6',stroke:ink,'stroke-width':1.5})
-    : node('ellipse',{cx:-7,cy:0,rx:6.6,ry:3.8,fill:'none',stroke:ink,'stroke-width':1.6}));
+  stack.append(node('use',{href:'#unit-'+type,x:-15,y:-6,width:16,height:12,color:ink,'pointer-events':'none'}));
   stack.append(node('text',{x:10,y:4,'text-anchor':'middle','font-family':'sans-serif','font-size':13,'font-weight':700,fill:ink},number));
   if(detailed&&(!auxiliary||selected))stack.append(node('text',{x:0,y:24,'text-anchor':'middle','font-family':'sans-serif','font-size':11,'font-weight':650,fill:unitInk,
     stroke:'#f5efd8','paint-order':'stroke','stroke-width':3},style.code+' · '+name));
@@ -394,8 +390,6 @@ function styleFor(nation){
   if(kind){const style=neutralPatterns[kind];return {...style,counter:style.ink,hatch:'neutral-'+kind};}
   return ownerStyle[nation]||ownerStyle.Neutral;
 }
-const counterCodes={transport:'TR',submarine:'SS',destroyer:'DD',cruiser:'CA',carrier:'CV',battleship:'BB',
-  harbour:'NB',airfield:'AB',factory_minor:'IC',factory_major:'IC'};
 function worldSeats(exercise,bands){
   for(const [id,sector] of Object.entries(exercise.shapes)){
     const [x,y]=sector.center;
@@ -445,9 +439,9 @@ function supportingSeats(path,formation,required,detailScale){
       for(let i=0;i<count&&points.length<required;i++){
         const angle=i/count*2*Math.PI+ring*.3;
         const a=x+Math.cos(angle)*ring*17*detailScale,b=y+Math.sin(angle)*ring*15*detailScale;
-        if(!inside(a,b)||!inside(a-15*spacing*detailScale,b-9*spacing*detailScale)||!inside(a+15*spacing*detailScale,b+9*spacing*detailScale))continue;
+        if(!inside(a,b)||!inside(a-23*spacing*detailScale,b-14*spacing*detailScale)||!inside(a+23*spacing*detailScale,b+14*spacing*detailScale))continue;
         if(reserved.some(([u,v])=>Math.abs(a-u)<49*spacing*detailScale&&Math.abs(b-v)<38*spacing*detailScale))continue;
-        if(points.some(([u,v])=>Math.abs(a-u)<40*spacing*detailScale&&Math.abs(b-v)<25*spacing*detailScale))continue;
+        if(points.some(([u,v])=>Math.abs(a-u)<48*spacing*detailScale&&Math.abs(b-v)<30*spacing*detailScale))continue;
         points.push([a,b]);
       }
     }
@@ -860,7 +854,7 @@ export async function atlas(onPick,onView,initial,exercise) {
       }
     }
     const activeFronts=new Set();
-    let selectedAt=null,selectionScale=tokenScale;
+    let selectedAt=null;
     for(const id of Object.keys(game.units)){
       const [x,y]=position(id),nation=game.owners[id],friendly=nation===exercise.attacker;
       if(exercise.world&&(Math.abs(x+sheetOffset(x,view.x,extent.width)-view.x)>vw/2+180||Math.abs(y-view.y)>vh/2+180))continue;
@@ -898,13 +892,13 @@ export async function atlas(onPick,onView,initial,exercise) {
           const point=slots?.[extraIndex]||[x+(extraIndex%3-1)*36*detailScale,y+(Math.floor(extraIndex/3)+1)*24*detailScale];
           at=[x+(point[0]-x)*spread,y+(point[1]-y)*spread];extraIndex++;
         }
-        const stack=drawStack(game,forces,id,type,free,country,'home',at,primary?tokenScale:tokenScale*.80,detailed,selected,null,!primary);
-        reserveStack(at,primary?tokenScale:tokenScale*.80,(primary||selected)&&detailed&&stack.lastChild.textContent);
+        const stack=drawStack(game,forces,id,type,free,country,'home',at,tokenScale,detailed,selected,null,!primary);
+        reserveStack(at,tokenScale,(primary||selected)&&detailed&&stack.lastChild.textContent);
         if(game.phase==='plan'&&(exercise.world||friendly&&primary)){
           stack.setAttribute('role','button');stack.setAttribute('tabindex','0');
           stack.setAttribute('aria-pressed',String(selected));
         }
-        if(selected){selectedAt=at;selectionScale=primary?tokenScale:tokenScale*.80;}
+        if(selected)selectedAt=at;
       }
       for(const group of groups){
         for(const type of types){
@@ -955,7 +949,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     }
     // The overlay survives frequent force-layer redraws, so pan or quantity changes
     // reposition the mark without restarting the pencil.
-    showSelection(selectedAt?focus+'-'+selectedType+'-'+(selectedNation||''):'',selectedAt,selectionScale);
+    showSelection(selectedAt?focus+'-'+selectedType+'-'+(selectedNation||''):'',selectedAt,tokenScale);
   }
   function zoom(factor,px=map.clientWidth/2,py=map.clientHeight/2) {
     const old=metrics();const wx=view.x+(px-old.w/2)/old.scale,wy=view.y+(py-old.h/2)/old.scale;
