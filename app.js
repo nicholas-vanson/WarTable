@@ -140,13 +140,9 @@ function unitCounter(type,amount,nation,description){
   return '<span class="counter-face" data-nation="'+esc(nation||'')+'" '+combatColors(nation)+' role="img" aria-label="'+esc(label)+'" title="'+esc(label)+'"><svg class="symbol" viewBox="0 0 16 12" aria-hidden="true"><use href="#unit-'+esc(type)+'" width="16" height="12"/></svg>'+
     (amount===undefined?'':'<b>'+amount+'</b>')+'</span>';
 }
-// A shared counter shows the type total; its accessible name retains each country's contribution.
-function defenseCounter(type,strengths){
-  const owners=Object.entries(strengths).filter(([,n])=>n>0);
-  if(!owners.length)return '';
-  const total=owners.reduce((sum,[,n])=>sum+n,0);
-  const breakdown=owners.map(([nation,n])=>nation+' × '+n).join(', ');
-  return unitCounter(type,total,owners.length===1?owners[0][0]:null,stats[type].name+' · '+breakdown);
+function defenseCounters(type,strengths){
+  return Object.entries(strengths).filter(([,n])=>n>0).map(([nation,n])=>
+    unitCounter(type,n,nation,stats[type].name+' · '+nation+' × '+n)).join(' ');
 }
 function unitLine(units,nation){
   return Object.keys(units).filter(k=>units[k]>0).map(k=>unitCounter(k,units[k],nation)).join(' ')||'no units';
@@ -279,7 +275,7 @@ function rollCard(rolls,side,play,nations){
       return dieFace(d,stage==='rolling'?1+(play.frame+i*2)%6:d.face,stage,nation);
     }).join('');
     const threshold=stats[type][side];
-    const counter=side==='defense'?defenseCounter(type,strengths):unitCounter(type,group.length,nations[0]);
+    const counter=side==='defense'?defenseCounters(type,strengths):unitCounter(type,group.length,nations[0]);
     const heading=(side==='attack'?esc(nations[0])+' · ':'')+'Hits on '+(threshold===1?'1':'1–'+threshold);
     return '<div class="roll-unit" data-unit="'+type+'" data-stage="'+stage+'">'+
       counter+'<small>'+heading+'</small><div class="dice-row">'+dice+'</div></div>';
@@ -335,7 +331,7 @@ function forceColumns(attack,defense,defendingNation,metric='total',armies=null,
       '<span class="force-strength">'+icons+'<span class="force-total">'+total+' '+metric+'</span></span></span>';
   }
   const defenders=armies&&Object.keys(armies).length?armies:{[defendingNation]:defense};
-  const defenseIcons=Object.keys(stats).map(type=>defenseCounter(type,
+  const defenseIcons=Object.keys(stats).map(type=>defenseCounters(type,
     Object.fromEntries(Object.entries(defenders).map(([nation,units])=>[nation,units[type]])))).join(' ');
   const attackIcons=Object.keys(attack).filter(k=>attack[k]>0).map(k=>unitCounter(k,attack[k],attacking)).join(' ');
   return column('<small>Attacking</small> <strong>'+esc(attacking)+'</strong>',attackIcons,count(attack))+
