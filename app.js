@@ -3,7 +3,7 @@ import {neutralKey,strictKey,allianceOf,hostileNeutral,activationOptions,activat
 import {globalKey,loadGlobalBoard,saveGlobalPosition,purchaseGroups,spendingEconomies,purchasePlan,eligibleShipRepairs,changePurchase,changeFacilityOrder,confirmPurchase,openingAddress,seasonForRound,nextPower,nextPlaytestTurn,globalUnits,boardUnitType,globalPowers,ownerNames} from './global-game.js';
 import {places,stats,types,exercises,adjectives,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,rollAttack,rollDefense,casualties,retreat,theaterVictoryCities} from './rules.js';
 import {drawFormationNames} from './formation-names.js';
-import {atlas} from './map.js';
+import {atlas,styleFor} from './map.js';
 const $=id=>document.getElementById(id);
 const isGlobal=location.hash==='#global';
 const exerciseId=isGlobal?'global':location.hash.slice('#exercise/'.length);
@@ -11,6 +11,9 @@ const globalBoard=isGlobal?await loadGlobalBoard():null;
 let lastGlobalSave=isGlobal?localStorage.getItem(globalKey):null;
 const key=isGlobal?globalKey:exerciseId==='west'?'wartable.western-front.v1':'wartable.exercise.'+exerciseId+'.v1';
 const exercise=exercises[exerciseId],{attacker,defender}=exercise;
+const panelPalette=styleFor(attacker);
+$('ordersPanel').style.setProperty('--nation-ink',panelPalette.ink);
+$('ordersPanel').style.setProperty('--nation-paper',panelPalette.paper);
 const exercisePlaces=Object.fromEntries(Object.keys(exercise.forces).map(id=>[id,places[id]]));
 const newLayoutSeed=()=>crypto.getRandomValues(new Uint32Array(1))[0];
 let layoutSeed=newLayoutSeed();
@@ -409,8 +412,9 @@ function orderRow({unit,name,caption,quantity,plus,facility='',operation='buy'})
 }
 function purchasePanel(){
   const match=globalBoard.match,wallet=ui.wallet||match.power,plan=purchasePlan(match,wallet);
-  const group=ui.buyGroup||'Land',china=wallet==='Chinese',british=match.power==='British';
-  const categories=china?['Land']:Object.keys(purchaseGroups).concat('Repairs');
+  const group=ui.buyGroup||'All',china=wallet==='Chinese',british=match.power==='British';
+  const unitGroups=china?['Land']:Object.keys(purchaseGroups);
+  const categories=china?['All','Land']:['All',...unitGroups,'Repairs'];
   const total=spendingEconomies(match).reduce((sum,id)=>sum+(id===wallet?plan.cost:purchasePlan(match,id).cost),0);
   $('action').innerHTML='<div class="order-totals" aria-live="polite">'+
     [['Treasury',match.treasury[wallet]],['Order',plan.cost],['Left',plan.remaining]].map(([label,value])=>
@@ -422,8 +426,8 @@ function purchasePanel(){
     spendingEconomies(match).map(id=>btn(id==='British'?'Europe':'Pacific','wallet','secondary',
     'data-id="'+id+'" aria-pressed="'+(wallet===id)+'"')).join('')+'</div>';
   if(!plan.allowed)return html+'<p class="hint">This economy’s capital is occupied. Its treasury is closed.</p>';
-  html+='<div class="order-tools">'+(china?'':('<select id="buyGroup" aria-label="Order category">'+categories.map(c=>
-    '<option '+(group===c?'selected':'')+'>'+c+'</option>').join('')+'</select>'))+
+  html+='<div class="order-tools"><select id="buyGroup" aria-label="Order category">'+categories.map(c=>
+    '<option '+(group===c?'selected':'')+'>'+c+'</option>').join('')+'</select>'+
     btn('View order','inspect-order')+'</div>';
   if(group==='Repairs'){
     const ships=eligibleShipRepairs(match);
@@ -435,10 +439,13 @@ function purchasePanel(){
   }
   if(china)html+='<p class="hint">Burma Road '+(plan.roadOpen?'open · Infantry and artillery available.':'closed · Infantry available.')+'</p>';
   else if(group!=='Facilities')html+='<p class="hint">'+(group==='Sea'?'Coastal production · '+plan.seaCount+' of '+plan.coastalCapacity:'Production · '+plan.combatCount+' of '+plan.capacity)+' slots ordered</p>';
-  const units=china?(plan.roadOpen?['infantry','artillery']:['infantry']):purchaseGroups[group];
-  html+=units.map(unit=>orderRow({unit,name:globalUnits[unit][0],caption:globalUnits[unit][1]+' IPCs',
-    quantity:plan.orders[unit]||0,plus:plan.limits[unit]})).join('');
-  if(group==='Facilities')html+=plan.upgrades.map(site=>orderRow({unit:'upgrade',name:'Upgrade · '+site.name,
+  for(const category of group==='All'?unitGroups:[group]){
+    if(group==='All'&&unitGroups.length>1)html+=block(category);
+    const units=china?(plan.roadOpen?['infantry','artillery']:['infantry']):purchaseGroups[category];
+    html+=units.map(unit=>orderRow({unit,name:globalUnits[unit][0],caption:globalUnits[unit][1]+' IPCs',
+      quantity:plan.orders[unit]||0,plus:plan.limits[unit]})).join('');
+  }
+  if(group==='Facilities'||group==='All')html+=plan.upgrades.map(site=>orderRow({unit:'upgrade',name:'Upgrade · '+site.name,
     caption:site.ready?'Minor to major · 20 IPCs':'Fully repair this complex first',quantity:Number(site.selected),
     plus:!site.selected&&site.ready&&plan.remaining>=20,facility:site.name,operation:'facility-order'})).join('');
   return html;

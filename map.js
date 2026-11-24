@@ -386,7 +386,7 @@ const neutralPatterns={
   axis:{ink:'var(--neutral-warm-gray)',paper:'var(--neutral-warm-gray-paper)',code:'AX',width:9,height:12,lines:'M4.5 1V9',weight:1.55}
 };
 const neutralStyleKey={Neutral_True:'strict',Mongolians:'strict',Neutral_Allies:'allies',Neutral_Axis:'axis',Joined_Allies:'allies',Joined_Axis:'axis'};
-function styleFor(nation){
+export function styleFor(nation){
   const kind=neutralStyleKey[neutralKey(nation)];
   if(kind){const style=neutralPatterns[kind];return {...style,counter:style.ink,hatch:'neutral-'+kind};}
   return ownerStyle[nation]||ownerStyle.Neutral;
