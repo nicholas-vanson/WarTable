@@ -151,7 +151,7 @@ if(route==='global'||route.startsWith('exercise/')&&Object.hasOwn(exercises,rout
         event.preventDefault();selectTab(tabs[next]);tabs[next].focus();
       };
     });
-    const phases={briefing:'Opening briefing',purchase:'Purchase & Repair',combatMove:'Combat Move',conductCombat:'Conduct Combat',combatReview:'Combat Review'};
+    const phases={briefing:'Turn briefing',purchase:'Purchase & Repair',combatMove:'Combat Move',conductCombat:'Conduct Combat',combatReview:'Combat Review'};
     const summary=el('campaignSummary');
     const defaultSummary=summary.textContent;
     let setupSnapshot;

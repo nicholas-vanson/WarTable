@@ -28,9 +28,24 @@ export function startGlobalPlaytest(setup,controllers){
   match.phase='briefing';
   return match;
 }
+const turnOrder=Object.keys(globalPowers);
+export function seasonForRound(round){
+  const index=round-1,year=1940+Math.floor(index/4);
+  const season=['Spring','Summer','Autumn','Winter'][index%4];
+  return season+' '+year+(index%4===3?'–'+String(year+1).slice(-2):'');
+}
+export function nextPower(power){
+  return turnOrder[(turnOrder.indexOf(power)+1)%turnOrder.length];
+}
+export function nextPlaytestTurn(match){
+  if(match.phase!=='combatReview'||match.combat?.game.phase!=='review')throw Error('Complete combat before handing over the turn.');
+  const power=nextPower(match.power);
+  const review={power:match.power,round:match.round,record:match.combat.game.record};
+  return {...match,power,round:match.round+Number(power===turnOrder[0]),phase:'briefing',
+    turnReviews:[...(match.turnReviews||[]),review],combat:null,combatStart:null,combatStartPactBroken:!!match.mongolianPactBroken,briefingPanelHidden:false};
+}
 export function openingAddress(match,seat){
-  if(seat===match.controllers[match.power])return 'You command '+globalPowers[match.power]+'.';
-  const powers=Object.keys(globalPowers).filter(power=>match.controllers[power]===seat);
+  const powers=seat===match.controllers[match.power]?[match.power]:turnOrder.filter(power=>match.controllers[power]===seat);
   const names=powers.map(power=>({British:'the United Kingdom',Americans:'the United States',Russians:'the Soviet Union'}[power]||globalPowers[power]));
   return names.length?'You command '+new Intl.ListFormat('en').format(names)+'.':'You are observing this game.';
 }
@@ -94,12 +109,16 @@ export function prepareGlobalBoard(setup,atlas,match){
     ['Tokyo','Japan',139.69,35.68,'Japan'],['Shanghai','Kiangsu',121.47,31.23],['Hong Kong','Kwangtung',114.17,22.32],
     ['Manila','Philippines',120.98,14.6],['Calcutta','India',88.36,22.57,'UK Pacific'],['Sydney','New South Wales',151.21,-33.87,'ANZAC']
   ].map(([name,region,lon,lat,capitalOf])=>({name,territory:ids[region],lon,lat,point:sectors[region].city,capitalOf}));
-  const [x,y]=sectors.Germany.center;
+  const home={Germans:'Germany',Russians:'Russia',Japanese:'Japan',Americans:'Eastern United States',Chinese:'Szechwan',
+    British:'United Kingdom',Italians:'Southern Italy',ANZAC:'New South Wales',French:'France'}[match.power];
+  const [x,y]=sectors[home].center;
   const camera={x,y,z:.7*projection.detailScale,surveyZoom:true};
   const exercise={name:'Global 1940',attacker,defender:'France',camera,forces,shapes,cities,world:true,projection,neighbors,neutralEntry,unmovedLand};
   exercises.global=exercise;
   let openingView;
-  if(match.phase==='briefing'){
+  if(match.phase==='briefing'&&match.power!=='Germans'){
+    openingView={...camera,z:.72,projection:projection.id};
+  }else if(match.phase==='briefing'){
     // Fit the opening theater in the map's 650 by 480 reference viewport.
     const landmarks=['United Kingdom','France','Novgorod','Russia'].map(name=>sectors[name].city);
     const xs=landmarks.map(point=>point[0]),ys=landmarks.map(point=>point[1]);

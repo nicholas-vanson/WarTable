@@ -1,6 +1,6 @@
 import {ordersPanelKey,reducedMotion} from './preferences.js';
 import {neutralKey,strictKey,allianceOf,hostileNeutral,activationOptions,activateFriendly} from './neutral-rules.js';
-import {globalKey,loadGlobalBoard,saveGlobalPosition,openingAddress,globalUnits,boardUnitType,globalPowers,ownerNames} from './global-game.js';
+import {globalKey,loadGlobalBoard,saveGlobalPosition,openingAddress,seasonForRound,nextPower,nextPlaytestTurn,globalUnits,boardUnitType,globalPowers,ownerNames} from './global-game.js';
 import {places,stats,types,exercises,adjectives,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,rollAttack,rollDefense,casualties,retreat,theaterVictoryCities} from './rules.js';
 import {drawFormationNames} from './formation-names.js';
 import {atlas} from './map.js';
@@ -133,10 +133,10 @@ function unitLine(units,nation){
   return Object.keys(units).filter(k=>units[k]>0).map(k=>unitCounter(k,units[k],nation)).join(' ')||'no units';
 }
 // The local journal stores sentences. Render counts in existing saved reviews as counters too.
-function reviewDetail(detail){
+function reviewDetail(detail,attacking=attacker,defending=defender){
   return detail.split('; ').map(clause=>{
     // Historic records identify losses by country within each clause.
-    const nation=clause.startsWith(defender+' held')||clause.startsWith(defender+':')?defender:attacker;
+    const nation=clause.startsWith(defending+' held')||clause.startsWith(defending+':')?defending:attacking;
     return esc(clause).replace(/\b(\d+) (infantry|tanks?)\b/g,(_,n,name)=>unitCounter(name==='infantry'?'inf':'tank',Number(n),nation));
   }).join('; ');
 }
@@ -215,10 +215,10 @@ function planPanel(){
   if(!ui.to&&!ui.stack)$('action').innerHTML='<button class="primary" id="hold" '+(s.orders.length||isGlobal?'':'disabled')+'>'+(isGlobal&&!s.orders.length?'Hold to finish combat moves':'Hold to commit attacks')+'</button>';
   return html;
 }
-function rollCard(rolls,side,play){
+function rollCard(rolls,side,play,attacking=attacker,defendingNation=s.owners[s.active]||defender){
   const defendingPowers=[...new Set(rolls.map(d=>d.power).filter(Boolean))];
-  const defending=ownerNames[defendingPowers[0]]||s.owners[s.active]||defender;
-  const label=side==='attack'?adjectives[attacker]+' attack':defendingPowers.length>1?'Allied defense':(adjectives[defending]||defending)+' defense';
+  const defending=ownerNames[defendingPowers[0]]||defendingNation;
+  const label=side==='attack'?adjectives[attacking]+' attack':defendingPowers.length>1?'Allied defense':(adjectives[defending]||defending)+' defense';
   let hits=0;
   const groups=Object.keys(stats).map(type=>{
     const group=rolls.filter(d=>d.type===type);
@@ -238,7 +238,7 @@ function rollCard(rolls,side,play){
         if(stage==='rolling')return dieFace(d,1+(play.frame+i*2)%6,stage);
         return dieFace(d,d.face,stage);
       }).join('');
-      const threshold=stats[type][side],nation=ownerNames[power]||(side==='attack'?attacker:defender);
+      const threshold=stats[type][side],nation=ownerNames[power]||(side==='attack'?attacking:defending);
       const heading=(powers.length>1?esc(nation)+' · ':'')+'Hits on '+(threshold===1?'1':'1–'+threshold);
       return '<div class="roll-unit" data-unit="'+type+'" data-stage="'+stage+'">'+
         unitCounter(type,power?nationalRolls.length:undefined,nation)+'<small>'+heading+'</small><div class="dice-row">'+dice+'</div></div>';
@@ -247,9 +247,9 @@ function rollCard(rolls,side,play){
   const total=play&&play.index===0&&play.stage!=='marked'?'Rolling…':hits+' '+(hits===1?'hit':'hits');
   return '<section class="roll-card" data-side="'+side+'"><h4>'+label+'<span>'+total+'</span></h4>'+groups+'</section>';
 }
-function rollsBox(dice,play=null){
+function rollsBox(dice,play=null,attacking=attacker,defending=s.owners[s.active]||defender){
   if(!dice)return '';
-  return ['attack','defense'].filter(side=>dice[side]).map(side=>rollCard(dice[side],side,play?.side===side?play:null)).join('');
+  return ['attack','defense'].filter(side=>dice[side]).map(side=>rollCard(dice[side],side,play?.side===side?play:null,attacking,defending)).join('');
 }
 // The game has already rolled and saved. Only the presentation is timed.
 let playback=null,rollTimer;
@@ -288,14 +288,14 @@ function advanceRoll(){
   if($('rollStatus').textContent!==note)$('rollStatus').textContent=note;
   rollTimer=setTimeout(advanceRoll,delay);
 }
-function forceColumns(attack,defense,defendingNation,metric='total',armies=null){
+function forceColumns(attack,defense,defendingNation,metric='total',armies=null,attacking=attacker){
   function column(role,nation,units){
     const icons=Object.keys(units).filter(k=>units[k]>0).map(k=>unitCounter(k,units[k],nation)).join(' ');
     return '<span class="battle-column"><span class="force-heading"><small>'+role+'</small> <strong>'+nation+'</strong></span>'+
       '<span class="force-strength">'+icons+'<span class="force-total">'+count(units)+' '+metric+'</span></span></span>';
   }
   const sides=armies&&Object.keys(armies).length?'<span class="battle-column">'+Object.entries(armies).map(([nation,army])=>column('Defending',nation,army)).join('')+'</span>':column('Defending',defendingNation,defense);
-  return column('Attacking',attacker,attack)+sides;
+  return column('Attacking',attacking,attack)+sides;
 }
 function updateBattleForces(){
   const b=currentBattle(s),header=$('battleForces');
@@ -357,14 +357,14 @@ function savedRoundLosses(entry){
   }
   return {attack:readUnits(sides[1]),defense:readUnits(sides[2])};
 }
-function timeline(){
-  return s.record.map(e=>{
+function timeline(record=s.record,attacking=attacker){
+  return record.map(e=>{
     const heading=esc(e.title);
-    if(!e.dice)return '<div class="review-item"><strong>'+heading+'</strong><p>'+reviewDetail(e.detail)+'</p></div>';
+    if(!e.dice)return '<div class="review-item"><strong>'+heading+'</strong><p>'+reviewDetail(e.detail,attacking,e.defender||defender)+'</p></div>';
     const losses=savedRoundLosses(e);
-    const breakdown=losses?'<div class="force-columns">'+forceColumns(losses.attack,losses.defense,e.defender||defender,'lost',Object.fromEntries(Object.entries(e.nationalLosses||{}).map(([p,a])=>[ownerNames[p]||p,a])))+'</div>':
-      '<p>'+reviewDetail(e.detail)+'</p>';
-    return '<details class="review-item review-round"><summary>'+heading+'</summary>'+breakdown+rollsBox(e.dice)+'</details>';
+    const breakdown=losses?'<div class="force-columns">'+forceColumns(losses.attack,losses.defense,e.defender||defender,'lost',Object.fromEntries(Object.entries(e.nationalLosses||{}).map(([p,a])=>[ownerNames[p]||p,a])),attacking)+'</div>':
+      '<p>'+reviewDetail(e.detail,attacking,e.defender||defender)+'</p>';
+    return '<details class="review-item review-round"><summary>'+heading+'</summary>'+breakdown+rollsBox(e.dice,null,attacking,e.defender||defender)+'</details>';
   }).join('');
 }
 let stopHold=()=>{};
@@ -403,11 +403,11 @@ function render(){
   stopHold();$('action').innerHTML='';
   const briefing=inBriefing();
   $('exerciseBoard').classList.toggle('opening-briefing',briefing);
-  document.querySelector('.power-tab').textContent=briefing?'Opening briefing':attacker;
+  document.querySelector('.power-tab').textContent=briefing?'Turn briefing':attacker;
   if(briefing){
     const match=globalBoard.match;
     $('panel').innerHTML=ui.inspect?inspectionPanel('Back to briefing'):
-      '<h2>Spring 1940</h2><p class="briefing-round">Round '+match.round+' · '+attacker+' moves first</p>'+
+      '<h2>'+seasonForRound(match.round)+'</h2><p class="briefing-round">Round '+match.round+' · '+attacker+(match.power==='Germans'?' moves first':' to move')+'</p>'+
       '<p class="briefing-address">'+esc(openingAddress(match,match.controllers[match.power]))+' Survey the board, then begin your turn when you’re ready.</p>';
     $('action').innerHTML=btn('Begin '+attacker+'’s turn','begin-turn','primary');
   }else if(s.phase==='plan')$('panel').innerHTML=planPanel();
@@ -418,7 +418,7 @@ function render(){
       $('panel').innerHTML=friendlyMovesPanel();$('action').innerHTML=btn('Back to combat review','clear');
     }else{
       const canActivate=isGlobal&&Object.keys(s.owners).some(to=>activationOptions(s,to).length);
-      $('action').innerHTML=(canActivate?btn('Friendly neutral moves','open-activation'):'')+btn(isGlobal?'Restart combat':'Start another exercise','reset');
+      $('action').innerHTML=(canActivate?btn('Friendly neutral moves','open-activation'):'')+(isGlobal?btn('End turn · '+globalPowers[nextPower(s.power)]+' next','end-turn','primary'):btn('Start another exercise','reset'));
     }
   }
   updateBattleForces();
@@ -439,6 +439,17 @@ function showDialog(heading,html){
 document.addEventListener('click',e=>{
   const b=e.target.closest('button[data-act]');if(!b)return;
   const {act,id,k,n}=b.dataset;
+  if(act==='end-turn'&&isGlobal){
+    try{
+      if(localStorage.getItem(key)!==lastGlobalSave){location.reload();return;}
+      const next=nextPlaytestTurn(globalBoard.match);
+      localStorage.setItem(key,JSON.stringify(next));
+      location.reload();
+    }catch(error){
+      message='Could not hand over the turn. '+error.message;render();
+    }
+    return;
+  }
   run(()=>{
     switch(act){
       case 'begin-turn':
@@ -492,11 +503,19 @@ document.addEventListener('click',e=>{
 });
 $('exerciseMenu').onclick=()=>{location.hash='';};
 document.querySelector('.theater').textContent=exercise.name;
-const combatMapLabel='Pan or pinch the map. Select a unit from '+attacker+' and a destination controlled by '+defender+'.';
+const combatMapLabel='Pan or pinch the map. Select a unit from '+attacker+' and an eligible destination.';
 $('map').setAttribute('aria-label',inBriefing()?'Opening board. Pan or pinch the map and select a territory or force to inspect.':combatMapLabel);
 $('controlKey').innerHTML=(isGlobal?[attacker]:[attacker,defender]).map(n=>'<i data-nation="'+n+'"></i>'+n).join(' ');
 $('closeDialog').onclick=()=>$('dialog').close();
-$('journal').onclick=()=>showDialog(isGlobal?'Combat review':'Exercise review',(s.phase==='review'?timeline():'<p>The record opens after the last battle. It includes committed attacks, dice, casualties, retreats, and control of each territory.</p>'));
+$('journal').onclick=()=>{
+  const current=s.phase==='review'?timeline()||'<p>No combat was recorded.</p>':'<p>The current combat review opens after all battles are resolved.</p>';
+  const previous=(globalBoard?.match.turnReviews||[]).slice().reverse().map(turn=>{
+    const nation=globalPowers[turn.power];
+    return '<details class="review-item review-round"><summary>'+seasonForRound(turn.round)+' · '+nation+'</summary>'+
+      (timeline(turn.record,nation)||'<p>No combat was recorded.</p>')+'</details>';
+  }).join('');
+  showDialog(isGlobal?'Game review':'Exercise review',current+previous);
+};
 $('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. '+(isGlobal?'The global map wraps east and west across the Americas. ':'')+'Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The national color fades inward from the hatched border. Neutral hatching slopes up to the right across the whole territory. Single grey lines mark strict neutrals, paired lines mark pro-Allied neutrals, and dashed lines mark pro-Axis neutrals. Grey stippling marks impassable terrain. Units cannot enter or cross these spaces. A committed strict-neutral invasion changes the other eligible strict neutrals immediately. Friendly neutrals can be activated after combat. Tap a territory to mark it in violet and read its status. Tap it again to clear the selection. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><details class="unit-key"><summary>Unit symbols</summary><ul>'+Object.entries(globalUnits).map(([type,[name]])=>'<li>'+unitCounter(boardUnitType(type),undefined,attacker)+' '+name+'</li>').join('')+'</ul></details><h3>Plan an attack</h3><p>Select a stack on the map, adjust the quantity, then tap a highlighted enemy territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this board</h3><p>'+ (isGlobal?'Global 1940 uses the opening forces of all nine powers. Tap any territory or counter to inspect it. Infantry and armor can plan adjacent land attacks against powers already at war.':'This local exercise covers adjacent land attacks with infantry and tanks. The forces are arranged for testing.')+'</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+(isGlobal?'<p>Inland China terrain data courtesy of Mapzen, the U.S. Geological Survey and NOAA. Rivers and lakes from Natural Earth.</p>'+btn('Local players','players','secondary')+(inBriefing()?'':btn('Restart combat','reset','danger')):btn('Restart exercise','reset','danger')));
 // Store the two panel dimensions separately so rotating the phone restores the last fit.
 function setupOrdersPanel(){

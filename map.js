@@ -760,7 +760,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     const name=node('text',{x:left?-8:8,y:3,'text-anchor':left?'end':'start',fill:'#443c30',
       'font-family':'Georgia,serif','font-size':9,'font-weight':700,stroke:'#f3ecd7','stroke-width':2,'paint-order':'stroke'},city.name);
     mark.append(name);labelGroup.append(mark);
-    return {mark,name,x,y,openingCapital:['London','Paris','Berlin','Moscow'].includes(city.name)};
+    return {mark,name,x,y,openingCapital:exercise.attacker==='Germany'?['London','Paris','Berlin','Moscow'].includes(city.name):city.capitalOf===exercise.attacker};
   });
   const detailPlate=map.querySelector('#detailPlate');
   const landLabels=buildLandLabels(map,labelGroup,exercise);
