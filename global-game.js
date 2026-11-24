@@ -22,6 +22,18 @@ export function startGlobalMatch(setup,controllers){
     treasury:{...setup.treasury},draft:{},mobilization:{},board:Object.fromEntries(
       Object.entries(setup.regions).map(([name,r])=>[name,{owner:r.owner,units:r.units.map(stack=>[...stack])}]))};
 }
+// The local playtest enters combat after the player surveys the opening board.
+export function startGlobalPlaytest(setup,controllers){
+  const match=startGlobalMatch(setup,controllers);
+  match.phase='briefing';
+  return match;
+}
+export function openingAddress(match,seat){
+  if(seat===match.controllers[match.power])return 'You command '+globalPowers[match.power]+'.';
+  const powers=Object.keys(globalPowers).filter(power=>match.controllers[power]===seat);
+  const names=powers.map(power=>({British:'the United Kingdom',Americans:'the United States',Russians:'the Soviet Union'}[power]||globalPowers[power]));
+  return names.length?'You command '+new Intl.ListFormat('en').format(names)+'.':'You are observing this game.';
+}
 export function purchaseTotal(draft){
   return Object.entries(draft).reduce((sum,[unit,n])=>sum+n*globalUnits[unit][1],0);
 }
@@ -86,7 +98,17 @@ export function prepareGlobalBoard(setup,atlas,match){
   const camera={x,y,z:.7*projection.detailScale,surveyZoom:true};
   const exercise={name:'Global 1940',attacker,defender:'France',camera,forces,shapes,cities,world:true,projection,neighbors,neutralEntry,unmovedLand};
   exercises.global=exercise;
-  return {exercise,game:{version:1,exercise:'global',phase:'plan',mongolianPactBroken:!!match.mongolianPactBroken,power:match.power,units,owners,pieces,orders:[],battles:[],active:null,record:[]}};
+  let openingView;
+  if(match.phase==='briefing'){
+    // Fit the opening theater in the map's 650 by 480 reference viewport.
+    const landmarks=['United Kingdom','France','Novgorod','Russia'].map(name=>sectors[name].city);
+    const xs=landmarks.map(point=>point[0]),ys=landmarks.map(point=>point[1]);
+    const left=Math.min(...xs)-360,right=Math.max(...xs)+360;
+    const top=Math.min(...ys)-320,bottom=Math.max(...ys)+320;
+    openingView={x:(left+right)/2,y:(top+bottom)/2,z:projection.detailScale*Math.min(650/(right-left),480/(bottom-top)),
+      surveyZoom:true,projection:projection.id};
+  }
+  return {exercise,openingView,game:{version:1,exercise:'global',phase:'plan',mongolianPactBroken:!!match.mongolianPactBroken,power:match.power,units,owners,pieces,orders:[],battles:[],active:null,record:[]}};
 }
 export function saveGlobalPosition(match,game){
   match.mongolianPactBroken=!!game.mongolianPactBroken;
@@ -105,7 +127,7 @@ export async function loadGlobalBoard(){
   const setup=await loadGlobalSetup();
   const sectors=await (await fetch('./assets/world-sectors.json')).json();
   const saved=localStorage.getItem(globalKey);
-  const match=saved?JSON.parse(saved):startGlobalMatch(setup,Object.fromEntries(Object.keys(globalPowers).map(k=>[k,1])));
+  const match=saved?JSON.parse(saved):startGlobalPlaytest(setup,Object.fromEntries(Object.keys(globalPowers).map(k=>[k,1])));
   if(match.version!==1||!match.board?.Germany)throw Error('The saved global match could not be opened.');
   match.combatStart??=structuredClone(match.board);
   match.combatStartPactBroken??=!!match.mongolianPactBroken;

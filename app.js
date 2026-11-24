@@ -1,6 +1,6 @@
 import {ordersPanelKey,reducedMotion} from './preferences.js';
 import {neutralKey,strictKey,allianceOf,hostileNeutral,activationOptions,activateFriendly} from './neutral-rules.js';
-import {globalKey,loadGlobalBoard,saveGlobalPosition,globalUnits,boardUnitType,globalPowers,ownerNames} from './global-game.js';
+import {globalKey,loadGlobalBoard,saveGlobalPosition,openingAddress,globalUnits,boardUnitType,globalPowers,ownerNames} from './global-game.js';
 import {places,stats,types,exercises,adjectives,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,rollAttack,rollDefense,casualties,retreat,theaterVictoryCities} from './rules.js';
 import {drawFormationNames} from './formation-names.js';
 import {atlas} from './map.js';
@@ -20,6 +20,8 @@ try{
   const saved=isGlobal?globalBoard.match.combat:JSON.parse(localStorage.getItem(key)||'null');
   if(saved?.game?.version===1&&(saved.game.exercise||'west')===exerciseId){s=saved.game;ui={...freshUI(),...saved.ui};view=saved.view;layoutSeed=saved.layoutSeed??0;}
 }catch{message='The saved exercise could not be read. A new exercise is open.';}
+const inBriefing=()=>globalBoard?.match.phase==='briefing';
+view??=globalBoard?.openingView??null;
 function nameFormations(){
   if(s.formationNames)return;
   const areas={...exercisePlaces};
@@ -41,8 +43,11 @@ function save(){
     if(isGlobal){
       if(localStorage.getItem(key)!==lastGlobalSave){location.reload();return;}
       const match=globalBoard.match;
-      saveGlobalPosition(match,s);match.combat=snapshot;
-      match.phase=s.phase==='plan'?'combatMove':s.phase==='combat'?'conductCombat':'combatReview';
+      if(!inBriefing()){
+        saveGlobalPosition(match,s);
+        match.phase=s.phase==='plan'?'combatMove':s.phase==='combat'?'conductCombat':'combatReview';
+      }
+      match.combat=snapshot;
       const serialized=JSON.stringify(match);
       localStorage.setItem(key,serialized);lastGlobalSave=serialized;
     }else localStorage.setItem(key,JSON.stringify(snapshot));
@@ -76,6 +81,14 @@ function selectTarget(id){
 }
 function pick(id,type,origin,nation){
   if(!id){run(()=>{ui=freshUI();});return;}
+  if(inBriefing()){
+    run(()=>{
+      const deselect=ui.inspect===id&&type===ui.inspectedType&&nation===ui.inspectedNation;
+      ui=freshUI();
+      if(!deselect)Object.assign(ui,{inspect:id,inspectedType:type,inspectedNation:nation,inspectedOrigin:origin});
+    });
+    return;
+  }
   if(s.phase==='plan'){run(()=>{
     if(!type&&(ui.to||ui.inspect||ui.from)===id){ui=freshUI();return;}
     if(isGlobal&&ui.inspect===id&&type&&type===ui.inspectedType&&nation===ui.inspectedNation){ui=freshUI();return;}
@@ -162,6 +175,20 @@ function plannedAttacks(){
   }
   return html;
 }
+function inspectionPanel(backLabel){
+  const id=ui.inspect,place=places[id];
+  const origin=ui.inspectedOrigin||id,nation=ui.inspectedNation||s.owners[id];
+  const name=(ui.inspectedType&&s.formationNames[nation===places[origin].owner?origin:origin+'/'+nation]?.[ui.inspectedType])||
+    (ui.inspectedType?(stats[ui.inspectedType]?.name||globalUnits[ui.inspectedType]?.[0]):place.name);
+  const status=neutralKey(s.owners[id]);
+  let note='';
+  if(place.blocked)note='Units cannot enter, cross, or occupy this terrain.';
+  else if(strictKey(status))note='An invasion brings the remaining eligible strict neutrals into the opposing camp.';
+  else if(status?.startsWith('Joined_'))note='Uncontrolled. The surviving garrison stays here until a friendly power takes control.';
+  else if(status)note=hostileNeutral(s.power,status)?'The standing army defends this territory against an invasion.':'An eligible friendly land unit can enter during noncombat movement to take control and mobilize the standing army.';
+  return title(esc(name||place.name),place.blocked?'Impassable terrain':esc((ui.inspectedNation||s.owners[id])+' · '+place.name))+
+    (note?'<p class="hint">'+note+'</p>':'')+(place.blocked?'':boardGarrison(id))+btn(backLabel,'clear');
+}
 function planPanel(){
   let html=title('Combat move','Tap a unit stack on the map to plan an attack.');
   if(ui.to){
@@ -177,18 +204,7 @@ function planPanel(){
       '<div class="actions">'+btn('Deselect stack','clear')+'</div>';
   }
   if(isGlobal&&ui.inspect&&!ui.stack&&!ui.to){
-    const id=ui.inspect,place=places[id];
-    const origin=ui.inspectedOrigin||id,nation=ui.inspectedNation||s.owners[id];
-    const name=(ui.inspectedType&&s.formationNames[nation===places[origin].owner?origin:origin+'/'+nation]?.[ui.inspectedType])||
-      (ui.inspectedType?(stats[ui.inspectedType]?.name||globalUnits[ui.inspectedType]?.[0]):place.name);
-    const status=neutralKey(s.owners[id]);
-    let note='';
-    if(place.blocked)note='Units cannot enter, cross, or occupy this terrain.';
-    else if(strictKey(status))note='An invasion brings the remaining eligible strict neutrals into the opposing camp.';
-    else if(status?.startsWith('Joined_'))note='Uncontrolled. The surviving garrison stays here until a friendly power takes control.';
-    else if(status)note=hostileNeutral(s.power,status)?'The standing army defends this territory against an invasion.':'An eligible friendly land unit can enter during noncombat movement to take control and mobilize the standing army.';
-    html=title(esc(name||place.name),place.blocked?'Impassable terrain':esc((ui.inspectedNation||s.owners[id])+' · '+place.name))+
-      (note?'<p class="hint">'+note+'</p>':'')+(place.blocked?'':boardGarrison(id))+btn('Back to orders','clear');
+    html=inspectionPanel('Back to orders');
   }
   if(!ui.to&&s.orders.length){
     html+=plannedAttacks();
@@ -385,7 +401,16 @@ function friendlyMovesPanel(){
 let panelView;
 function render(){
   stopHold();$('action').innerHTML='';
-  if(s.phase==='plan')$('panel').innerHTML=planPanel();
+  const briefing=inBriefing();
+  $('exerciseBoard').classList.toggle('opening-briefing',briefing);
+  document.querySelector('.power-tab').textContent=briefing?'Opening briefing':attacker;
+  if(briefing){
+    const match=globalBoard.match;
+    $('panel').innerHTML=ui.inspect?inspectionPanel('Back to briefing'):
+      '<h2>Spring 1940</h2><p class="briefing-round">Round '+match.round+' · '+attacker+' moves first</p>'+
+      '<p class="briefing-address">'+esc(openingAddress(match,match.controllers[match.power]))+' Survey the board, then begin your turn when you’re ready.</p>';
+    $('action').innerHTML=btn('Begin '+attacker+'’s turn','begin-turn','primary');
+  }else if(s.phase==='plan')$('panel').innerHTML=planPanel();
   else if(s.phase==='combat')$('panel').innerHTML=battlePanel();
   else{
     $('panel').innerHTML=title(isGlobal?'Combat review':'Exercise review','Committed attacks and resolved outcomes.')+timeline();
@@ -397,12 +422,12 @@ function render(){
     }
   }
   updateBattleForces();
-  const nextView=[s.phase,s.active,currentBattle(s)?.step,ui.from,ui.to,ui.stack].join('|');
+  const nextView=[briefing,ui.inspect,s.phase,s.active,currentBattle(s)?.step,ui.from,ui.to,ui.stack].join('|');
   if(panelView!==nextView)document.querySelector('.panel-scroll').scrollTop=0;
   panelView=nextView;
   $('notice').textContent=message;
   if(message&&$('ordersPanel').hidden)$('openPanel').click();
-  draw(s,ui.inspect||ui.from,ui.to,ui.stack||ui.inspectedType,layoutSeed,ui.stack?null:ui.inspectedNation);bindHold();
+  draw(s,ui.inspect||ui.from,ui.to,ui.stack||ui.inspectedType,layoutSeed,ui.stack?null:ui.inspectedNation,briefing);bindHold();
 }
 function showDialog(heading,html){
   $('dialogTitle').textContent=heading;
@@ -416,6 +441,12 @@ document.addEventListener('click',e=>{
   const {act,id,k,n}=b.dataset;
   run(()=>{
     switch(act){
+      case 'begin-turn':
+        if(inBriefing()){
+          globalBoard.match.phase='combatMove';ui=freshUI();applyPanel();
+          $('map').setAttribute('aria-label',combatMapLabel);
+        }
+        break;
       case 'open-activation': ui=freshUI();ui.activation=true;break;
       case 'activation-place': ui.inspect=id;break;
       case 'activate-neutral':
@@ -461,12 +492,12 @@ document.addEventListener('click',e=>{
 });
 $('exerciseMenu').onclick=()=>{location.hash='';};
 document.querySelector('.theater').textContent=exercise.name;
-document.querySelector('.power-tab').textContent=attacker;
-$('map').setAttribute('aria-label','Pan or pinch the map. Select a unit from '+attacker+' and a destination controlled by '+defender+'.');
+const combatMapLabel='Pan or pinch the map. Select a unit from '+attacker+' and a destination controlled by '+defender+'.';
+$('map').setAttribute('aria-label',inBriefing()?'Opening board. Pan or pinch the map and select a territory or force to inspect.':combatMapLabel);
 $('controlKey').innerHTML=(isGlobal?[attacker]:[attacker,defender]).map(n=>'<i data-nation="'+n+'"></i>'+n).join(' ');
 $('closeDialog').onclick=()=>$('dialog').close();
 $('journal').onclick=()=>showDialog(isGlobal?'Combat review':'Exercise review',(s.phase==='review'?timeline():'<p>The record opens after the last battle. It includes committed attacks, dice, casualties, retreats, and control of each territory.</p>'));
-$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. '+(isGlobal?'The global map wraps east and west across the Americas. ':'')+'Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The national color fades inward from the hatched border. Neutral hatching slopes up to the right across the whole territory. Single grey lines mark strict neutrals, paired lines mark pro-Allied neutrals, and dashed lines mark pro-Axis neutrals. Grey stippling marks impassable terrain. Units cannot enter or cross these spaces. A committed strict-neutral invasion changes the other eligible strict neutrals immediately. Friendly neutrals can be activated after combat. Tap a territory to mark it in violet and read its status. Tap it again to clear the selection. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><details class="unit-key"><summary>Unit symbols</summary><ul>'+Object.entries(globalUnits).map(([type,[name]])=>'<li>'+unitCounter(boardUnitType(type),undefined,attacker)+' '+name+'</li>').join('')+'</ul></details><h3>Plan an attack</h3><p>Select a stack on the map, adjust the quantity, then tap a highlighted enemy territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this board</h3><p>'+ (isGlobal?'Global 1940 uses the opening forces of all nine powers. Tap any territory or counter to inspect it. Infantry and armor can plan adjacent land attacks against powers already at war.':'This local exercise covers adjacent land attacks with infantry and tanks. The forces are arranged for testing.')+'</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+(isGlobal?'<p>Inland China terrain data courtesy of Mapzen, the U.S. Geological Survey and NOAA. Rivers and lakes from Natural Earth.</p>'+btn('Local players','players','secondary')+btn('Restart combat','reset','danger'):btn('Restart exercise','reset','danger')));
+$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. '+(isGlobal?'The global map wraps east and west across the Americas. ':'')+'Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The national color fades inward from the hatched border. Neutral hatching slopes up to the right across the whole territory. Single grey lines mark strict neutrals, paired lines mark pro-Allied neutrals, and dashed lines mark pro-Axis neutrals. Grey stippling marks impassable terrain. Units cannot enter or cross these spaces. A committed strict-neutral invasion changes the other eligible strict neutrals immediately. Friendly neutrals can be activated after combat. Tap a territory to mark it in violet and read its status. Tap it again to clear the selection. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><details class="unit-key"><summary>Unit symbols</summary><ul>'+Object.entries(globalUnits).map(([type,[name]])=>'<li>'+unitCounter(boardUnitType(type),undefined,attacker)+' '+name+'</li>').join('')+'</ul></details><h3>Plan an attack</h3><p>Select a stack on the map, adjust the quantity, then tap a highlighted enemy territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this board</h3><p>'+ (isGlobal?'Global 1940 uses the opening forces of all nine powers. Tap any territory or counter to inspect it. Infantry and armor can plan adjacent land attacks against powers already at war.':'This local exercise covers adjacent land attacks with infantry and tanks. The forces are arranged for testing.')+'</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+(isGlobal?'<p>Inland China terrain data courtesy of Mapzen, the U.S. Geological Survey and NOAA. Rivers and lakes from Natural Earth.</p>'+btn('Local players','players','secondary')+(inBriefing()?'':btn('Restart combat','reset','danger')):btn('Restart exercise','reset','danger')));
 // Store the two panel dimensions separately so rotating the phone restores the last fit.
 function setupOrdersPanel(){
   const main=document.querySelector('main'),sheet=$('ordersPanel'),grip=$('resizePanel');
@@ -484,7 +515,7 @@ function setupOrdersPanel(){
     return {axis,extent,min,max,coordinate:vertical?'clientY':'clientX'};
   }
   function apply(){
-    const collapsed=prefs.hidden===true;
+    const collapsed=inBriefing()?globalBoard.match.briefingPanelHidden===true:prefs.hidden===true;
     sheet.hidden=collapsed;open.hidden=!collapsed;main.classList.toggle('panel-closed',collapsed);
     hide.setAttribute('aria-expanded',String(!collapsed));
     main.style.gridTemplateColumns='';main.style.gridTemplateRows='';
@@ -501,7 +532,9 @@ function setupOrdersPanel(){
     grip.setAttribute('aria-valuenow',actual);grip.setAttribute('aria-valuetext',actual+' pixels '+(axis==='height'?'high':'wide'));
   }
   function toggle(collapsed){
-    prefs.hidden=collapsed;apply();persist();(collapsed?open:hide).focus({preventScroll:true});
+    if(inBriefing()){globalBoard.match.briefingPanelHidden=collapsed;save();}
+    else{prefs.hidden=collapsed;persist();}
+    apply();(collapsed?open:hide).focus({preventScroll:true});
   }
   hide.onclick=()=>toggle(true);open.onclick=()=>toggle(false);
   function sizeTo(pixels){
@@ -532,7 +565,8 @@ function setupOrdersPanel(){
   apply();
   const layoutObserver=new ResizeObserver(apply);
   layoutObserver.observe(main);layoutObserver.observe($('battleForces'));
+  return apply;
 }
-setupOrdersPanel();
+const applyPanel=setupOrdersPanel();
 render();
 try{draw=await atlas(pick,v=>{view=v;save();},view,exercise);render();save();}catch{message='The map could not load. Reopen the playtest while online to finish the download.';render();}

@@ -760,7 +760,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     const name=node('text',{x:left?-8:8,y:3,'text-anchor':left?'end':'start',fill:'#443c30',
       'font-family':'Georgia,serif','font-size':9,'font-weight':700,stroke:'#f3ecd7','stroke-width':2,'paint-order':'stroke'},city.name);
     mark.append(name);labelGroup.append(mark);
-    return {mark,name,x,y};
+    return {mark,name,x,y,openingCapital:['London','Paris','Berlin','Moscow'].includes(city.name)};
   });
   const detailPlate=map.querySelector('#detailPlate');
   const landLabels=buildLandLabels(map,labelGroup,exercise);
@@ -782,7 +782,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     }
     if(key)selection.setAttribute('transform','translate('+at.join(' ')+') scale('+tokenScale+')');
   }
-  let game=null,focus=null,target=null,selectedType=null,selectedNation=null;
+  let game=null,focus=null,target=null,selectedType=null,selectedNation=null,surveying=false;
   let view=initial&&(!exercise.world||initial.projection===exercise.projection.id)&&[initial.x,initial.y,initial.z].every(Number.isFinite)?{...initial}:{...exercise.camera};
   // Store zoom in Western Front survey units even though the printed projection
   // has more map units per comparable view. Older saves used raw board units.
@@ -830,9 +830,17 @@ export async function atlas(onPick,onView,initial,exercise) {
     const tokenScale=Math.min(1/scale,1.2*detailScale);
     const spread=bound(1/(1.2*scale*detailScale),.66,1);
     if(scale!==lastScale){
-      for(const {mark,name,x,y} of cityMarks){
-        mark.setAttribute('transform','translate('+x+' '+y+') scale('+bound(1/scale,.52,3.5)+')');
-        name.style.display=scale<.35?'none':'';
+      for(const {mark,name,x,y,openingCapital} of cityMarks){
+        const orient=surveying&&openingCapital&&view.z>=.28&&scale<.35;
+        const symbolScale=orient?1/scale:bound(1/scale,.52,3.5);
+        mark.setAttribute('transform','translate('+x+' '+y+') scale('+symbolScale+')');
+        name.style.display=orient||scale>=.35?'':'none';
+        if(openingCapital){
+          const left=name.textContent==='Paris'||(orient&&name.textContent==='Moscow');
+          name.setAttribute('x',left?-8:8);
+          name.setAttribute('text-anchor',left?'end':'start');
+          name.setAttribute('font-size',orient?11:9);
+        }
       }
       const width=bound(10/scale,3.2,16*detailScale);
       for(const {hatch,angle} of Object.values(ownerStyle)){
@@ -888,7 +896,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     forces.replaceChildren();
     for(const region of regions.children){
       const id=region.dataset.place;
-      const legal=game.phase==='plan'&&places[focus]?.targets.includes(id);
+      const legal=!surveying&&game.phase==='plan'&&places[focus]?.targets.includes(id);
       region.classList.toggle('selected-territory',id===selected);
       const outline=bands[id].selectedOutline;
       if(outline)outline.setAttribute('display',id===selected?'inline':'none');
@@ -1151,7 +1159,9 @@ export async function atlas(onPick,onView,initial,exercise) {
   button('recenter',()=>{view={...exercise.camera};});
   button('overview',()=>{const m=metrics();view={x:extent.left+extent.width/2,y:extent.top+extent.height/2,z:Math.min(m.w/extent.width,m.h/extent.height)/m.base};});
   new ResizeObserver(render).observe(map);
-  return (s,id,to,type,seed,nation)=>{
+  return (s,id,to,type,seed,nation,briefing=false)=>{
+    if(surveying!==briefing)lastScale=0;
+    surveying=briefing;
     if(seed!==layoutSeed){offsets=homeOffsets(seed);layoutSeed=seed;}
     if(s.active!==lastBattle){
       inspectedPlace=undefined;exerciseSea=null;lastBattle=s.active;

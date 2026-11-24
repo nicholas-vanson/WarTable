@@ -48,6 +48,11 @@ aside h2, dialog h2, aside h3, dialog h3, aside p, dialog p{margin:0}
 aside h2,dialog h2{font:600 31px/1.05 Georgia,serif;letter-spacing:-.045em}
 aside h2{margin:14px 0 5px}
 aside h3,dialog h3{font:600 18px/1.2 Georgia,serif;margin:16px 0 4px}
+.briefing-round{font:700 12px/1.5 var(--typewriter);color:#56634c}
+.briefing-address{margin-top:10px;max-width:38ch;font-size:15px;line-height:1.45}
+@media(max-width:650px) and (orientation:portrait){
+  main.opening-briefing:not(.panel-closed){grid-template-rows:minmax(0,1fr) clamp(215px,33%,280px)}
+}
 .hint,.review-item p{font-size:13px;line-height:1.45;color:#505949}
 .block-title{display:flex;align-items:center;gap:9px;margin:16px 0 6px}
 .block-title::after{content:'';flex:1;border-top:1px solid var(--sheet-rule)}

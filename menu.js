@@ -1,5 +1,5 @@
 import {exercises} from './rules.js';
-import {globalKey,globalPowers,loadGlobalSetup,startGlobalMatch} from './global-game.js';
+import {globalKey,globalPowers,loadGlobalSetup,startGlobalPlaytest} from './global-game.js';
 import {motionKey,ordersPanelKey,readMapPreferences,saveMapPreference} from './preferences.js';
 
 const launcher=document.getElementById('launcher');
@@ -151,7 +151,7 @@ if(route==='global'||route.startsWith('exercise/')&&Object.hasOwn(exercises,rout
         event.preventDefault();selectTab(tabs[next]);tabs[next].focus();
       };
     });
-    const phases={purchase:'Purchase & Repair',combatMove:'Combat Move',conductCombat:'Conduct Combat',combatReview:'Combat Review'};
+    const phases={briefing:'Opening briefing',purchase:'Purchase & Repair',combatMove:'Combat Move',conductCombat:'Conduct Combat',combatReview:'Combat Review'};
     const summary=el('campaignSummary');
     const defaultSummary=summary.textContent;
     let setupSnapshot;
@@ -184,8 +184,7 @@ if(route==='global'||route.startsWith('exercise/')&&Object.hasOwn(exercises,rout
           showError('The saved game changed in another window. Review your choice before starting.');return;
         }
         const seats=Object.fromEntries(Object.keys(globalPowers).map(power=>[power,1]));
-        const match=startGlobalMatch(setup,seats);
-        match.phase='combatMove';
+        const match=startGlobalPlaytest(setup,seats);
         localStorage.setItem(globalKey,JSON.stringify(match));
         location.hash='global';
       }catch{showError('The local game could not be started. Check device storage and reopen the playtest.');}
