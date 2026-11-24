@@ -113,9 +113,10 @@ function rollForce(force,mode,random) {
     const face=random(); return {type,face,hit:face<=stats[type][mode]};
   }));
 }
-function finishBattle(s,b,result){
+function finishBattle(s,b,result,heldBy){
   b.resolved=true;b.step='done';b.result=result;s.active=null;
-  s.record.push({title:places[b.to].name,detail:result});
+  if(heldBy)b.heldBy=heldBy;
+  s.record.push({title:places[b.to].name,detail:result,...(heldBy?{heldBy}:{})});
   if(s.battles.every(b=>b.resolved)){s.phase='review';settleMongolianPact(s);}
 }
 export function defenderLosses(force,hits){
@@ -154,7 +155,8 @@ function applyLosses(s,b,losses){
   if(!count(defenders)&&count(b.attack)){
     captureBattle(s,b,attacker);
   }else if(!count(b.attack)){
-    finishBattle(s,b,count(defenders)?defender+' held with '+describe(defenders)+'.':'Both forces lost. '+defender+' retains control.');
+    const survivors=s.pieces?.[b.to].filter(([,type,n])=>stats[type]&&n>0).map(row=>[...row]);
+    finishBattle(s,b,count(defenders)?defender+' held with '+describe(defenders)+'.':'Both forces lost. '+defender+' retains control.',survivors?.length?survivors:undefined);
   }else b.step='decision';
 }
 export function rollAttack(s,random=die){
@@ -162,6 +164,7 @@ export function rollAttack(s,random=die){
   check(b&&['ready','decision'].includes(b.step),'Resolve casualties before rolling again.');
   b.round++;
   b.dice={attack:rollForce(b.attack,'attack',random)};
+  if(s.pieces)b.dice.defendingPowers=[...new Set(s.pieces[b.to].filter(([,type,n])=>stats[type]&&n>0).map(([power])=>power))];
   b.step='defense';
 }
 export function rollDefense(s,random=die){

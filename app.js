@@ -1,6 +1,6 @@
 import {ordersPanelKey,reducedMotion} from './preferences.js';
 import {neutralKey,strictKey,allianceOf,hostileNeutral,activationOptions,activateFriendly} from './neutral-rules.js';
-import {globalKey,loadGlobalBoard,saveGlobalPosition,purchaseGroups,spendingEconomies,purchasePlan,eligibleShipRepairs,changePurchase,changeFacilityOrder,confirmPurchase,openingAddress,seasonForRound,nextPower,nextPlaytestTurn,globalUnits,boardUnitType,isFacility,globalPowers,ownerNames} from './global-game.js';
+import {globalKey,loadGlobalBoard,saveGlobalPosition,purchaseGroups,spendingEconomies,purchasePlan,eligibleShipRepairs,changePurchase,changeFacilityOrder,confirmPurchase,openingAddress,seasonForRound,nextPower,nextPlaytestTurn,globalUnits,boardUnitType,isFacility,globalPowers,ownerNames,nationalArmies} from './global-game.js';
 import {places,stats,types,exercises,adjectives,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,rollAttack,rollDefense,casualties,retreat,theaterVictoryCities} from './rules.js';
 import {drawFormationNames} from './formation-names.js';
 import {atlas,styleFor} from './map.js';
@@ -127,29 +127,38 @@ function opt(id,label,sub,code,act,selected=false){
 }
 function title(t,sub){return '<h2>'+t+'</h2><p class="hint">'+sub+'</p>';}
 function block(t){return '<div class="block-title">'+t+'</div>';}
+function combatColors(nation){
+  const palette=styleFor(nation);
+  return 'style="--combat-ink:'+palette.counter+';--combat-paper:'+palette.paper+'"';
+}
 function unitCounter(type,amount,nation){
   const name=stats[type]?.name||globalUnits[type]?.[0]||type;
   if(isFacility(type)){
     return '<span class="counter-face facility" role="img" aria-label="'+esc(name)+'" title="'+esc(name)+'"><svg viewBox="0 0 24 14" aria-hidden="true"><use href="#unit-'+esc(type)+'" width="24" height="14"/></svg></span>';
   }
   const label=amount===undefined?name:amount+' '+(type==='tank'&&amount!==1?'tanks':name.toLowerCase());
-  return '<span class="counter-face" data-nation="'+esc(nation||'')+'" role="img" aria-label="'+esc(label)+'" title="'+esc(label)+'"><svg class="symbol" viewBox="0 0 16 12" aria-hidden="true"><use href="#unit-'+esc(type)+'" width="16" height="12"/></svg>'+
+  return '<span class="counter-face" data-nation="'+esc(nation||'')+'" '+combatColors(nation)+' role="img" aria-label="'+esc(label)+'" title="'+esc(label)+'"><svg class="symbol" viewBox="0 0 16 12" aria-hidden="true"><use href="#unit-'+esc(type)+'" width="16" height="12"/></svg>'+
     (amount===undefined?'':'<b>'+amount+'</b>')+'</span>';
 }
 function unitLine(units,nation){
   return Object.keys(units).filter(k=>units[k]>0).map(k=>unitCounter(k,units[k],nation)).join(' ')||'no units';
 }
 // The local journal stores sentences. Render counts in existing saved reviews as counters too.
-function reviewDetail(detail,attacking=attacker,defending=defender){
+function reviewDetail(detail,attacking=attacker,heldBy){
+  if(detail.includes(' held with ')){
+    if(!heldBy)return esc(detail);
+    return esc(detail.split(' held with ')[0])+' held with '+Object.entries(nationalArmies(heldBy)).map(([nation,units])=>
+      esc(nation)+' '+unitLine(units,nation)).join(' · ');
+  }
   return detail.split('; ').map(clause=>{
     // Historic records identify losses by country within each clause.
-    const nation=clause.startsWith(defending+' held')||clause.startsWith(defending+':')?defending:attacking;
+    const nation=/^(?:Losses — )?([^:]+): /.exec(clause)?.[1]||attacking;
     return esc(clause).replace(/\b(\d+) (infantry|tanks?)\b/g,(_,n,name)=>unitCounter(name==='infantry'?'inf':'tank',Number(n),nation));
   }).join('; ');
 }
 const diePips=[[],[5],[1,9],[1,5,9],[1,3,7,9],[1,3,5,7,9],[1,3,4,6,7,9]];
-function dieFace(d,face,stage){
-  const label=stage==='rolling'?'Rolling':(d.power?(ownerNames[d.power]||d.power)+' ':'')+stats[d.type].name+' rolled '+face+(stage==='marked'?', '+(d.hit?'hit':'miss'):'');
+function dieFace(d,face,stage,nation){
+  const label=stage==='rolling'?'Rolling':nation+' '+stats[d.type].name+' rolled '+face+(stage==='marked'?', '+(d.hit?'hit':'miss'):'');
   const pips=diePips[face].map(pos=>'<i style="grid-area:'+Math.ceil(pos/3)+' / '+((pos-1)%3+1)+'"></i>').join('');
   return '<span role="img" aria-label="'+label+'" title="'+label+'" class="die '+(stage==='marked'&&d.hit?'hit':'miss')+'">'+pips+'</span>';
 }
@@ -157,12 +166,12 @@ function stepper(kind,values,limits,keys=types,min=0){
   return keys.map(k=>'<div class="stepper"><span>'+unitCounter(k,undefined,attacker)+'</span><button aria-label="Remove one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="-1" '+(values[k]<=min?'disabled':'')+'>−</button><output>'+values[k]+'</output><button aria-label="Add one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="1" '+(values[k]>=limits[k]?'disabled':'')+'>+</button></div>').join('');
 }
 function armiesAt(id,combatOnly=false){
-  const armies={};
-  for(const [p,t,n] of s.pieces?.[id]||[]){
-    if(!n||combatOnly&&!stats[t])continue;
-    const nation=ownerNames[p]||p,army=armies[nation]??={};army[t]=(army[t]||0)+n;
-  }
-  return armies;
+  const stacks=s.pieces?.[id]||[];
+  return nationalArmies(combatOnly?stacks.filter(([,type])=>stats[type]):stacks);
+}
+function targetUnits(id){
+  if(!s.pieces)return unitLine(s.units[id],s.owners[id]);
+  return Object.entries(armiesAt(id,true)).map(([nation,units])=>esc(nation)+' '+unitLine(units,nation)).join(' · ')||'no units';
 }
 function boardGarrison(id){
   const forces=[],facilities=new Set();
@@ -217,7 +226,7 @@ function planPanel(){
     html=title(unitCounter(ui.stack,undefined,s.owners[ui.from])+' '+esc(s.formationNames[ui.from][ui.stack]),stats[ui.stack].name+' · '+places[ui.from].name)+block('Units to move')+
       stepper('quantity',{[ui.stack]:ui.quantity},available(s,ui.from),[ui.stack],1)+
       block('Tap destination to plan move')+
-      places[ui.from].targets.map(id=>opt(id,places[id].name,unitLine(s.units[id],s.owners[id]),'↗','target')).join('')+
+      places[ui.from].targets.map(id=>opt(id,places[id].name,targetUnits(id),'↗','target')).join('')+
       '<div class="actions">'+btn('Deselect stack','clear')+'</div>';
   }
   if(isGlobal&&ui.inspect&&!ui.stack&&!ui.to){
@@ -232,10 +241,21 @@ function planPanel(){
   if(!ui.to&&!ui.stack)$('action').innerHTML='<button class="primary hold-to-confirm" id="hold" '+(s.orders.length||isGlobal?'':'disabled')+'>'+(isGlobal&&!s.orders.length?'Hold to finish combat moves':'Hold to commit attacks')+'</button>';
   return html;
 }
-function rollCard(rolls,side,play,attacking=attacker,defendingNation=s.owners[s.active]||defender){
-  const defendingPowers=[...new Set(rolls.map(d=>d.power).filter(Boolean))];
-  const defending=ownerNames[defendingPowers[0]]||defendingNation;
-  const label=side==='attack'?adjectives[attacking]+' attack':defendingPowers.length>1?'Allied defense':(adjectives[defending]||defending)+' defense';
+// Older rounds carry powers on individual dice. Exercises use the territorial defender.
+function defendingNations(dice,fallback){
+  const powers=dice?.defendingPowers||dice?.defense?.map(d=>d.power).filter(Boolean)||[];
+  const nations=[...new Set(powers.map(p=>ownerNames[p]||p))];
+  return nations.length?nations:fallback;
+}
+function rollLabel(nations,side){
+  const names=nations.map(n=>adjectives[n]||n);
+  return names.length?new Intl.ListFormat('en').format(names)+' '+side:side;
+}
+function liveDefenders(b){
+  return s.pieces?Object.keys(armiesAt(b.to,true)):[s.owners[b.to]];
+}
+function rollCard(rolls,side,play,nations){
+  const label=rollLabel(nations,side);
   let hits=0;
   const groups=Object.keys(stats).map(type=>{
     const group=rolls.filter(d=>d.type===type);
@@ -247,26 +267,30 @@ function rollCard(rolls,side,play,attacking=attacker,defendingNation=s.owners[s.
       if(index===play.index)stage=play.stage;
     }
     if(stage==='marked')hits+=group.filter(d=>d.hit).length;
-    const powers=[...new Set(group.map(d=>d.power))];
-    return powers.map(power=>{
-      const nationalRolls=group.filter(d=>d.power===power);
+    const byNation=new Map();
+    for(const die of group){
+      const nation=ownerNames[die.power]||die.power||nations[0];
+      if(!byNation.has(nation))byNation.set(nation,[]);
+      byNation.get(nation).push(die);
+    }
+    return [...byNation].map(([nation,nationalRolls])=>{
       const dice=nationalRolls.map((d,i)=>{
         if(stage==='waiting')return '<span class="die pending" aria-hidden="true"></span>';
-        if(stage==='rolling')return dieFace(d,1+(play.frame+i*2)%6,stage);
-        return dieFace(d,d.face,stage);
+        if(stage==='rolling')return dieFace(d,1+(play.frame+i*2)%6,stage,nation);
+        return dieFace(d,d.face,stage,nation);
       }).join('');
-      const threshold=stats[type][side],nation=ownerNames[power]||(side==='attack'?attacking:defending);
-      const heading=(powers.length>1?esc(nation)+' · ':'')+'Hits on '+(threshold===1?'1':'1–'+threshold);
-      return '<div class="roll-unit" data-unit="'+type+'" data-stage="'+stage+'">'+
-        unitCounter(type,power?nationalRolls.length:undefined,nation)+'<small>'+heading+'</small><div class="dice-row">'+dice+'</div></div>';
+      const threshold=stats[type][side];
+      const heading=esc(nation)+' · Hits on '+(threshold===1?'1':'1–'+threshold);
+      return '<div class="roll-unit" data-unit="'+type+'" data-stage="'+stage+'" '+combatColors(nation)+'>'+
+        unitCounter(type,nationalRolls.length,nation)+'<small>'+heading+'</small><div class="dice-row">'+dice+'</div></div>';
     }).join('');
   }).join('');
   const total=play&&play.index===0&&play.stage!=='marked'?'Rolling…':hits+' '+(hits===1?'hit':'hits');
-  return '<section class="roll-card" data-side="'+side+'"><h4>'+label+'<span>'+total+'</span></h4>'+groups+'</section>';
+  return '<section class="roll-card" data-side="'+side+'" '+combatColors(nations.length===1?nations[0]:null)+'><h4>'+label+'<span>'+total+'</span></h4>'+groups+'</section>';
 }
-function rollsBox(dice,play=null,attacking=attacker,defending=s.owners[s.active]||defender){
+function rollsBox(dice,play,attacking,defending){
   if(!dice)return '';
-  return ['attack','defense'].filter(side=>dice[side]).map(side=>rollCard(dice[side],side,play?.side===side?play:null,attacking,defending)).join('');
+  return ['attack','defense'].filter(side=>dice[side]).map(side=>rollCard(dice[side],side,play?.side===side?play:null,side==='attack'?[attacking]:defending)).join('');
 }
 // The game has already rolled and saved. Only the presentation is timed.
 let playback=null,rollTimer;
@@ -295,7 +319,8 @@ function advanceRoll(){
     play.stage='rolling';play.frame=0;
   }
   const card=$('panel').querySelector('.roll-card[data-side="'+play.side+'"]');
-  card.outerHTML=rollCard(play.rolls,play.side,play);
+  const battle=currentBattle(s);
+  card.outerHTML=rollCard(play.rolls,play.side,play,play.side==='attack'?[attacker]:defendingNations(battle.dice,liveDefenders(battle)));
   if((play.frame===0||play.index===0&&play.frame===1)&&play.stage==='rolling'){
     $('panel').querySelector('[data-side="'+play.side+'"] [data-unit="'+play.types[play.index]+'"]').scrollIntoView({block:'nearest'});
   }
@@ -326,7 +351,7 @@ function cityObjective(territory){
     ' · Victory city'+(city.capitalOf?' · '+city.capitalOf+'’s capital':'')+'</span>';
 }
 function battleChoice(b){
-  if(b.resolved)return '<div class="review-item"><strong>'+places[b.to].name+'</strong><p>'+reviewDetail(b.result)+'</p></div>';
+  if(b.resolved)return '<div class="review-item"><strong>'+places[b.to].name+'</strong><p>'+reviewDetail(b.result,attacker,b.heldBy)+'</p></div>';
   return '<button class="battle-choice" data-act="battle" data-id="'+b.to+'">'+
     '<span class="battle-choice-title"><strong>'+places[b.to].name+'</strong><span class="end" aria-hidden="true">›</span></span>'+
     cityObjective(b.to)+'<span class="force-columns">'+forceColumns(b.attack,s.units[b.to],s.owners[b.to],'total',isGlobal?armiesAt(b.to,true):null)+'</span></button>';
@@ -336,14 +361,15 @@ function battlePanel(){
   if(!b){
     return title('Conduct combat','Choose the next battle to resolve.')+block('Battle order')+s.battles.map(battleChoice).join('');
   }
+  const nations=defendingNations(b.dice,liveDefenders(b));
   const info='<h2>'+places[b.to].name+'</h2>'+block(b.round?'Battle round '+b.round:'Land battle')+
-    (b.round?'':cityObjective(b.to))+rollsBox(b.dice,playback);
+    (b.round?'':cityObjective(b.to))+rollsBox(b.dice,playback,attacker,nations);
   if(playback){
     $('action').innerHTML='<div class="roll-progress" id="rollStatus" role="status">Rolling '+stats[playback.types[playback.index]].name.toLowerCase()+'…</div>';
     return info;
   }
   if(b.step==='defense'){
-    $('action').innerHTML=btn('Roll '+adjectives[defender]+' defense','defend','primary');
+    $('action').innerHTML=btn('Roll '+rollLabel(nations,'defense'),'defend','primary',combatColors(nations.length===1?nations[0]:null));
     return info+'<p class="hint">All defenders return fire this round, including marked casualties.</p>';
   }
   if(b.step==='losses' && !b.hits){
@@ -365,7 +391,7 @@ function battlePanel(){
 // Earlier saved rounds recorded losses as a sentence, without separate unit counts.
 function savedRoundLosses(entry){
   if(entry.losses)return entry.losses;
-  const sides=/^Losses — Germany: (.+); France: (.+)\.$/.exec(entry.detail);
+  const sides=/^Losses — [^:]+: (.+); [^:]+: (.+)\.$/.exec(entry.detail);
   if(!sides)return null;
   function readUnits(text){
     const units={inf:0,tank:0};
@@ -377,11 +403,16 @@ function savedRoundLosses(entry){
 function timeline(record=s.record,attacking=attacker){
   return record.map(e=>{
     const heading=esc(e.title);
-    if(!e.dice)return '<div class="review-item"><strong>'+heading+'</strong><p>'+reviewDetail(e.detail,attacking,e.defender||defender)+'</p></div>';
+    if(!e.dice)return '<div class="review-item"><strong>'+heading+'</strong><p>'+reviewDetail(e.detail,attacking,e.heldBy)+'</p></div>';
     const losses=savedRoundLosses(e);
-    const breakdown=losses?'<div class="force-columns">'+forceColumns(losses.attack,losses.defense,e.defender||defender,'lost',Object.fromEntries(Object.entries(e.nationalLosses||{}).map(([p,a])=>[ownerNames[p]||p,a])),attacking)+'</div>':
-      '<p>'+reviewDetail(e.detail,attacking,e.defender||defender)+'</p>';
-    return '<details class="review-item review-round"><summary>'+heading+'</summary>'+breakdown+rollsBox(e.dice,null,attacking,e.defender||defender)+'</details>';
+    const owner=e.defender||/^Losses — [^:]+: .+; ([^:]+): /.exec(e.detail)?.[1]||exercise.defender;
+    const nations=defendingNations(e.dice,owner?[owner]:[]);
+    const casualtiesByNation=nationalArmies(Object.entries(e.nationalLosses||{}).flatMap(([p,army])=>
+      Object.entries(army).map(([type,n])=>[p,type,n])));
+    if(isGlobal&&e.nationalLosses)for(const nation of nations)casualtiesByNation[nation]??={};
+    const breakdown=losses?'<div class="force-columns">'+forceColumns(losses.attack,losses.defense,owner||'Defenders','lost',casualtiesByNation,attacking)+'</div>':
+      '<p>'+reviewDetail(e.detail,attacking)+'</p>';
+    return '<details class="review-item review-round"><summary>'+heading+'</summary>'+breakdown+rollsBox(e.dice,null,attacking,nations)+'</details>';
   }).join('');
 }
 let stopHold=()=>{};

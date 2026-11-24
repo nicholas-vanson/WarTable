@@ -99,9 +99,8 @@ aside h3,dialog h3{font:600 18px/1.2 Georgia,serif;margin:16px 0 4px}
 .roll-card{margin:9px 0;border:1px solid var(--sheet-rule);background:#fbf8e97a}
 .roll-card h4 {
   display:flex;align-items:center;justify-content:space-between;margin:0;padding:5px 9px;
-  border-left:4px solid #5c684b;background:#e0e2cf;font:600 15px Georgia,serif;
+  border-left:4px solid var(--combat-ink);background:var(--combat-paper);font:600 15px Georgia,serif;
 }
-.roll-card[data-side="defense"] h4{border-color:#537181;background:#dce3df}
 .roll-card h4 span{font:700 11px var(--typewriter);text-transform:uppercase}
 .roll-unit{padding:6px 9px;font-size:13px}.roll-unit+.roll-unit{border-top:1px dotted var(--sheet-rule)}
 .roll-unit small{margin-left:7px;color:#57604e}
@@ -110,9 +109,8 @@ aside h3,dialog h3{font:600 18px/1.2 Georgia,serif;margin:16px 0 4px}
   padding:3px;border:1px solid #90977f;border-radius:4px;background:#f8f5e9;color:#505b4c}
 .die i{display:block;width:4px;height:4px;background:currentColor;border-radius:50%}
 .die.hit{background:#834735;color:#fff6df;border-color:#693d30;box-shadow:inset 0 0 0 1px #693d30}
+.counter-face[data-nation]{background:var(--combat-paper);color:var(--combat-ink);border-color:var(--combat-ink)}
 .counter-face{vertical-align:middle;background:#ebe7d7;border-color:#676d5d;color:#474f45}
-.counter-face[data-nation="Germany"]{background:#e6dfbd;color:#334334;border-color:#334334}
-.counter-face[data-nation="France"]{background:#d8e6e5;color:#294c60;border-color:#294c60;box-shadow:1px 1px 0 #94a6a9}
 .roll-card[data-side="defense"] .die.hit{background:#282a29;color:#fffaf0;border-color:#161817;box-shadow:inset 0 0 0 1px #161817}
 .die.pending{visibility:hidden}
 .roll-progress{display:grid;place-items:center;min-height:44px;font:700 13px var(--typewriter);color:var(--sheet-ink)}
@@ -205,8 +203,6 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
 #controlKey i[data-nation="France"]{--angle:53deg;color:#345f8a}
 #controlKey i[data-nation="Italy"]{color:#87582e}
 #controlKey i[data-nation="Soviet Union"]{--angle:38deg;color:#89483d}
-.counter-face[data-nation="Italy"]{color:#66472d;border-color:#66472d;background:#e3c5a3}
-.counter-face[data-nation="Soviet Union"]{color:#743d38;border-color:#743d38;background:#e3c4af}
 @media(max-width:420px){header{gap:5px}.head-end{gap:3px}.header-button{padding-inline:5px}.brand{font-size:19px}}
 
 [hidden]{display:none!important}
@@ -277,11 +273,6 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
   .menu-tool strong{font-size:20px}.menu-foot{margin-top:10px}
 }
 
-.counter-face[data-nation="United Kingdom"]{background:#ead6ac;color:#76603e}
-.counter-face[data-nation="Japan"]{background:#eddba0;color:#86651e}
-.counter-face[data-nation="United States"]{background:#d7dfb0;color:#455939}
-.counter-face[data-nation="China"]{background:#deebbc;color:#596a36}
-.counter-face[data-nation="ANZAC"]{background:#c4d8d3;color:#435d63}
 
 .power-seat{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}.power-seat select{min-height:36px;background:var(--sheet);color:inherit}
 
@@ -300,9 +291,6 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
   --neutral-slate:#50575a; --neutral-slate-paper:#dfe2e1;
   --neutral-warm-gray:#605a57; --neutral-warm-gray-paper:#e5e0da;
 }
-.counter-face:is([data-nation="Strict neutral"],[data-nation="Mongolia"]){color:var(--neutral-graphite);background:var(--neutral-graphite-paper);border-color:currentColor}
-.counter-face:is([data-nation="Pro-Allied neutral"],[data-nation="Allied-aligned, uncontrolled"]){color:var(--neutral-slate);background:var(--neutral-slate-paper);border-color:currentColor}
-.counter-face:is([data-nation="Pro-Axis neutral"],[data-nation="Axis-aligned, uncontrolled"]){color:var(--neutral-warm-gray);background:var(--neutral-warm-gray-paper);border-color:currentColor}
 
 .hero-mark{width:clamp(32px,4vw,52px);height:auto;margin-bottom:9px}
 .hero-settings{position:absolute;right:17px;top:17px;display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:8px 13px;color:#f6efdc;border:1px solid #d1c59c;background:#23372ee6;border-radius:2px;font:600 14px var(--type)}
@@ -364,10 +352,12 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
 #ordersPanel :is(.hint,.block-title,.briefing-round,.order-totals span,.order-line small,.force-heading small,.force-total,.roll-unit small,.option small,.end,.review-item p){color:var(--panel-muted)}
 #ordersPanel :is(.secondary,.stepper button,#hidePanel,.unitcode,.review-item,.review-round>summary::after,#resizePanel::before){border-color:var(--panel-border)}
 #ordersPanel :is(#hidePanel,.unitcode){color:var(--panel-muted)}
-#ordersPanel :is(.option.active,.option:active,#action:not(:empty),.roll-card[data-side="attack"] h4){background:var(--panel-wash)}
-#ordersPanel .roll-card[data-side="attack"] h4{border-color:var(--nation-ink)}
+#ordersPanel :is(.option.active,.option:active,#action:not(:empty)){background:var(--panel-wash)}
 #ordersPanel .review-item::before{background:var(--nation-ink)}
 @media(hover:hover){
   #ordersPanel :is(.option,.secondary,.stepper button,.order-step,.origin-order,.battle-choice,.review-round>summary):hover{background:var(--panel-wash)}
   #ordersPanel :is(.primary:enabled,.economy-switch [aria-pressed="true"]):hover{background:color-mix(in srgb,var(--nation-ink) 84%,#171611)}
 }
+
+.roll-unit .die.miss{background:var(--combat-paper);border-color:var(--combat-ink);color:var(--combat-ink)}
+#ordersPanel #action [data-act="defend"]{background:var(--combat-ink);color:#fff;border-color:var(--combat-ink)}

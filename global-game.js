@@ -7,6 +7,16 @@ export const globalPowers={
 };
 export const ownerNames={...globalPowers,UK_Pacific:'United Kingdom',Dutch:'Netherlands',
   ...neutralOwners};
+// Both British treasuries can field pieces in the same battle under the same flag.
+export function nationalArmies(stacks){
+  const armies={};
+  for(const [power,type,n] of stacks){
+    if(!n)continue;
+    const nation=ownerNames[power]||power,army=armies[nation]??={};
+    army[type]=(army[type]||0)+n;
+  }
+  return armies;
+}
 export const globalUnits={
   infantry:['Infantry',3],artillery:['Artillery',4],mech_infantry:['Mechanized infantry',4],armour:['Tank',6],aaGun:['AAA',5],
   fighter:['Fighter',10],tactical_bomber:['Tactical bomber',11],bomber:['Strategic bomber',12],
@@ -269,7 +279,7 @@ export function prepareGlobalBoard(setup,atlas,match){
     British:'United Kingdom',Italians:'Southern Italy',ANZAC:'New South Wales',French:'France'}[match.power];
   const [x,y]=sectors[home].center;
   const camera={x,y,z:.7*projection.detailScale,surveyZoom:true};
-  const exercise={name:'Global 1940',attacker,defender:'France',camera,forces,shapes,cities,world:true,projection,neighbors,neutralEntry,unmovedLand};
+  const exercise={name:'Global 1940',attacker,camera,forces,shapes,cities,world:true,projection,neighbors,neutralEntry,unmovedLand};
   exercises.global=exercise;
   let openingView;
   if(match.phase==='briefing'&&match.power!=='Germans'){
