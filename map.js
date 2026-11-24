@@ -292,9 +292,9 @@ function drawStack(game,parent,id,type,number,nation,role,at,tokenScale,detailed
   // Keep a neighboring stack's invisible padding clear of the printed symbols.
   if(game.exercise!=='global')stack.append(node('rect',{x:-22,y:-22,width:44,height:44,fill:'transparent'}));
   stack.append(node('rect',{x:-19,y:-11,width:38,height:22,rx:1,fill:paper,stroke:selected?'#753515':unitInk,'stroke-width':1.6}));
-  stack.append(node('rect',{x:-15,y:-6,width:16,height:12,fill:'none',stroke:ink,'stroke-width':1.3}));
-  stack.append(node('use',{href:'#unit-'+type,x:-15,y:-6,width:16,height:12,color:ink,'pointer-events':'none'}));
-  stack.append(node('text',{x:10,y:4,'text-anchor':'middle','font-family':'sans-serif','font-size':13,'font-weight':700,fill:ink},number));
+  stack.append(node('rect',{x:-16.5,y:-6.75,width:18,height:13.5,fill:'none',stroke:ink,'stroke-width':1.3}));
+  stack.append(node('use',{href:'#unit-'+type,x:-16.5,y:-6.75,width:18,height:13.5,color:ink,'pointer-events':'none'}));
+  stack.append(node('text',{x:10,y:4,'text-anchor':'middle','font-family':'var(--typewriter)','font-size':13,'font-weight':700,fill:ink},number));
   if(detailed&&(!auxiliary||selected))stack.append(node('text',{x:0,y:24,'text-anchor':'middle','font-family':'sans-serif','font-size':11,'font-weight':650,fill:unitInk,
     stroke:'#f5efd8','paint-order':'stroke','stroke-width':3},style.code+' · '+name));
   parent.append(stack);
