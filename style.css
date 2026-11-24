@@ -90,9 +90,9 @@ aside h3,dialog h3{font:600 18px/1.2 Georgia,serif;margin:16px 0 4px}
 #action:not(:empty){flex:none;padding:9px var(--gutter) max(9px,env(safe-area-inset-bottom));border-top:1px solid var(--sheet-rule);background:#e7e2ce}
 #action>button{width:100%}
 #notice:not(:empty){margin:0 var(--gutter);padding:7px 0;color:#833c29;font-size:13px;font-weight:650;line-height:1.35}
-#hold{touch-action:none;user-select:none;-webkit-user-select:none;position:relative;isolation:isolate;overflow:hidden}
-#hold:before{position:absolute;content:'';inset:0;background:#71805b;transform:scaleX(0);transform-origin:left;z-index:-1}
-#hold.holding:before{transform:scaleX(1);transition:transform .85s linear}
+.hold-to-confirm{touch-action:none;user-select:none;-webkit-user-select:none;position:relative;isolation:isolate;overflow:hidden}
+.hold-to-confirm:before{position:absolute;content:'';inset:0;background:#71805b;transform:scaleX(0);transform-origin:left;z-index:-1}
+.hold-to-confirm.holding:before{transform:scaleX(1);transition:transform .85s linear}
 .roll-card{margin:9px 0;border:1px solid var(--sheet-rule);background:#fbf8e97a}
 .roll-card h4 {
   display:flex;align-items:center;justify-content:space-between;margin:0;padding:5px 9px;
@@ -145,6 +145,8 @@ dialog h2{font-size:27px}
 }
 
 main,#ordersPanel{position:relative}
+#mapNotice{display:none}
+.panel-closed #mapNotice:not(:empty){display:block;position:absolute;z-index:2;top:10px;left:10px;max-width:calc(100% - 152px);padding:7px 10px;background:var(--paper);color:#833c29;font-size:13px;font-weight:650;pointer-events:none}
 main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
 #ordersPanel[hidden],#openPanel[hidden]{display:none}
 #hidePanel,#openPanel{font:700 12px/1.2 'Courier New',monospace;border:1px solid #879079;border-radius:2px;padding:6px 10px}

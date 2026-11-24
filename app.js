@@ -212,7 +212,7 @@ function planPanel(){
       html+='<p class="hint">Committing this invasion shifts eligible strict neutrals to the '+(allianceOf(s.power)==='Axis'?'Allied':'Axis')+' side.</p>';
     }
   }
-  if(!ui.to&&!ui.stack)$('action').innerHTML='<button class="primary" id="hold" '+(s.orders.length||isGlobal?'':'disabled')+'>'+(isGlobal&&!s.orders.length?'Hold to finish combat moves':'Hold to commit attacks')+'</button>';
+  if(!ui.to&&!ui.stack)$('action').innerHTML='<button class="primary hold-to-confirm" id="hold" '+(s.orders.length||isGlobal?'':'disabled')+'>'+(isGlobal&&!s.orders.length?'Hold to finish combat moves':'Hold to commit attacks')+'</button>';
   return html;
 }
 function rollCard(rolls,side,play,attacking=attacker,defendingNation=s.owners[s.active]||defender){
@@ -368,13 +368,13 @@ function timeline(record=s.record,attacking=attacker){
   }).join('');
 }
 let stopHold=()=>{};
-function bindHold(){
-  const button=$('hold');if(!button||button.disabled)return;
+function bindHold(button,confirm){
+  if(!button||button.disabled)return;
   let timer=null;
   const cancel=()=>{clearTimeout(timer);timer=null;button.classList.remove('holding');};
   stopHold=cancel;
-  const start=()=>{if(timer)return;button.classList.add('holding');timer=setTimeout(()=>{cancel();run(()=>{commit(s);ui=freshUI();});},850);};
-  button.onpointerdown=e=>{if(e.button!==0)return;e.preventDefault();button.setPointerCapture(e.pointerId);start();};
+  const start=()=>{if(timer)return;button.classList.add('holding');timer=setTimeout(()=>{cancel();confirm();},850);};
+  button.onpointerdown=e=>{if(e.button!==0||!e.isPrimary)return;e.preventDefault();button.setPointerCapture(e.pointerId);start();};
   button.onpointermove=e=>{const b=button.getBoundingClientRect();if(e.clientX<b.left||e.clientX>b.right||e.clientY<b.top||e.clientY>b.bottom)cancel();};
   button.onpointerup=button.onpointercancel=button.onlostpointercapture=button.onblur=cancel;
   button.oncontextmenu=e=>e.preventDefault();
@@ -418,7 +418,7 @@ function render(){
       $('panel').innerHTML=friendlyMovesPanel();$('action').innerHTML=btn('Back to combat review','clear');
     }else{
       const canActivate=isGlobal&&Object.keys(s.owners).some(to=>activationOptions(s,to).length);
-      $('action').innerHTML=(canActivate?btn('Friendly neutral moves','open-activation'):'')+(isGlobal?btn('End turn · '+globalPowers[nextPower(s.power)]+' next','end-turn','primary'):btn('Start another exercise','reset'));
+      $('action').innerHTML=(canActivate?btn('Friendly neutral moves','open-activation'):'')+(isGlobal?'<button id="endTurn" class="primary hold-to-confirm">Hold to end turn · '+globalPowers[nextPower(s.power)]+' next</button>':btn('Start another exercise','reset'));
     }
   }
   updateBattleForces();
@@ -426,8 +426,11 @@ function render(){
   if(panelView!==nextView)document.querySelector('.panel-scroll').scrollTop=0;
   panelView=nextView;
   $('notice').textContent=message;
-  if(message&&$('ordersPanel').hidden)$('openPanel').click();
-  draw(s,ui.inspect||ui.from,ui.to,ui.stack||ui.inspectedType,layoutSeed,ui.stack?null:ui.inspectedNation,briefing);bindHold();
+  $('mapNotice').textContent=message;
+  $('openPanel').textContent=briefing?'Open briefing':'Open orders';
+  draw(s,ui.inspect||ui.from,ui.to,ui.stack||ui.inspectedType,layoutSeed,ui.stack?null:ui.inspectedNation,briefing);
+  if($('endTurn'))bindHold($('endTurn'),endTurn);
+  else bindHold($('hold'),()=>run(()=>{commit(s);ui=freshUI();}));
 }
 function showDialog(heading,html){
   $('dialogTitle').textContent=heading;
@@ -436,25 +439,24 @@ function showDialog(heading,html){
   if(!$('dialog').open)$('dialog').showModal();
   $('closeDialog').focus();
 }
+function endTurn(){
+  try{
+    if(localStorage.getItem(key)!==lastGlobalSave){location.reload();return;}
+    const next=nextPlaytestTurn(globalBoard.match);
+    localStorage.setItem(key,JSON.stringify(next));
+    location.reload();
+  }catch(error){
+    message='Could not hand over the turn. '+error.message;render();
+  }
+}
 document.addEventListener('click',e=>{
   const b=e.target.closest('button[data-act]');if(!b)return;
   const {act,id,k,n}=b.dataset;
-  if(act==='end-turn'&&isGlobal){
-    try{
-      if(localStorage.getItem(key)!==lastGlobalSave){location.reload();return;}
-      const next=nextPlaytestTurn(globalBoard.match);
-      localStorage.setItem(key,JSON.stringify(next));
-      location.reload();
-    }catch(error){
-      message='Could not hand over the turn. '+error.message;render();
-    }
-    return;
-  }
   run(()=>{
     switch(act){
       case 'begin-turn':
         if(inBriefing()){
-          globalBoard.match.phase='combatMove';ui=freshUI();applyPanel();
+          globalBoard.match.phase='combatMove';ui=freshUI();
           $('map').setAttribute('aria-label',combatMapLabel);
         }
         break;
@@ -521,12 +523,21 @@ $('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan 
 function setupOrdersPanel(){
   const main=document.querySelector('main'),sheet=$('ordersPanel'),grip=$('resizePanel');
   const open=$('openPanel'),hide=$('hidePanel'),stacked=matchMedia('(max-width:650px) and (orientation:portrait)');
-  let prefs={};
+  // Visibility is local to this board visit. Only Settings changes the opening preference.
+  const sizeKey='wartable.orders-panel-size.v1';
+  let collapsed=false,sizes={};
   try{
-    const saved=JSON.parse(localStorage.getItem(ordersPanelKey));
-    if(saved&&typeof saved==='object')prefs=saved;
+    const opening=JSON.parse(localStorage.getItem(ordersPanelKey))||{};
+    collapsed=opening.hidden===true;
+    const saved=JSON.parse(localStorage.getItem(sizeKey))||opening;
+    sizes={width:saved.width,height:saved.height};
   }catch{}
-  const persist=()=>{try{localStorage.setItem(ordersPanelKey,JSON.stringify(prefs));}catch{}};
+  function persistSize(axis){
+    try{
+      const stored=JSON.parse(localStorage.getItem(sizeKey))||sizes;
+      localStorage.setItem(sizeKey,JSON.stringify({...stored,[axis]:sizes[axis]}));
+    }catch{}
+  }
   function dimensions(){
     const vertical=stacked.matches,axis=vertical?'height':'width';
     const extent=main.getBoundingClientRect()[axis];
@@ -534,14 +545,13 @@ function setupOrdersPanel(){
     return {axis,extent,min,max,coordinate:vertical?'clientY':'clientX'};
   }
   function apply(){
-    const collapsed=inBriefing()?globalBoard.match.briefingPanelHidden===true:prefs.hidden===true;
     sheet.hidden=collapsed;open.hidden=!collapsed;main.classList.toggle('panel-closed',collapsed);
     hide.setAttribute('aria-expanded',String(!collapsed));
     main.style.gridTemplateColumns='';main.style.gridTemplateRows='';
     if(collapsed)return;
     const {axis,extent,min,max}=dimensions();
-    if(Number.isFinite(prefs[axis])){
-      const size=Math.max(min,Math.min(max,Math.round(prefs[axis]*extent)));
+    if(Number.isFinite(sizes[axis])){
+      const size=Math.max(min,Math.min(max,Math.round(sizes[axis]*extent)));
       const property=axis==='height'?'gridTemplateRows':'gridTemplateColumns';
       main.style[property]='minmax(0,1fr) '+size+'px';
     }
@@ -550,15 +560,14 @@ function setupOrdersPanel(){
     const actual=Math.round(sheet.getBoundingClientRect()[axis]);
     grip.setAttribute('aria-valuenow',actual);grip.setAttribute('aria-valuetext',actual+' pixels '+(axis==='height'?'high':'wide'));
   }
-  function toggle(collapsed){
-    if(inBriefing()){globalBoard.match.briefingPanelHidden=collapsed;save();}
-    else{prefs.hidden=collapsed;persist();}
+  function toggle(hidden){
+    stopHold();collapsed=hidden;
     apply();(collapsed?open:hide).focus({preventScroll:true});
   }
   hide.onclick=()=>toggle(true);open.onclick=()=>toggle(false);
   function sizeTo(pixels){
     const {axis,extent,min,max}=dimensions();
-    prefs[axis]=Math.max(min,Math.min(max,pixels))/extent;apply();
+    sizes[axis]=Math.max(min,Math.min(max,pixels))/extent;apply();
   }
   let drag=null;
   grip.onpointerdown=e=>{
@@ -571,7 +580,7 @@ function setupOrdersPanel(){
     if(drag&&grip.hasPointerCapture(e.pointerId)&&drag.axis===dimensions().axis)
       sizeTo(drag.size+drag.start-e[drag.coordinate]);
   };
-  grip.onlostpointercapture=()=>{drag=null;persist();};
+  grip.onlostpointercapture=()=>{if(drag)persistSize(drag.axis);drag=null;};
   grip.onkeydown=e=>{
     const {min,max,axis}=dimensions(),size=sheet.getBoundingClientRect()[axis];
     const larger=axis==='width'?'ArrowLeft':'ArrowUp',smaller=axis==='width'?'ArrowRight':'ArrowDown';
@@ -579,13 +588,12 @@ function setupOrdersPanel(){
     else if(e.key==='Home')sizeTo(min);
     else if(e.key==='End')sizeTo(max);
     else return;
-    e.preventDefault();persist();
+    e.preventDefault();persistSize(axis);
   };
   apply();
   const layoutObserver=new ResizeObserver(apply);
   layoutObserver.observe(main);layoutObserver.observe($('battleForces'));
-  return apply;
 }
-const applyPanel=setupOrdersPanel();
+setupOrdersPanel();
 render();
 try{draw=await atlas(pick,v=>{view=v;save();},view,exercise);render();save();}catch{message='The map could not load. Reopen the playtest while online to finish the download.';render();}

@@ -42,7 +42,7 @@ export function nextPlaytestTurn(match){
   const power=nextPower(match.power);
   const review={power:match.power,round:match.round,record:match.combat.game.record};
   return {...match,power,round:match.round+Number(power===turnOrder[0]),phase:'briefing',
-    turnReviews:[...(match.turnReviews||[]),review],combat:null,combatStart:null,combatStartPactBroken:!!match.mongolianPactBroken,briefingPanelHidden:false};
+    turnReviews:[...(match.turnReviews||[]),review],combat:null,combatStart:null,combatStartPactBroken:!!match.mongolianPactBroken};
 }
 export function openingAddress(match,seat){
   const powers=seat===match.controllers[match.power]?[match.power]:turnOrder.filter(power=>match.controllers[power]===seat);
