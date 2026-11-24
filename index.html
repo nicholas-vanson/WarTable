@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="application-version" content="0.1.56">
+<meta name="application-version" content="0.1.57">
 <meta name="theme-color" content="#202c27"><meta name="description" content="WarTable · Global 1940 Second Edition and local playtest exercises.">
 <title>WarTable · Global 1940</title>
 <link rel="icon" href="./assets/icon-192.png"><link rel="manifest" href="./manifest.webmanifest">
@@ -18,23 +18,35 @@
       <symbol id="m-arrow" viewBox="0 0 24 24"><path d="M4 12h15m-6-6 6 6-6 6"/></symbol>
     </defs>
   </svg>
-  <div class="menu-mast"><div class="menu-width mast-inner">
-    <a href="#" class="menu-wordmark" aria-label="WarTable main menu"><img src="./assets/wartable-mark.svg" alt="">WarTable</a>
-    <button id="menuSettings" class="mast-button"><svg class="menu-icon" aria-hidden="true"><use href="#m-settings"/></svg>Settings</button>
-  </div></div>
   <div class="menu-width menu-content">
     <div id="modeChoices">
       <section class="campaign-card" aria-labelledby="campaignTitle">
         <img class="campaign-art" src="./assets/menu-staff-table.webp" alt="">
         <div class="campaign-copy">
-          <p class="menu-kicker">Second Edition</p>
-          <h1 id="campaignTitle">Global <span>1940</span></h1>
-          <p class="campaign-summary" id="campaignSummary">Nine powers across the European and Pacific theaters.</p>
+          <img class="hero-mark" src="./assets/wartable-mark.svg" alt="">
+          <h1 id="campaignTitle">WarTable</h1>
+          <p class="campaign-summary">An unofficial, fan-made strategy game inspired by <i>Axis &amp; Allies Global 1940, Second Edition.</i></p>
+        </div>
+        <button id="menuSettings" class="hero-settings"><svg class="menu-icon" aria-hidden="true"><use href="#m-settings"/></svg>Settings</button>
+      </section>
+      <div class="mode-tabs" role="tablist" aria-label="Play and accounts">
+        <button role="tab" id="soloTab" aria-controls="soloPane" aria-selected="true">Singleplayer</button>
+        <button role="tab" id="multiTab" aria-controls="multiPane" aria-selected="false" tabindex="-1">Multiplayer</button>
+        <button role="tab" id="accountTab" aria-controls="accountPane" aria-selected="false" tabindex="-1">Accounts</button>
+      </div>
+      <section id="soloPane" role="tabpanel" aria-labelledby="soloTab">
+        <div class="local-session"><div><h2>Global 1940</h2><p id="campaignSummary">Local game · Nine powers</p></div>
           <div class="campaign-actions">
             <a class="campaign-primary" id="continueGlobal" href="#global" hidden>Continue game <svg class="menu-icon" aria-hidden="true"><use href="#m-arrow"/></svg></a>
             <button class="campaign-primary" id="newGlobal">New game <svg class="menu-icon" aria-hidden="true"><use href="#m-arrow"/></svg></button>
           </div>
         </div>
+      </section>
+      <section class="future-mode" id="multiPane" role="tabpanel" aria-labelledby="multiTab" tabindex="0" hidden>
+        <h2>Remote play</h2><p>Planned for a future release. Host a match, invite friends, and take turns on your own devices.</p>
+      </section>
+      <section class="future-mode" id="accountPane" role="tabpanel" aria-labelledby="accountTab" tabindex="0" hidden>
+        <h2>Player accounts</h2><p>Player profiles for online matches are planned. For now, local games save on this device.</p>
       </section>
       <nav class="menu-tools" aria-label="Practice and reference">
         <a class="menu-tool" href="#exercises"><span class="tool-icon"><svg aria-hidden="true"><use href="#m-fronts"/></svg></span><span><strong>Combat exercises</strong><small>Practice on a single front</small></span><span class="tool-arrow" aria-hidden="true">↗</span></a>
@@ -42,11 +54,11 @@
       </nav>
     </div>
     <section id="exerciseChoices" class="exercise-index" hidden>
-      <a class="back-link" href="#">← Main menu</a>
+      <div class="exercise-links"><a class="back-link" href="#">← Main menu</a><button class="plain-action" id="exerciseSettings">Settings</button></div>
       <h1>Combat exercises</h1><p>Choose a front to practice land combat.</p>
       <nav id="frontList" aria-label="Exercises"></nav>
     </section>
-    <footer class="menu-foot"><span><i aria-hidden="true"></i>Local playtest</span><button id="menuAbout">Version <span data-version></span></button></footer>
+    <footer class="menu-foot"><span><i aria-hidden="true"></i>Local playtest</span><button id="menuLicense">License &amp; credits</button><button id="menuAbout">Version <span data-version></span></button></footer>
   </div>
 </section>
 <dialog id="menuDialog" class="menu-dialog" aria-labelledby="menuDialogTitle">
@@ -60,14 +72,29 @@
       <div class="dialog-actions"><button class="plain-action" id="cancelGame">Cancel</button><button class="ink-action" id="startGame">Start local game</button></div>
     </section>
     <section id="settingsWindow" hidden>
-      <label class="setting-row" for="menuMotion"><strong>Map and dice animation</strong><select id="menuMotion"><option value="system">Use device setting</option><option value="reduce">Reduce motion</option></select></label>
-      <label class="setting-row" for="menuOrders"><strong>Orders panel on opening</strong><select id="menuOrders"><option value="shown">Expanded</option><option value="hidden">Minimized</option></select></label>
+      <fieldset><legend>Graphics</legend>
+        <label class="setting-row" for="menuMotion"><strong>Map and dice animation</strong><select id="menuMotion"><option value="system">Use device setting</option><option value="reduce">Reduce motion</option></select></label>
+        <label class="setting-row"><strong>Terrain detail</strong><select data-map-setting="terrain"><option value="auto">Automatic</option><option value="overview">Overview only</option></select></label>
+        <label class="setting-row"><strong>Territory names</strong><select data-map-setting="labels"><option value="auto">Show when zoomed in</option><option value="hidden">Hidden</option></select></label>
+      </fieldset>
+      <fieldset><legend>Controls &amp; interface</legend>
+        <label class="setting-row" for="menuOrders"><strong>Orders panel on opening</strong><select id="menuOrders"><option value="shown">Expanded</option><option value="hidden">Minimized</option></select></label>
+        <label class="setting-row"><strong>Map controls</strong><select data-map-setting="side"><option value="right">Right side</option><option value="left">Left side</option></select></label>
+        <label class="setting-row"><strong>Zoom button steps</strong><select data-map-setting="zoom"><option value="standard">Standard</option><option value="fine">Fine</option><option value="large">Large</option></select></label>
+        <label class="setting-row"><strong>Mouse wheel</strong><select data-map-setting="wheel"><option value="zoom">Zoom</option><option value="pan">Pan</option></select></label>
+      </fieldset>
       <p class="dialog-note">Settings apply to games and exercises on this device. Changing the panel on the board also updates this preference.</p>
     </section>
     <section id="guideWindow" class="guide-copy" hidden>
       <h3>Read the staff map</h3><p>Drag to pan. Pinch or use + and − to zoom. Tap a territory or sea zone to inspect it. Tap it again to deselect.</p>
       <h3>Plan and resolve combat</h3><p>Select an infantry or tank counter and an adjacent legal target. Revise your orders, then hold to commit. Choose the battle order and resolve the dice in the orders panel.</p>
       <h3>Return to your match</h3><p>Your position, orders and map view save on this device. Choose Continue game from the main menu to return.</p>
+    </section>
+    <section id="licenseWindow" class="guide-copy" hidden>
+      <h3>Community code</h3><p>The original playtest code by nicholas-vanson and the WarTable contributors is available under the MIT License. You can use, modify, and share it. Keep the copyright and license notice with copies or substantial portions. <a href="https://github.com/nicholas-vanson/WarTable/tree/gh-pages" target="_blank" rel="noopener">Browse the playtest source</a></p>
+      <details id="licenseDetails"><summary>Read the MIT License</summary><pre id="licenseText"></pre></details>
+      <h3>Independent fan project</h3><p>WarTable is unaffiliated with and is neither endorsed nor sponsored by the creators, publishers, or rights holders of Axis &amp; Allies. Axis &amp; Allies and associated marks belong to their respective owners.</p>
+      <h3>Map and artwork credits</h3><p>The code license excludes artwork, map data, and trademarks. WarTable’s staff maps draw on Natural Earth geography, GMT Earth Relief, and elevation data from USGS and NOAA. The printed Global 1940 board and the TripleA Global 1940 scenario served as references.</p>
     </section>
     <section id="aboutWindow" class="guide-copy" hidden><h3>WarTable · Version <span data-version></span></h3><p>This local playtest opens on Germany’s combat move. The global board and three combat exercises are available to play.</p><button id="checkUpdate" class="ink-action" hidden>Check for updates</button><p id="updateStatus" class="dialog-note" role="status"></p></section>
     <p id="menuError" role="alert" hidden></p>

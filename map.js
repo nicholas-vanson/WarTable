@@ -1,4 +1,4 @@
-import {reducedMotion} from './preferences.js';
+import {reducedMotion,readMapPreferences} from './preferences.js';
 import {neutralKey} from './neutral-rules.js';
 import {ownerNames,globalUnits} from './global-game.js';
 import {places,types,stats,available,theaterVictoryCities} from './rules.js';
@@ -702,6 +702,8 @@ function terrainSheets(layout,extent){
   };
 }
 export async function atlas(onPick,onView,initial,exercise) {
+  const prefs=readMapPreferences();
+  document.querySelector('.navbox').dataset.side=prefs.side;
   const map=document.querySelector('#map'), forces=document.querySelector('#forces'), regions=document.querySelector('#regions'),routes=document.querySelector('#routes');
   const western=await (await fetch('./assets/territories.json')).json();
   const other=await (await fetch('./assets/fronts.json')).json();
@@ -720,7 +722,7 @@ export async function atlas(onPick,onView,initial,exercise) {
   }
   const extent=exercise.world?{left:0,top:0,width:exercise.projection.width,height:exercise.projection.height}:{left:0,top:0,width:2006,height:1716};
   const showWorldCopies=exercise.world?wrapWorld(map,extent):null;
-  const drawSheets=exercise.world?terrainSheets(await (await fetch('./assets/world-terrain.json')).json(),extent):null;
+  const drawSheets=exercise.world&&prefs.terrain==='auto'?terrainSheets(await (await fetch('./assets/world-terrain.json')).json(),extent):null;
   const detailScale=exercise.projection?.detailScale||1;
   const washes=await (await fetch('./assets/control-washes.json')).json();
   const bands=buildControlBands(map,shapes,regions,exercise.world?exercise.shapes:null,exercise.world?washes.world:washes.exercise,extent);
@@ -800,7 +802,7 @@ export async function atlas(onPick,onView,initial,exercise) {
   function render(){
     const {vw,vh,scale}=metrics();
     if(!exercise.world){
-      const display=scale*window.devicePixelRatio>2?'inline':'none';
+      const display=prefs.terrain==='auto'&&scale*window.devicePixelRatio>2?'inline':'none';
       if(detailPlate.getAttribute('display')!==display)detailPlate.setAttribute('display',display);
     }
     view.x=exercise.world?modulo(view.x,extent.width):extent.left+(vw>=extent.width?extent.width/2:bound(view.x-extent.left,vw/2,extent.width-vw/2));
@@ -823,7 +825,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     }
     document.querySelector('#coordinates').textContent=Math.abs(lat).toFixed(1)+'° '+(lat<0?'S':'N')+'   '+Math.abs(lon).toFixed(1)+'° '+(lon<0?'W':'E');
     if(!exercise.world)for(const {text,size} of landLabels){
-      text.style.display=view.z>=1.05 && size*scale>=9?'':'none';
+      text.style.display=prefs.labels==='auto'&&view.z>=1.05 && size*scale>=9?'':'none';
     }
     const tokenScale=Math.min(1/scale,1.2*detailScale);
     const spread=bound(1/(1.2*scale*detailScale),.66,1);
@@ -1009,7 +1011,7 @@ export async function atlas(onPick,onView,initial,exercise) {
         caption.style.display=placed&&tacticalZoom>=.8?'':'none';
       }
       for(const label of landLabels){
-        const choice=tacticalZoom>=1.05&&label.candidates.find(c=>c.font*scale>=9&&visible(c.x,c.y)&&clear(c.box));
+        const choice=prefs.labels==='auto'&&tacticalZoom>=1.05&&label.candidates.find(c=>c.font*scale>=9&&visible(c.x,c.y)&&clear(c.box));
         label.text.style.display=choice?'':'none';
         if(!choice)continue;
         occupied.push(choice.box);
@@ -1129,7 +1131,12 @@ export async function atlas(onPick,onView,initial,exercise) {
   map.addEventListener('pointerup',end);map.addEventListener('pointercancel',end);
   map.addEventListener('wheel',e=>{
     e.preventDefault();
-    if(exercise.world&&!e.ctrlKey&&(e.shiftKey||Math.abs(e.deltaX)>Math.abs(e.deltaY))){
+    if(prefs.wheel==='pan'&&!e.ctrlKey){
+      const m=metrics(),unit=e.deltaMode===1?16:e.deltaMode===2?m.h:1;
+      view.x+=(e.shiftKey?e.deltaX||e.deltaY:e.deltaX)*unit/m.scale;
+      if(!e.shiftKey)view.y+=e.deltaY*unit/m.scale;
+      render();
+    }else if(exercise.world&&!e.ctrlKey&&(e.shiftKey||Math.abs(e.deltaX)>Math.abs(e.deltaY))){
       const m=metrics(),unit=e.deltaMode===1?16:e.deltaMode===2?m.w:1;
       view.x+=(e.deltaX||e.deltaY)*unit/m.scale;
       render();
@@ -1139,7 +1146,8 @@ export async function atlas(onPick,onView,initial,exercise) {
     onView({...view});
   },{passive:false});
   function button(id,fn){document.getElementById(id).onclick=()=>{fn();render();onView({...view});};}
-  button('zoomIn',()=>zoom(1.38));button('zoomOut',()=>zoom(1/1.38));
+  const zoomStep={fine:1.15,standard:1.38,large:1.65}[prefs.zoom];
+  button('zoomIn',()=>zoom(zoomStep));button('zoomOut',()=>zoom(1/zoomStep));
   button('recenter',()=>{view={...exercise.camera};});
   button('overview',()=>{const m=metrics();view={x:extent.left+extent.width/2,y:extent.top+extent.height/2,z:Math.min(m.w/extent.width,m.h/extent.height)/m.base};});
   new ResizeObserver(render).observe(map);

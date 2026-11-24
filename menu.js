@@ -1,6 +1,6 @@
 import {exercises} from './rules.js';
 import {globalKey,globalPowers,loadGlobalSetup,startGlobalMatch} from './global-game.js';
-import {motionKey,ordersPanelKey} from './preferences.js';
+import {motionKey,ordersPanelKey,readMapPreferences,saveMapPreference} from './preferences.js';
 
 const launcher=document.getElementById('launcher');
 const route=location.hash.slice(1);
@@ -20,7 +20,7 @@ if(route==='global'||route.startsWith('exercise/')&&Object.hasOwn(exercises,rout
   const dialog=el('menuDialog');
   const version=document.querySelector('meta[name="application-version"]').content;
   for(const label of document.querySelectorAll('[data-version]'))label.textContent=version;
-  const windows={setupWindow:'New local game',settingsWindow:'Settings',guideWindow:'Field guide',aboutWindow:'About WarTable'};
+  const windows={setupWindow:'New local game',settingsWindow:'Settings',guideWindow:'Field guide',aboutWindow:'About WarTable',licenseWindow:'License & credits'};
   function openWindow(id){
     for(const name of Object.keys(windows))el(name).hidden=name!==id;
     el('menuDialogTitle').textContent=windows[id];
@@ -33,6 +33,15 @@ if(route==='global'||route.startsWith('exercise/')&&Object.hasOwn(exercises,rout
   el('menuClose').onclick=()=>dialog.close();
   el('cancelGame').onclick=()=>dialog.close();
   el('menuGuide').onclick=()=>openWindow('guideWindow');
+  el('menuLicense').onclick=()=>openWindow('licenseWindow');
+  el('licenseDetails').ontoggle=async()=>{
+    if(!el('licenseDetails').open||el('licenseText').textContent)return;
+    try{
+      const response=await fetch('./LICENSE.txt');
+      if(!response.ok)throw Error();
+      el('licenseText').textContent=await response.text();
+    }catch{showError('The license could not be loaded. Close and reopen the license details to retry.');}
+  };
   el('menuAbout').onclick=()=>openWindow('aboutWindow');
   const updateButton=el('checkUpdate'),updateStatus=el('updateStatus');
   if(registrationPromise){
@@ -87,17 +96,29 @@ if(route==='global'||route.startsWith('exercise/')&&Object.hasOwn(exercises,rout
   }else{
     updateStatus.textContent='For this downloaded edition, open a newly downloaded copy to update.';
   }
-  el('menuSettings').onclick=()=>{
+  function openSettings(){
     openWindow('settingsWindow');
     try{
+      const settings=readMapPreferences();
+      for(const select of el('settingsWindow').querySelectorAll('[data-map-setting]')){
+        select.value=settings[select.dataset.mapSetting];
+      }
       el('menuMotion').value=localStorage.getItem(motionKey)==='reduce'?'reduce':'system';
       el('menuOrders').value=JSON.parse(localStorage.getItem(ordersPanelKey))?.hidden?'hidden':'shown';
     }catch{showError('Device settings could not be read.');}
-  };
+  }
+  el('menuSettings').onclick=openSettings;
+  el('exerciseSettings').onclick=openSettings;
   el('menuMotion').onchange=event=>{
     try{localStorage.setItem(motionKey,event.target.value);}
     catch{showError('The motion setting could not be saved on this device.');}
   };
+  for(const select of el('settingsWindow').querySelectorAll('[data-map-setting]')){
+    select.onchange=()=>{
+      try{saveMapPreference(select.dataset.mapSetting,select.value);}
+      catch{select.value=readMapPreferences()[select.dataset.mapSetting];showError('The map setting could not be saved.');}
+    };
+  }
   el('menuOrders').onchange=event=>{
     try{
       const prefs=JSON.parse(localStorage.getItem(ordersPanelKey))||{};
@@ -113,6 +134,23 @@ if(route==='global'||route.startsWith('exercise/')&&Object.hasOwn(exercises,rout
       el('frontList').append(link);
     }
   }else{
+    const tabs=Array.from(el('modeChoices').querySelectorAll('[role="tab"]'));
+    function selectTab(chosen){
+      for(const tab of tabs){
+        const active=tab===chosen;
+        tab.setAttribute('aria-selected',String(active));
+        tab.tabIndex=active?0:-1;
+        el(tab.getAttribute('aria-controls')).hidden=!active;
+      }
+    }
+    tabs.forEach((tab,index)=>{
+      tab.onclick=()=>selectTab(tab);
+      tab.onkeydown=event=>{
+        const next={ArrowRight:(index+1)%tabs.length,ArrowLeft:(index+tabs.length-1)%tabs.length,Home:0,End:tabs.length-1}[event.key];
+        if(next===undefined)return;
+        event.preventDefault();selectTab(tabs[next]);tabs[next].focus();
+      };
+    });
     const phases={purchase:'Purchase & Repair',combatMove:'Combat Move',conductCombat:'Conduct Combat',combatReview:'Combat Review'};
     const summary=el('campaignSummary');
     const defaultSummary=summary.textContent;
