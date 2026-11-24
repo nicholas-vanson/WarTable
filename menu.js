@@ -5,8 +5,9 @@ import {motionKey,ordersPanelKey} from './preferences.js';
 const launcher=document.getElementById('launcher');
 const route=location.hash.slice(1);
 window.addEventListener('hashchange',()=>location.reload());
+let registrationPromise;
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('./sw.js').catch(()=>{document.getElementById('storage').textContent='Offline install unavailable';});
+  registrationPromise=navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).catch(()=>{document.getElementById('storage').textContent='Offline install unavailable';});
 }
 if(route==='global'||route.startsWith('exercise/')&&Object.hasOwn(exercises,route.slice('exercise/'.length))){
   launcher.hidden=true;
@@ -33,6 +34,59 @@ if(route==='global'||route.startsWith('exercise/')&&Object.hasOwn(exercises,rout
   el('cancelGame').onclick=()=>dialog.close();
   el('menuGuide').onclick=()=>openWindow('guideWindow');
   el('menuAbout').onclick=()=>openWindow('aboutWindow');
+  const updateButton=el('checkUpdate'),updateStatus=el('updateStatus');
+  if(registrationPromise){
+    updateButton.hidden=false;
+    updateButton.onclick=async()=>{
+      updateButton.disabled=true;
+      updateStatus.textContent='Checking for updates…';
+      let applying=false;
+      const reload=()=>location.reload();
+      try{
+        const registration=await registrationPromise;
+        if(!registration||!navigator.onLine)throw Error();
+        if(!registration.waiting&&!registration.installing)await registration.update();
+        const worker=registration.installing;
+        if(worker){
+          updateStatus.textContent='Downloading the playtest…';
+          await new Promise((resolve,reject)=>{
+            const changed=()=>{
+              if(['installed','activating','activated','redundant'].includes(worker.state)){
+                worker.removeEventListener('statechange',changed);
+                if(worker.state==='redundant')reject(Error());else resolve();
+              }
+            };
+            worker.addEventListener('statechange',changed);changed();
+          });
+        }
+        if(registration.waiting){
+          updateStatus.textContent='Opening the updated playtest…';
+          navigator.serviceWorker.addEventListener('controllerchange',reload,{once:true});
+          applying=true;
+          registration.waiting.postMessage('apply-update');
+        }else{
+          // Another open tab may have activated an update while this menu stayed open.
+          const html=await (await fetch('./index.html',{cache:'no-store'})).text();
+          const current=new DOMParser().parseFromString(html,'text/html').querySelector('meta[name="application-version"]');
+          if(current&&current.content!==version)reload();
+          else updateStatus.textContent='Version '+version+' is up to date.';
+        }
+      }catch{
+        applying=false;
+        navigator.serviceWorker.removeEventListener('controllerchange',reload);
+        updateStatus.textContent='Could not check for updates. Connect to the internet and try again.';
+      }finally{if(!applying)updateButton.disabled=false;}
+    };
+    const url=new URL(location.href);
+    if(url.searchParams.has('update')){
+      url.searchParams.delete('update');
+      history.replaceState(history.state,'',url);
+      openWindow('aboutWindow');
+      updateButton.click();
+    }
+  }else{
+    updateStatus.textContent='For this downloaded edition, open a newly downloaded copy to update.';
+  }
   el('menuSettings').onclick=()=>{
     openWindow('settingsWindow');
     try{
