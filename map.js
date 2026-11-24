@@ -421,12 +421,19 @@ function worldSeats(exercise,bands,zones){
     }
   }
   for(const [id,sector] of Object.entries(exercise.shapes)){
-    const path=bands[id]?.region||zones.get(String(parseInt(places[id].name)))?.area;
+    const sea=places[id].water?zones.get(String(parseInt(places[id].name))):null;
+    const path=sea?.area||bands[id]?.region;
     const roster=sector.garrison;
     const formation=formations[id];
     formation.slots=new Map();
     if(!roster.length)continue;
-    const points=garrisonGrid(id,path,formation,roster.length,exercise.projection.detailScale,sector.city);
+    const points=garrisonGrid(id,path,formation,roster.length,exercise.projection.detailScale,sector.city,sea?zones:null);
+    if(sea){
+      sea.fleet=formation;
+      const [cx,cy]=formation.center;
+      const distance=([x,y])=>Math.hypot(x-cx,y-cy);
+      formation.overview=points.reduce((best,p)=>distance(p)<distance(best)?p:best);
+    }
     roster.forEach(([power,type],index)=>{
       formation.slots.set(power+'/'+type,points[index]);
       if(power===sector.homePower&&types.includes(type))formation.home[type]=points[index];
@@ -446,7 +453,7 @@ function worldSeats(exercise,bands,zones){
 
 // Try a compact rectangle first. Extend its rows where the coast or an approach lane
 // cuts off a cell. Jitter belongs to the cell, so a pan or a casualty cannot reshuffle it.
-function garrisonGrid(id,path,formation,count,scale,city){
+function garrisonGrid(id,path,formation,count,scale,city,zones){
   const [cx,cy]=formation.center,cols=Math.ceil(Math.sqrt(count)),rows=Math.ceil(count/cols);
   const reserved=Object.entries(formation).filter(([key])=>!['center','home','slots'].includes(key))
     .flatMap(([,pair])=>Object.values(pair));
@@ -457,7 +464,9 @@ function garrisonGrid(id,path,formation,count,scale,city){
     seed=(Math.imul(1664525,seed)+1013904223)>>>0;
     return seed/4294967296-.5;
   }
-  const cells=[];
+  const numbers=zones?Array.from(zones.values()):[];
+  const maxToken=1.2*scale;
+  let cells=[];
   for(let row=-3;row<rows+3;row++){
     for(let col=-3;col<cols+3;col++){
       const x=col-(cols-1)/2,y=row-(rows-1)/2;
@@ -471,12 +480,33 @@ function garrisonGrid(id,path,formation,count,scale,city){
   for(const cell of cells){
     const x=cx+cell.dx*scale,y=cy+cell.dy*scale;
     cell.point=[x,y];
+    // Numbers and their flanking rules scale independently of the fleet.
+    // Keep the largest counter and its pencil ring clear at every zoom.
+    if(numbers.some(zone=>Math.abs(x-zone.x)<zone.labelHalfWidth+30*maxToken &&
+      y-19*maxToken<zone.y+zone.labelHalfHeight && y+28*maxToken>zone.y-zone.labelHalfHeight)){
+      cell.rank=Infinity;
+      continue;
+    }
     // On narrow coasts prefer an inside center to squeezing counters on top
     // of each other. Use an overhanging seat only once the interior is full.
     if(!inside(x,y)||!inside(cx+.66*(x-cx),cy+.66*(y-cy)))cell.rank+=2000;
     else if(!inside(x-halfW,y-halfH)||!inside(x+halfW,y-halfH)||
             !inside(x-halfW,y+halfH)||!inside(x+halfW,y+halfH))cell.rank+=115;
     if(reserved.some(([u,v])=>Math.abs(x-u)<48*scale&&Math.abs(y-v)<29*scale))cell.rank+=600;
+  }
+  if(zones&&count>1){
+    // Slide the whole group beside the number when the coast leaves room.
+    // In straits the individual ranked cells can follow the available water.
+    let best=Infinity,block=null;
+    for(const start of cells){
+      const seats=cells.filter(c=>c.row>=start.row&&c.row<start.row+rows&&
+        c.col>=start.col&&c.col<start.col+cols&&Number.isFinite(c.rank))
+        .sort((a,b)=>a.rank-b.rank).slice(0,count);
+      if(seats.length!==count||seats.some(c=>!inside(...c.point)))continue;
+      const cost=seats.reduce((sum,c)=>sum+c.rank,0);
+      if(cost<best){best=cost;block=seats;}
+    }
+    if(block)cells=block;
   }
   return cells.sort((a,b)=>a.rank-b.rank).slice(0,count)
     .sort((a,b)=>a.row-b.row||a.col-b.col).map(cell=>cell.point);
@@ -573,9 +603,10 @@ function buildControlBands(map,shapes,regions,sectors,washes,extent){
 function buildSeaZones(map,chart){
   const layer=map.querySelector('#seaZones'), numbers=node('g',{'pointer-events':'none'});
   const zones=new Map();
-  for(const {number,label,d,neighbors,room,ruleRoom} of chart.zones){
+  for(const {id,number,label,d,neighbors,room,ruleRoom} of chart.zones){
     const area=node('path',{d,stroke:'none','fill-rule':'evenodd',fill:'transparent','data-sea':number,
       'aria-label':'Sea zone '+number});
+    if(id)area.dataset.place=id;
     area.append(node('title',{},'Sea zone '+number));layer.append(area);
     const [x,y]=label;
     const mark=node('g',{transform:'translate('+x+' '+y+')'});
@@ -585,14 +616,12 @@ function buildSeaZones(map,chart){
         'font-weight':700,'letter-spacing':.65,fill:'#314e59',stroke:'#c5d5cd','stroke-width':2.2,
         'paint-order':'stroke'},number));
     numbers.append(mark);
-    zones.set(String(number),{area,mark,x,y,neighbors,room,ruleRoom});
+    const labelHalfWidth=Math.max((String(number).length*4.5+2)*room,20*ruleRoom);
+    zones.set(String(number),{area,mark,x,y,neighbors,room,ruleRoom,labelHalfWidth,labelHalfHeight:9*room});
   }
-  if(chart.globalDividers){
-    layer.append(node('path',{d:chart.globalDividers,fill:'none',stroke:'#365664','stroke-width':1.3,'vector-effect':'non-scaling-stroke',opacity:.73,
-      'stroke-dasharray':'6 3','pointer-events':'none'}));
-  }
-  layer.append(node('path',{d:chart.dividers,fill:'none',stroke:'#365664','stroke-width':1.3,
-    'stroke-dasharray':'6 3','vector-effect':'non-scaling-stroke',opacity:.73,'pointer-events':'none'}),numbers);
+  layer.prepend(node('path',{d:chart.dividers,fill:'none',stroke:'#365664','stroke-width':1.3,
+    'stroke-dasharray':'6 3','vector-effect':'non-scaling-stroke',opacity:.73,'pointer-events':'none'}));
+  layer.append(numbers);
   return zones;
 }
 const bound=(v,min,max)=>Math.min(max,Math.max(min,v));
@@ -679,8 +708,8 @@ export async function atlas(onPick,onView,initial,exercise) {
   let chart=await (await fetch('./assets/sea-zones.json')).json();
   if(exercise.world){
     const seas=Object.entries(exercise.shapes).filter(([id])=>places[id].water);
-    chart={dividers:'',globalDividers:seas.map(([,sector])=>sector.dividers).join(''),zones:seas.map(([id,sector])=>({
-      number:parseInt(places[id].name),d:sector.d,label:sector.numberAt||sector.center,room:sector.room,ruleRoom:sector.ruleRoom,
+    chart={dividers:seas.map(([,sector])=>sector.dividers).join(''),zones:seas.map(([id,sector])=>({
+      id,number:parseInt(places[id].name),d:sector.d,label:sector.numberAt||sector.center,room:sector.room,ruleRoom:sector.ruleRoom,
       neighbors:places[id].links.filter(n=>n.endsWith(' Sea Zone')).map(n=>parseInt(n))
     }))};
     const worldPlate=document.getElementById('worldPlate');worldPlate.removeAttribute('display');
@@ -702,11 +731,9 @@ export async function atlas(onPick,onView,initial,exercise) {
     homeTypes.forEach((type,index)=>{formations[id].home[type]=points[index];});
   }
   const intel=document.querySelector('#mapIntel');
-  let inspectedPlace, inspectedSea=null, lastBattle=null, lastScale=0;
-  function inspectSea(id){
-    if(inspectedSea)zones.get(inspectedSea).area.setAttribute('fill','transparent');
-    inspectedSea=id;
-    if(id)zones.get(id).area.setAttribute('fill','#426d8133');
+  let inspectedPlace, exerciseSea=null, highlightedSea=null, lastBattle=null, lastScale=0;
+  function selectedPlace(){
+    return game.phase==='combat'?(inspectedPlace===undefined?game.active:inspectedPlace):target||focus;
   }
   const labelGroup=document.querySelector('#labels'),towns=[];
   for(const [name,lon,lat,kind,boardX,boardY,boardAngle] of labels){
@@ -797,6 +824,8 @@ export async function atlas(onPick,onView,initial,exercise) {
     if(!exercise.world)for(const {text,size} of landLabels){
       text.style.display=view.z>=1.05 && size*scale>=9?'':'none';
     }
+    const tokenScale=Math.min(1/scale,1.2*detailScale);
+    const spread=bound(1/(1.2*scale*detailScale),.66,1);
     if(scale!==lastScale){
       for(const {mark,name,x,y} of cityMarks){
         mark.setAttribute('transform','translate('+x+' '+y+') scale('+bound(1/scale,.52,3.5)+')');
@@ -815,11 +844,20 @@ export async function atlas(onPick,onView,initial,exercise) {
       }
       map.style.setProperty('--outer',width+'px');
       map.style.setProperty('--inner',width*.48+'px');
-      for(const {mark,x,y,room,ruleRoom} of zones.values()){
+      for(const zone of zones.values()){
+        const {mark,x,y,room,ruleRoom,fleet}=zone;
         const size=Math.min(1/scale,room);
         mark.setAttribute('transform','translate('+x+' '+y+') scale('+size+')');
         mark.firstChild.style.display=size>ruleRoom?'none':'';
         mark.style.display=size*scale<.65?'none':'';
+        if(fleet){
+          // Tighten a fleet as the printed number shrinks, provided the whole
+          // group still fits on this side of any islands or peninsulas.
+          const [cx,cy]=fleet.center,spacing=Math.max(spread,size/room);
+          const fits=cx===x&&cy===y&&Array.from(fleet.slots.values()).every(([u,v])=>
+            zone.area.isPointInFill(new DOMPoint(cx+(u-cx)*spacing,cy+(v-cy)*spacing)));
+          fleet.spacing=fits?spacing:1;
+        }
       }
       lastScale=scale;
     }
@@ -834,17 +872,23 @@ export async function atlas(onPick,onView,initial,exercise) {
       band.lastChild.setAttribute('stroke','url(#'+styleFor(owner).hatch+')');
       region.firstChild.textContent=places[id].name+' · '+owner+(key?'':' control');
     }
-    const selectedLand=inspectedSea?null:(game.phase==='combat'?(inspectedPlace===undefined?game.active:inspectedPlace):target||focus);
+    const selected=exerciseSea?null:selectedPlace();
+    const inspectedSea=exerciseSea||(places[selected]?.water?String(parseInt(places[selected].name)):null);
+    if(highlightedSea!==inspectedSea){
+      zones.get(highlightedSea)?.area.classList.remove('selected-territory');
+      zones.get(inspectedSea)?.area.classList.add('selected-territory');
+      highlightedSea=inspectedSea;
+    }
     const info=inspectedSea?'Sea zone '+inspectedSea+' · Adjacent '+zones.get(inspectedSea).neighbors.join(', '):
-      bands[selectedLand]?bands[selectedLand].region.firstChild.textContent:'';
+      bands[selected]?bands[selected].region.firstChild.textContent:'';
     if(intel.textContent!==info)intel.textContent=info;
     forces.replaceChildren();
     for(const region of regions.children){
       const id=region.dataset.place;
       const legal=game.phase==='plan'&&places[focus]?.targets.includes(id);
-      region.classList.toggle('selected-territory',id===selectedLand);
+      region.classList.toggle('selected-territory',id===selected);
       const outline=bands[id].selectedOutline;
-      if(outline)outline.setAttribute('display',id===selectedLand?'inline':'none');
+      if(outline)outline.setAttribute('display',id===selected?'inline':'none');
       region.setAttribute('fill',legal?'#d6b65728':'transparent');
       region.setAttribute('stroke',legal?'#895a31':'none');
       region.setAttribute('stroke-width','2');
@@ -853,8 +897,6 @@ export async function atlas(onPick,onView,initial,exercise) {
     const compact=tacticalZoom<.66;
     // Taper counter size at the widest tactical scales; keep the interior seats stable
     // while panning, and tighten their spacing at close zoom.
-    const tokenScale=Math.min(1/scale,1.2*detailScale);
-    const spread=bound(1/(1.2*scale*detailScale),.66,1);
     const nextRouteKey=[scale,layoutSeed,game.phase,JSON.stringify(game.orders)].join('|');
     if(routeKey!==nextRouteKey){
       const nextStarts=new Map(),now=performance.now();
@@ -905,7 +947,8 @@ export async function atlas(onPick,onView,initial,exercise) {
         if(ink.getAttribute('transform')!==transform)ink.setAttribute('transform',transform);
       }
       if(compact){
-        if(!exercise.world||game.pieces[id].some(row=>row[2]>0))forces.append(node('circle',{cx:x,cy:y,r:Math.min(7/scale,exercise.world?22:Infinity),fill:styleFor(nation).counter,stroke:'#f7f2df','stroke-width':exercise.world?Math.min(1.6/scale,4):1.6/scale,'data-place':id}));
+        const [dotX,dotY]=formations[id].overview||[x,y];
+        if(!exercise.world||game.pieces[id].some(row=>row[2]>0))forces.append(node('circle',{cx:dotX,cy:dotY,r:Math.min(7/scale,exercise.world?22:Infinity),fill:styleFor(nation).counter,stroke:'#f7f2df','stroke-width':exercise.world?Math.min(1.6/scale,4):1.6/scale,'data-place':id}));
         continue;
       }
       const detailed=tacticalZoom>=1.55;
@@ -920,7 +963,8 @@ export async function atlas(onPick,onView,initial,exercise) {
         if(primary)at=seat(id,'home',type,spread,offsets);
         else{
           const point=formations[id].slots.get(power+'/'+type)||formations[id].home[type]||position(id);
-          at=[x+(point[0]-x)*spread,y+(point[1]-y)*spread];
+          const spacing=formations[id].spacing??spread;
+          at=[x+(point[0]-x)*spacing,y+(point[1]-y)*spacing];
         }
         const caption=detailed&&selected&&!types.includes(type);
         const stack=drawStack(game,forces,id,type,free,country,'home',at,tokenScale,caption,selected,null);
@@ -1025,7 +1069,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     }
     // At wider zoom the printed faces shrink. Give taps in the surrounding territory
     // a 44 px target, resolving shared space to the nearest counter of that territory.
-    if(hit?.place&&!hit.unit&&!bands[hit.place]?.region.classList.contains('selected-territory')){
+    if(hit?.place&&!hit.sea&&!hit.unit&&hit.place!==selectedPlace()){
       let nearest=Infinity;
       for(const stack of forces.querySelectorAll('g[data-unit]')){
         if(stack.dataset.place!==hit.place)continue;
@@ -1057,13 +1101,15 @@ export async function atlas(onPick,onView,initial,exercise) {
     pointers.delete(e.pointerId);
     gesture=pointers.size?{...basis(),moved:true}:null;
     if(tapped){
-      if(game.phase==='combat')inspectedPlace=bands[id]?.region.classList.contains('selected-territory')?null:id||null;
-      inspectSea(sea && sea!==inspectedSea ? sea : null);
+      if(game.phase==='combat')inspectedPlace=id===selectedPlace()?null:id||null;
+      if(!exercise.world){
+        exerciseSea=sea&&sea!==exerciseSea?sea:null;
+        if(sea&&game.phase!=='combat')onPick(null);
+      }
       if(id){
-        if(view.z<.66){[view.x,view.y]=position(id);view.z=exercise.world?maxZoom:1.25;}
+        if(view.z<.66&&!sea){[view.x,view.y]=position(id);view.z=exercise.world?maxZoom:1.25;}
         onPick(id,type,origin,nation);
       }
-      if(!id&&sea&&exercise.world)onPick('world-'+sea+'-sea-zone');
       render();
     }
     onView({...view});
@@ -1102,11 +1148,7 @@ export async function atlas(onPick,onView,initial,exercise) {
   return (s,id,to,type,seed,nation)=>{
     if(seed!==layoutSeed){offsets=homeOffsets(seed);layoutSeed=seed;}
     if(s.active!==lastBattle){
-      inspectedPlace=undefined;inspectSea(null);lastBattle=s.active;
-    }
-    if(exercise.world&&s.phase==='plan'&&id!==focus){
-      const sea=places[id]?.water?String(parseInt(places[id].name)):null;
-      if(sea!==inspectedSea)inspectSea(sea);
+      inspectedPlace=undefined;exerciseSea=null;lastBattle=s.active;
     }
     game=s;focus=id;target=to;selectedType=type;selectedNation=nation;render();
   };

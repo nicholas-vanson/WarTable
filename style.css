@@ -231,7 +231,7 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
 
 .power-seat{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}.power-seat select{min-height:36px;background:var(--sheet);color:inherit}
 
-#regions .selected-territory:not(.wrapped-territory),.joined-selection{
+#regions .selected-territory:not(.wrapped-territory),#seaZones .selected-territory,.joined-selection{
   fill:rgba(123,78,152,.36);
   stroke:#694779;
   stroke-width:1.6px;

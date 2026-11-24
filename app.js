@@ -74,6 +74,7 @@ function selectTarget(id){
   ui.units=order?{...order.units}:{inf:0,tank:0};
 }
 function pick(id,type,origin,nation){
+  if(!id){run(()=>{ui=freshUI();});return;}
   if(s.phase==='plan'){run(()=>{
     if(!type&&(ui.to||ui.inspect||ui.from)===id){ui=freshUI();return;}
     if(isGlobal&&ui.inspect===id&&type&&type===ui.inspectedType&&nation===ui.inspectedNation){ui=freshUI();return;}
