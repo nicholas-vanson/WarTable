@@ -73,29 +73,98 @@ function seat(id,group,type,spread,offsets){
 function sheetOffset(x,reference,width){
   return width?Math.round((reference-x)/width)*width:0;
 }
-function movementArc(from,to,type,spread,tokenScale,offsets,originShift){
-  const start=seat(from,'home',type,spread,offsets),end=seat(to,from,type,spread,offsets);
-  start[0]+=originShift;
-  const handles=approaches[from+'-'+to][type];
-  function atCounterEdge(point,handle){
-    const dx=handle[0]-point[0],dy=handle[1]-point[1];
-    const t=Math.min(.9,1/Math.max(Math.abs(dx)/(22*tokenScale),Math.abs(dy)/(14*tokenScale)));
-    return [point[0]+dx*t,point[1]+dy*t];
-  }
-  const tail=atCounterEdge(start,handles[0]),tip=atCounterEdge(end,handles.at(-1));
+function atCounterEdge(point,handle,tokenScale){
+  const dx=handle[0]-point[0],dy=handle[1]-point[1];
+  const t=Math.min(.9,1/Math.max(Math.abs(dx)/(22*tokenScale),Math.abs(dy)/(14*tokenScale)));
+  return [point[0]+dx*t,point[1]+dy*t];
+}
+function movementArc(start,end,handles,tokenScale){
+  const tail=atCounterEdge(start,handles[0],tokenScale),tip=atCounterEdge(end,handles[1],tokenScale);
   return 'M'+tail.join(' ')+' C'+[...handles,tip].map(p=>p.join(' ')).join(' ');
+}
+// Locate crossings on the longest shared run of printed border. Cache only borders
+// actually used by an order. Separate crossings give a returning blitz room to turn.
+function borderCrossings(shapes){
+  const cache=new Map();
+  return (via,neighbor)=>{
+    const key=via+'/'+neighbor;
+    if(cache.has(key))return cache.get(key);
+    const neighborVertices=new Set(shapes[neighbor].match(/[\d.-]+,[\d.-]+/g));
+    let longest=[],maxLength=0;
+    for(const [,ring] of shapes[via].matchAll(/M([^Z]+)Z/g)){
+      const vertices=ring.trim().split(/\s+/);
+      const first=Math.max(0,vertices.findIndex(v=>!neighborVertices.has(v)));
+      let run=[],length=0;
+      for(let i=0;i<vertices.length;i++){
+        const vertex=vertices[(first+i)%vertices.length];
+        if(!neighborVertices.has(vertex)){run=[];length=0;continue;}
+        const p=vertex.split(',').map(Number),prev=run.at(-1);
+        if(prev)length+=Math.hypot(p[0]-prev.x,p[1]-prev.y);
+        run.push({x:p[0],y:p[1],length});
+        if(length>maxLength){longest=run;maxLength=length;}
+      }
+    }
+    const gates=maxLength?[.25,.5,.75].map(fraction=>{
+      const at=maxLength*fraction,index=longest.findIndex(p=>p.length>=at);
+      const a=longest[index-1],b=longest[index],t=(at-a.length)/(b.length-a.length);
+      return [a.x+t*(b.x-a.x),a.y+t*(b.y-a.y)];
+    }):[];
+    cache.set(key,gates);return gates;
+  };
+}
+function passageArc(points,tokenScale){
+  // A rounded corner blends each pair of legs. Consecutive quadratics have
+  // matching tangent directions at their shared midpoint, including on a U-turn.
+  const tail=atCounterEdge(points[0],points[1],tokenScale);
+  const tip=atCounterEdge(points.at(-1),points.at(-2),tokenScale);
+  let path='M'+tail;
+  for(let i=1;i<points.length-1;i++){
+    const point=points[i],next=points[i+1];
+    const join=i===points.length-2?tip:[(point[0]+next[0])/2,(point[1]+next[1])/2];
+    path+=' Q'+point+' '+join;
+  }
+  return path;
 }
 
 // Measure each curved stroke from its broad departure end. Segment count follows
 // the route on the board, so a pinch never adds or removes a break.
-function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detailScale,originShift){
-  const {from,to,units}=order;
-  const centerline=node('path',{d:movementArc(from,to,type,spread,tokenScale,offsets,originShift)});
+function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detailScale,{originShift,viaShift,gates,period}){
+  const {from,via,to,units}=order,entry=via||from;
+  const start=seat(from,'home',type,spread,offsets),end=seat(to,entry,type,spread,offsets);
+  start[0]+=originShift;
+  const departure=formations[from].home[type],arrival=formations[to][entry][type];
+  let distance,path;
+  if(via){
+    const [x,y]=position(via),passage=[x+viaShift,y];
+    const loop=from===to;
+    const entrance=gates(via,from)[loop?0:1],exit=gates(via,to)[loop?2:1];
+    const controls=[];
+    if(entrance&&exit){
+      const align=p=>[p[0]+sheetOffset(p[0],passage[0],period),p[1]];
+      const first=align(entrance),last=align(exit);
+      controls.push(first);
+      // On the return leg, turn inside the passage near the shared border.
+      if(loop)controls.push([.5*passage[0]+.25*(first[0]+last[0]),.5*y+.25*(first[1]+last[1])]);
+      else controls.push(passage);
+      controls.push(last);
+    }else{
+      // The split edges at the wrap may share no vertices on this sheet.
+      const dx=passage[0]-start[0],dy=y-start[1];
+      if(loop)controls.push([passage[0]-.18*dy,y+.18*dx]);
+      controls.push(passage);
+      if(loop)controls.push([passage[0]+.18*dy,y-.18*dx]);
+    }
+    path=passageArc([start,...controls,end],tokenScale);
+    const fixed=[[departure[0]+originShift,departure[1]],...controls,arrival];
+    distance=fixed.slice(1).reduce((sum,p,i)=>sum+Math.hypot(p[0]-fixed[i][0],p[1]-fixed[i][1]),0);
+  }else{
+    path=movementArc(start,end,approaches[from+'-'+to][type],tokenScale);
+    distance=Math.hypot(arrival[0]-departure[0]-originShift,arrival[1]-departure[1]);
+  }
+  const centerline=node('path',{d:path});
   const length=centerline.getTotalLength();
   const baseWidth=Math.min(length*.09,6.8*tokenScale*bound(.83+length/(570*detailScale),.94,1.32));
   const width=baseWidth*(1+.5*Math.log2(units[type]));
-  const departure=formations[from].home[type],arrival=formations[to][from][type];
-  const distance=Math.hypot(arrival[0]-departure[0]-originShift,arrival[1]-departure[1]);
   const segments=1+Math.floor(distance/(125*detailScale));
   const gap=Math.min(6.2*tokenScale,length/segments*.12);
   const headLength=Math.min(length*.17,4.4*tokenScale+width*.56);
@@ -141,7 +210,8 @@ function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detail
     glints.push('M'+strokes[1].join(' L'));
   }
   const group=node('g',{'data-from':from,'data-to':to,'data-unit':type});
-  if(!places[from].water&&!places[to].water)group.setAttribute('clip-path','url(#route-'+from+'-'+to+')');
+  if(via)group.dataset.via=via;
+  else if(!places[from].water&&!places[to].water)group.setAttribute('clip-path','url(#route-'+from+'-'+to+')');
   const ink=node('g',{filter:'url(#route-grain)','stroke-linecap':'round','stroke-linejoin':'round'});
   ink.append(node('path',{d:bodies.join(' '),fill:planned?'#ad5540':'#943d2e','fill-opacity':planned?.60:.79,
     stroke:'#833929','stroke-width':1.15*tokenScale}),
@@ -151,7 +221,7 @@ function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detail
   group.append(ink);
   const duration=320+90*segments;
   if(elapsed<duration&&!reducedMotion()){
-    const id='pencil-route-'+from+'-'+to+'-'+type;
+    const id='pencil-route-'+[from,via,to,type].filter(Boolean).join('-');
     const mask=node('mask',{id,maskContentUnits:'userSpaceOnUse'});
     centerline.setAttribute('pathLength',1);
     centerline.setAttribute('fill','none');centerline.setAttribute('stroke','white');
@@ -727,6 +797,7 @@ export async function atlas(onPick,onView,initial,exercise) {
   const western=await (await fetch('./assets/territories.json')).json();
   const other=await (await fetch('./assets/fronts.json')).json();
   const shapes=Object.fromEntries(Object.keys(exercise.forces).filter(id=>!places[id].water).map(id=>[id,exercise.world?exercise.shapes[id].d:western[id]||other[id]]));
+  const gates=borderCrossings(shapes);
   let chart=await (await fetch('./assets/sea-zones.json')).json();
   if(exercise.world){
     const seas=Object.entries(exercise.shapes).filter(([id])=>places[id].water);
@@ -947,17 +1018,19 @@ export async function atlas(onPick,onView,initial,exercise) {
     if(routeKey!==nextRouteKey){
       const nextStarts=new Map(),now=performance.now();
       routes.replaceChildren();
-      const legs=game.orders.flatMap(o=>o.via?[{...o,to:o.via},{...o,from:o.via}]:[o]);
-      for(const order of combineLegs(legs)){
+      for(const order of game.orders){
         for(const type of Object.keys(order.units).filter(t=>order.units[t]>0)){
-          const key=order.from+'-'+order.to+'-'+type;
+          const key=[order.from,order.via,order.to,type].filter(Boolean).join('-');
           const start=routeStarts.get(key)??(routeKey?now:-Infinity);
           nextStarts.set(key,start);
           const planned=game.phase==='plan';
-          const shift=sheetOffset(position(order.from)[0],position(order.to)[0],exercise.projection?.width);
-          const arrow=attackArrow(order,type,spread,tokenScale,offsets,planned,planned?now-start:Infinity,detailScale,shift);
+          const period=exercise.projection?.width,entry=order.via||order.from;
+          const entryShift=sheetOffset(position(entry)[0],position(order.to)[0],period);
+          const originShift=entryShift+sheetOffset(position(order.from)[0],position(entry)[0],period);
+          const arrow=attackArrow(order,type,spread,tokenScale,offsets,planned,planned?now-start:Infinity,detailScale,{originShift,viaShift:entryShift,gates,period});
           routes.append(arrow);
-          if(shift){
+          for(const shift of new Set([entryShift,originShift])){
+            if(!shift)continue;
             arrow.id='seam-route-'+key;
             routes.append(node('use',{href:'#'+arrow.id,x:-shift}));
           }
