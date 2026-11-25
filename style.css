@@ -284,6 +284,19 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
   vector-effect:non-scaling-stroke;
 }
 
+[data-tank-choice="destination"]{--move-wash:rgba(244,181,55,.48);--move-ink:#864810}
+[data-tank-choice="passage"]{--move-wash:rgba(97,202,190,.48);--move-ink:#165b59}
+#map [data-tank-choice]{
+  fill:var(--move-wash);stroke:var(--move-ink);stroke-width:2.5px;
+  vector-effect:non-scaling-stroke;stroke-linejoin:round;
+}
+#map [data-tank-choice="passage"]{stroke-dasharray:7 4}
+#mapIntel[data-tank-choice]::before{
+  content:"";display:inline-block;vertical-align:-1px;margin-right:5px;
+  width:13px;height:8px;background:var(--move-wash);border:2px solid var(--move-ink);
+}
+#mapIntel[data-tank-choice="passage"]::before{border-style:dashed}
+
 .activation-order{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-block:8px}
 .activation-order input{width:4em;font:inherit}
 :root{

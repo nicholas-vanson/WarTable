@@ -584,7 +584,7 @@ function render(){
     }
   }
   updateBattleForces();
-  const nextView=[briefing,inPurchase(),ui.buyGroup,ui.wallet,ui.inspect,s.phase,s.active,currentBattle(s)?.step,ui.from,ui.to,ui.stack].join('|');
+  const nextView=[briefing,inPurchase(),ui.buyGroup,ui.wallet,ui.inspect,s.phase,s.active,currentBattle(s)?.step,ui.from,ui.to,ui.stack,ui.routeTo,ui.twoSpace].join('|');
   if(panelView!==nextView)document.querySelector('.panel-scroll').scrollTop=0;
   panelView=nextView;
   $('notice').textContent=message;

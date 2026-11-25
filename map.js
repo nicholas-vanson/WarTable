@@ -1,7 +1,7 @@
 import {reducedMotion,readMapPreferences} from './preferences.js';
 import {neutralKey} from './neutral-rules.js';
 import {ownerNames,globalUnits,isFacility} from './global-game.js';
-import {places,types,stats,available,targetsFor,mobileTypes,samePower,theaterVictoryCities} from './rules.js';
+import {places,types,stats,available,mobileTypes,samePower,theaterVictoryCities} from './rules.js';
 const ns='http://www.w3.org/2000/svg';
 function node(tag,attrs,text=''){
   const el=document.createElementNS(ns,tag);
@@ -602,7 +602,7 @@ function buildControlBands(map,shapes,regions,sectors,washes,extent){
     destination.append(band);
     let selectedOutline=null;
     if(wrapped){
-      selectedOutline=node('use',{href:paint,class:'joined-selection',display:'none'});
+      selectedOutline=node('path',{d:wrapped.d,class:'joined-selection',display:'none'});
       destination.append(selectedOutline);
     }
     bands[id]={band,region,neutralFill,selectedOutline};
@@ -909,22 +909,33 @@ export async function atlas(onPick,onView,initial,exercise) {
       zones.get(inspectedSea)?.area.classList.add('selected-territory');
       highlightedSea=inspectedSea;
     }
-    const info=inspectedSea?'Sea zone '+inspectedSea+' · Adjacent '+zones.get(inspectedSea).neighbors.join(', '):
+    const choosingMove=!surveying&&game.phase==='plan'&&routeChoices!==null;
+    const tankStage=choosingMove&&exercise.world&&selectedType==='tank'?(target?'passage':'destination'):null;
+    const prompt=tankStage==='passage'?'Tap a passage to '+places[target].name:
+      routeChoices?.length?'Tap a tank destination':'No legal tank moves';
+    const info=tankStage?prompt:inspectedSea?'Sea zone '+inspectedSea+' · Adjacent '+zones.get(inspectedSea).neighbors.join(', '):
       bands[selected]?bands[selected].region.firstChild.textContent:'';
     if(intel.textContent!==info)intel.textContent=info;
+    if(tankStage&&routeChoices.length)intel.dataset.tankChoice=tankStage;
+    else delete intel.dataset.tankChoice;
     forces.replaceChildren();
     for(const region of regions.children){
       const id=region.dataset.place;
-      const legal=!surveying&&game.phase==='plan'&&focus&&(routeChoices||(selectedType?targetsFor(game,focus,selectedType):places[focus].targets)).includes(id);
-      region.classList.toggle('selected-territory',id===selected);
+      const legal=choosingMove&&routeChoices.includes(id);
+      const tankChoice=legal&&tankStage;
       const outline=bands[id].selectedOutline;
-      if(outline)outline.setAttribute('display',id===selected?'inline':'none');
-      region.setAttribute('fill',legal?'#d6b65728':'transparent');
-      region.setAttribute('stroke',legal?'#895a31':'none');
+      // At the wrap, paint the continuous outline and keep the split faces as tap targets.
+      const paint=outline||region;
+      if(tankChoice)paint.dataset.tankChoice=tankChoice;
+      else delete paint.dataset.tankChoice;
+      region.classList.toggle('selected-territory',id===selected&&!tankChoice);
+      if(outline)outline.setAttribute('display',id===selected||tankChoice?'inline':'none');
+      region.setAttribute('fill',legal&&!tankChoice?'#d6b65728':'transparent');
+      region.setAttribute('stroke',legal&&!tankChoice?'#895a31':'none');
       region.setAttribute('stroke-width','2');
     }
     if(exercise.world)for(const {area} of zones.values()){
-      const legal=!surveying&&game.phase==='plan'&&focus&&selectedType&&targetsFor(game,focus,selectedType).includes(area.dataset.place);
+      const legal=choosingMove&&routeChoices.includes(area.dataset.place);
       area.setAttribute('fill',legal?'#d6b65738':'transparent');
       area.setAttribute('stroke',legal?'#895a31':'none');
     }
