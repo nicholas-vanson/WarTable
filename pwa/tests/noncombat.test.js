@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {globalPowers,startGlobalPlaytest,prepareGlobalBoard,nextPlaytestTurn,saveGlobalPosition} from '../global-game.js';
+import {beginMobilization,finishMobilization} from '../mobilize.js';
 import {plan,commit,retreat} from '../rules.js';
 import {beginNoncombat,noncombatPosition,noncombatRoutes,completeNoncombat} from '../noncombat.js';
 const asset=n=>JSON.parse(readFileSync(new URL('../assets/'+n+'.json',import.meta.url)));
@@ -29,9 +30,12 @@ test('unused ground forces reinforce a new capture, aircraft need an original fr
   const finished=completeNoncombat(game);
   match.phase='noncombatMove';match.combat={game};assert.throws(()=>nextPlaytestTurn(match));
   saveGlobalPosition(match,finished);match.combat.game=finished;
-  const next=nextPlaytestTurn(match);assert.equal(next.power,'Russians');assert.equal(next.phase,'briefing');
+  assert.throws(()=>nextPlaytestTurn(match),/mobilization/);
+  match.combatStart=structuredClone(match.board);match.phase='mobilize';
+  match.combat.game=beginMobilization(game);
+  const next=finishMobilization(match,match.combat.game);assert.equal(next.power,'Russians');assert.equal(next.phase,'briefing');
   assert.equal(next.board.France.units.find(([p,t])=>p==='Germans'&&t==='infantry')[2],4);
-  assert.equal(next.turnReviews[0].record.at(-1).title,'Holland Belgium → France');
+  assert(next.turnReviews[0].record.some(r=>r.title==='Holland Belgium → France'));
 });
 test('neutral activation changes control only on the projected board and its garrison cannot move again',()=>{
   const {game}=opening();const g=start(game),bulgaria='world-bulgaria';

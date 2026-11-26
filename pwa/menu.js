@@ -151,7 +151,7 @@ if(route==='global'||route.startsWith('exercise/')&&Object.hasOwn(exercises,rout
         event.preventDefault();selectTab(tabs[next]);tabs[next].focus();
       };
     });
-    const phases={briefing:'Turn briefing',purchase:'Purchase & Repair',combatMove:'Combat Move',conductCombat:'Conduct Combat',combatReview:'Combat Review',noncombatMove:'Noncombat Move'};
+    const phases={briefing:'Turn briefing',purchase:'Purchase & Repair',combatMove:'Combat Move',conductCombat:'Conduct Combat',combatReview:'Combat Review',noncombatMove:'Noncombat Move',mobilize:'Mobilize New Units'};
     const summary=el('campaignSummary');
     const defaultSummary=summary.textContent;
     let setupSnapshot;

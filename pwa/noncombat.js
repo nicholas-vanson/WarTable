@@ -1,6 +1,6 @@
 // Drafts replay from the resolved battle position. Arrivals never replenish the
 // opening allowance, including when a stack returns to its starting territory.
-import {places,stats,ships,aircraft,samePower,exerciseOf} from './rules.js';
+import {places,stats,ships,aircraft,samePower,exerciseOf,deckSpace,reservedBerths} from './rules.js';
 import {neutralKey,takeFriendlyControl,hostileNeutral} from './neutral-rules.js';
 
 export function beginNoncombat(game){
@@ -27,13 +27,7 @@ function transferNoncombatUnits(g,from,to,type,n,test){
   g.units[to][type]=(g.units[to][type]||0)+n;
 }
 function freeCarrierSpaces(g,id){
-  const side=exerciseOf(g).friendlyPowers[g.power];
-  let free=0;
-  for(const [p,t,n] of g.pieces[id])if(side.includes(p)){
-    if(t==='carrier')free+=2*(n-(g.shipDamage?.[id]?.[p]?.carrier||0));
-    if(aircraft.includes(t))free-=n;
-  }
-  return free;
+  return deckSpace(g,id,exerciseOf(g).friendlyPowers[g.power]);
 }
 function friendlyDestination(g,id){return exerciseOf(g).friends[g.power].includes(g.owners[id]);}
 function canActivateDestination(g,id){
@@ -113,7 +107,7 @@ export function noncombatRoutes(g,order){
     return shipRedeployments(g,from,type);
   }
   if(aircraft.includes(type)){
-    const slots=id=>type!=='bomber'&&canEnterSeaZone(g,id,'carrier')&&freeCarrierSpaces(g,id)>=quantity;
+    const slots=id=>type!=='bomber'&&(canEnterSeaZone(g,id,'carrier')||reservedBerths(g,id)>=quantity)&&freeCarrierSpaces(g,id)>=quantity;
     const canLand=id=>places[id].water?slots(id):friendlyAtStart(g,id)&&friendlyDestination(g,id);
     const range=sortie?sortie.range:ex.movement.allowance(from,type);
     const result=shortestNoncombatRoutes(g,from,range,(_,id)=>{

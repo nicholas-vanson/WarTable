@@ -264,8 +264,11 @@ export function defenderLosses(force,hits){
   for(const k of casualtyOrder){if(force[k]){lost[k]=Math.min(force[k],hits);hits-=lost[k];}}
   return lost;
 }
-function deckSpace(s,id,side){
-  let spaces=0;
+export function reservedBerths(s,id){
+  return (s.carrierLaunches||[]).reduce((n,o)=>n+(o.to===id?2*o.quantity:0),0);
+}
+export function deckSpace(s,id,side){
+  let spaces=side.includes(s.power)&&s.phase!=='mobilize'?reservedBerths(s,id):0;
   for(const [power,type,n] of s.pieces[id]){
     if(!side.includes(power))continue;
     if(type==='carrier')spaces+=2*(n-(s.shipDamage?.[id]?.[power]?.carrier||0));
@@ -301,7 +304,7 @@ export function flightRecoveries(s,orders,preview=null,previewSpent=0){
     room-=2*Math.max(0,movingCarriers-damaged);
     const berths=Array.from({length:Math.max(0,room)},()=>({}));
     if(ex.movement.spaces[id].enemyFleet){
-      berths.length=0;
+      berths.length=Math.min(berths.length,reservedBerths(s,id));
       for(let i=0;i<2*arrivingCarriers;i++)berths.push({battle:id});
     }
     decks.set(id,berths);return berths;
@@ -349,7 +352,7 @@ function returnAircraft(s,b,order,type,n){
     if(!left)break;
     let seats=Math.min(left,limit);
     if(places[id].water){
-      if(type==='bomber'||defendingRows(s,id).length)continue;
+      if(type==='bomber'||defendingRows(s,id).length&&!reservedBerths(s,id))continue;
       seats=Math.min(seats,Math.max(0,deckSpace(s,id,ex.friendlyPowers[s.power])));
     }
     alterStack(s,id,s.power,type,seats);

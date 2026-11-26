@@ -401,7 +401,7 @@ function combineLegs(legs){
   return [...grouped.values()];
 }
 function arrivals(game,to){
-  if(game.phase==='noncombat')return [];
+  if(game.phase==='noncombat'||game.phase==='mobilize')return [];
   const orders=combineLegs(game.orders.filter(o=>o.to===to).map(o=>({...o,from:entrySpace(o)})));
   if(game.phase==='plan')return orders;
   const battle=game.battles.find(b=>b.to===to&&!b.resolved);
@@ -538,7 +538,7 @@ function homeStacks(game,id,exercise,offsets){
 // opening roster and departures identify its unmoved portion even in older saves.
 function movedInGarrison(game,exercise,id,type,number){
   if(game.phase==='noncombat')return Math.max(0,number-(game.unused[id][type]||0));
-  if(game.phase==='plan'||!game.orders.length)return 0;
+  if(game.phase==='plan'||game.phase==='mobilize'||!game.orders.length)return 0;
   if(exercise.world&&neutralKey(places[id].startOwner)&&!game.battles.some(b=>b.to===id&&b.resolved))return 0;
   const opening=exercise.world?exercise.shapes[id].garrison.reduce((n,[power,t,count])=>
     n+(samePower(power,game.power)&&t===type?count:0),0):
@@ -563,6 +563,7 @@ function drawStack(game,parent,id,type,number,nation,role,at,tokenScale,caption,
   const label=facility?name+' · '+places[id].name:designation+' · '+places[id].name+' · '+nation+' · '+name+' × '+number+status;
   const stack=node('g',{'data-place':id,'data-unit':type,'data-count':number,'data-role':role,
     'aria-label':label,cursor:'pointer',transform:'translate('+x+' '+y+') scale('+tokenScale+')'});
+  const added=nation===ownerNames[game.power]?game.placementMarks?.[id]?.[type]:0;
   if(origin)stack.dataset.origin=origin;
   if(moved)stack.dataset.moved=String(moved);
   stack.dataset.nation=nation;
@@ -581,6 +582,13 @@ function drawStack(game,parent,id,type,number,nation,role,at,tokenScale,caption,
     stack.append(node('rect',{x:-16.5,y:-6.75,width:18,height:13.5,fill:'none',stroke:ink,'stroke-width':1.3}));
     stack.append(node('use',{href:'#unit-'+type,x:-16.5,y:-6.75,width:18,height:13.5,color:ink,'pointer-events':'none'}));
     stack.append(node('text',{x:10,y:4,'text-anchor':'middle','font-family':'var(--typewriter)','font-size':13,'font-weight':700,fill:ink},number));
+  }
+  if(added){
+    stack.dataset.placement=String(added);
+    stack.setAttribute('aria-label',label+' · '+added+' queued for placement');
+    const width=added>9?17:13;
+    stack.append(node('rect',{x:19-width,y:-15,width,height:9,rx:1,fill:'#e9d59a',stroke:'#51492d','stroke-width':.8}));
+    stack.append(node('text',{x:19-width/2,y:-8,'text-anchor':'middle','font-size':8,fill:'#393a2b','font-weight':700},'+'+added));
   }
   if(caption)stack.append(node('text',{x:0,y:24,'text-anchor':'middle','font-family':'sans-serif','font-size':11,'font-weight':650,fill:unitInk,
     stroke:'#f5efd8','paint-order':'stroke','stroke-width':3},facility?name:style.code+' · '+name));
@@ -1163,10 +1171,11 @@ export async function atlas(onPick,onView,initial,exercise) {
       highlightedSea=inspectedSea;
     }
     const redeploy=game.phase==='noncombat';
-    const choosingMove=!surveying&&(game.phase==='plan'||redeploy)&&routeChoices!==null;
+    const placing=game.phase==='mobilize';
+    const choosingMove=!surveying&&(game.phase==='plan'||redeploy||placing)&&routeChoices!==null;
     const moveStage=choosingMove&&exercise.world?(target?'passage':'destination'):null;
     const prompt=moveStage==='passage'?(routeChoices.includes(target)?'Tap '+places[target].name+' to finish, or choose another passage':'Tap a passage to '+places[target].name):
-      routeChoices?.length?'Tap a destination':redeploy?'No legal noncombat moves':'No legal combat moves';
+      placing?(routeChoices?.length?'Tap a placement site':'No eligible placement sites'):routeChoices?.length?'Tap a destination':redeploy?'No legal noncombat moves':'No legal combat moves';
     const info=moveStage?prompt:inspectedSea?'Sea zone '+inspectedSea+' · Adjacent '+zones.get(inspectedSea).neighbors.join(', '):
       bands[selected]?bands[selected].region.firstChild.textContent:'';
     if(intel.textContent!==info)intel.textContent=info;
@@ -1197,12 +1206,12 @@ export async function atlas(onPick,onView,initial,exercise) {
     }
     const tacticalZoom=view.z;
     const compact=tacticalZoom<.66;
-    const nextRouteKey=[layoutSeed,game.phase,JSON.stringify(redeploy?game.moves:game.orders),JSON.stringify(game.battles)].join('|');
+    const nextRouteKey=[layoutSeed,game.phase,JSON.stringify(placing?game.placements:redeploy?game.moves:game.orders),JSON.stringify(game.battles)].join('|');
     if(routeKey!==nextRouteKey){
       const nextStarts=new Map(),now=performance.now(),period=exercise.projection?.width;
       const byTarget=new Map();
-      let orders=game.orders;
-      if(redeploy){
+      let orders=placing?[]:game.orders;
+      if(redeploy||placing){
         // Give newly arrived types a garrison seat, including in previously empty spaces.
         game.redeploySeats={};
         for(const [id,rows] of Object.entries(game.pieces)){
@@ -1214,6 +1223,8 @@ export async function atlas(onPick,onView,initial,exercise) {
             detailScale,exercise.shapes[id].city,sea?zones:null);
           game.redeploySeats[id]=new Map(keys.map((key,i)=>[key,points[i]]));
         }
+      }
+      if(redeploy){
         const moves=new Map();
         const add=(path,type,n)=>{
           if(path.length<2)return;
@@ -1358,7 +1369,7 @@ export async function atlas(onPick,onView,initial,exercise) {
         const moved=primary&&country===exercise.attacker?movedInGarrison(game,exercise,id,type,free):0;
         const stack=drawStack(game,forces,id,type,free,country,'home',at,tokenScale,caption,selected,null,moved);
         reserveStack(at,tokenScale,caption&&stack.lastChild.textContent);
-        if((redeploy||game.phase==='plan')&&(exercise.world||friendly&&primary)){
+        if((placing||redeploy||game.phase==='plan')&&(exercise.world||friendly&&primary)){
           stack.setAttribute('role','button');stack.setAttribute('tabindex','0');
           stack.setAttribute('aria-pressed',String(selected));
         }
