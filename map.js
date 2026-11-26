@@ -166,9 +166,10 @@ function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detail
     const clearance=Math.max(4*tokenScale,Math.hypot(inbound.x-outbound.x,inbound.y-outbound.y));
     width*=clearance/(clearance+.65*width);
   }
-  const headLength=Math.min(length*.23,5*tokenScale+width*.8);
+  const shoulder=width*.55;
+  const headLength=Math.min(length*.18,shoulder*1.3);
   const neck=length-headLength;
-  const left=[],right=[],wetEdge=[],washLeft=[],washRight=[];
+  const left=[],right=[];
   const tip=centerline.getPointAtLength(length);
   const tipPoint=tip.x.toFixed(2)+' '+tip.y.toFixed(2);
   const steps=Math.max(5,Math.ceil(neck/4));
@@ -178,42 +179,27 @@ function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detail
     const after=centerline.getPointAtLength(Math.min(length,at+.65));
     const dx=after.x-before.x,dy=after.y-before.y,span=Math.hypot(dx,dy)||1;
     const edge=offset=>(p.x-dy/span*offset).toFixed(2)+' '+(p.y+dx/span*offset).toFixed(2);
-    // A felt tip deposits more ink on one side. Pressure changes the breadth
-    // of that wet edge and the paler band as the nib follows the curve.
-    const t=i/steps;
-    const wet=.60+.15*Math.sin(8*t+.4);
-    const wash=-.30+.09*Math.sin(6*t);
-    const halfWash=.15+.10*Math.sin(9*t+.7);
-    const addSection=radius=>{
-      left.push(edge(radius));right.push(edge(-radius));
-      wetEdge.push(edge(radius*wet));
-      washLeft.push(edge(radius*(wash+halfWash)));
-      washRight.push(edge(radius*(wash-halfWash)));
-    };
-    addSection(width*(.5-.28*t));
-    if(i===steps)addSection(width*.50);
+    const radius=width*(.5-.28*i/steps);
+    left.push(edge(radius));right.push(edge(-radius));
+    if(i===steps){
+      left.push(edge(shoulder));right.push(edge(-shoulder));
+    }
   }
   const group=node('g',{'data-from':from,'data-to':to,'data-unit':type});
   if(via)group.dataset.via=via;
   else if(!places[from].water&&!places[to].water)group.setAttribute('clip-path','url(#route-'+from+'-'+to+')');
   const routeId=[from,via,to,type].filter(Boolean).join('-');
-  const ribbon=(a,b)=>'M'+a.concat(tipPoint,b.slice().reverse()).join(' L')+' Z';
-  const ink=node('g',{opacity:planned ? .66 : .76});
-  const body=node('path',{id:'marker-body-'+routeId,d:ribbon(left,right),fill:planned?'#b52c23':'#912e25'});
-  const clip=node('clipPath',{id:'marker-clip-'+routeId});
-  clip.append(node('use',{href:'#'+body.id}));
-  const pigment=node('g',{'clip-path':'url(#'+clip.id+')',filter:'url(#marker-pigment)'});
-  pigment.append(node('path',{d:ribbon(left,wetEdge),fill:'#681e1a',opacity:.42}),
-    node('path',{d:ribbon(washLeft,washRight),fill:'#ef9876',opacity:.32}));
-  ink.append(body,pigment);
-  group.append(clip,ink);
+  const ink=node('g',{fill:planned?'#bd3b31':'#a1362d',opacity:planned ? .66 : .76});
+  const body=node('path',{id:'order-body-'+routeId,d:'M'+left.concat(tipPoint,right.reverse()).join(' L')+' Z'});
+  ink.append(body,node('use',{href:'#'+body.id,fill:'url(#order-hatch)'}));
+  group.append(ink);
   const duration=410+90*length/(125*detailScale);
   if(elapsed<duration&&!reducedMotion()){
-    const id='marker-route-'+routeId;
+    const id='order-reveal-'+routeId;
     const mask=node('mask',{id,maskContentUnits:'userSpaceOnUse'});
     centerline.setAttribute('pathLength',1);
     centerline.setAttribute('fill','none');centerline.setAttribute('stroke','white');
-    centerline.setAttribute('stroke-width',width+4*tokenScale);centerline.setAttribute('stroke-dasharray','1 1');
+    centerline.setAttribute('stroke-width',2*shoulder+4*tokenScale);centerline.setAttribute('stroke-dasharray','1 1');
     mask.append(centerline);group.append(mask);ink.setAttribute('mask','url(#'+id+')');
     const reveal=centerline.animate([{strokeDashoffset:1},{strokeDashoffset:0}],{duration});
     reveal.currentTime=elapsed;
@@ -908,6 +894,8 @@ export async function atlas(onPick,onView,initial,exercise) {
     const tokenScale=Math.min(1/scale,1.2*detailScale);
     const spread=bound(1/(1.2*scale*detailScale),.66,1);
     if(scale!==lastScale){
+      // Keep fine pen marks legible as the camera zooms, anchored to the map while panning.
+      document.getElementById('order-hatch').setAttribute('patternTransform','rotate(-41) scale('+(.82/scale)+')');
       for(const {mark,name,x,y,openingCapital} of cityMarks){
         const orient=surveying&&openingCapital&&view.z>=.28&&scale<.35;
         const symbolScale=orient?1/scale:bound(1/scale,.52,3.5);
