@@ -2,17 +2,181 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#202c27"><meta name="description" content="WarTable · An offline European theater combat playtest.">
-<title>WarTable · Western Front</title>
+<meta name="application-version" content="0.1.72">
+<meta name="theme-color" content="#202c27"><meta name="description" content="WarTable · Global 1940 Second Edition and local playtest exercises.">
+<title>WarTable · Global 1940</title>
 <link rel="icon" href="./assets/icon-192.png"><link rel="manifest" href="./manifest.webmanifest">
 <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-<header><div class="brand"><span aria-hidden="true" class="mark">✥</span> WarTable</div><span class="divider"></span><h1 class="theater">Western Front</h1><div class="head-end"><span class="local" id="storage">Local playtest</span><button id="journal" class="header-button">Review</button><button id="help" class="header-button" aria-label="Playtest guide">Guide</button></div></header>
-<main>
+<section id="launcher" class="launcher" aria-label="Main menu">
+  <svg class="menu-symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <symbol id="m-settings" viewBox="0 0 24 24"><path d="m10 3-.5 2.2-2 .9-2.1-.7-2 3.3 1.7 1.6-.2 2.3L3.4 14l2 3.5 2.2-.6 1.9 1.2.6 2.3h3.8l.7-2.3 1.8-1.2 2.3.6 2-3.5-1.6-1.4-.2-2.3 1.7-1.6-2-3.3-2.2.7-2-.9L14 3z"/><circle cx="12" cy="11.8" r="3"/></symbol>
+      <symbol id="m-fronts" viewBox="0 0 28 28"><path d="m2.5 7 7-3 9 3 7-3v17l-7 3-9-3-7 3zM9.5 4v17m9-14v17"/><path d="m4.5 16 3-3m4.5 0 3 2 2-3m3-1 3-2"/></symbol>
+      <symbol id="m-guide" viewBox="0 0 28 28"><path d="M3 5c4-1 8-.4 11 2 3-2.4 7-3 11-2v16c-4-1-8-.3-11 2-3-2.3-7-3-11-2zM14 7v16M6 9l5 1.2m-5 3 5 1.2m6-4.2L22 9m-5 5.2 5-1.2"/></symbol>
+      <symbol id="m-arrow" viewBox="0 0 24 24"><path d="M4 12h15m-6-6 6 6-6 6"/></symbol>
+    </defs>
+  </svg>
+  <div class="menu-width menu-content">
+    <div id="modeChoices">
+      <section class="campaign-card" aria-labelledby="campaignTitle">
+        <img class="campaign-art" src="./assets/menu-staff-table.webp" alt="">
+        <div class="campaign-copy">
+          <img class="hero-mark" src="./assets/wartable-mark.svg" alt="">
+          <h1 id="campaignTitle">WarTable</h1>
+          <p class="campaign-summary">An unofficial, fan-made strategy game inspired by <i>Axis &amp; Allies Global 1940, Second Edition.</i></p>
+        </div>
+        <button id="menuSettings" class="hero-settings"><svg class="menu-icon" aria-hidden="true"><use href="#m-settings"/></svg>Settings</button>
+      </section>
+      <div class="mode-tabs" role="tablist" aria-label="Play and accounts">
+        <button role="tab" id="soloTab" aria-controls="soloPane" aria-selected="true">Singleplayer</button>
+        <button role="tab" id="multiTab" aria-controls="multiPane" aria-selected="false" tabindex="-1">Multiplayer</button>
+        <button role="tab" id="accountTab" aria-controls="accountPane" aria-selected="false" tabindex="-1">Accounts</button>
+      </div>
+      <section id="soloPane" role="tabpanel" aria-labelledby="soloTab">
+        <div class="local-session"><div><h2>Global 1940</h2><p id="campaignSummary">Local game · Nine powers</p></div>
+          <div class="campaign-actions">
+            <a class="campaign-primary" id="continueGlobal" href="#global" hidden>Continue game <svg class="menu-icon" aria-hidden="true"><use href="#m-arrow"/></svg></a>
+            <button class="campaign-primary" id="newGlobal">New game <svg class="menu-icon" aria-hidden="true"><use href="#m-arrow"/></svg></button>
+          </div>
+        </div>
+      </section>
+      <section class="future-mode" id="multiPane" role="tabpanel" aria-labelledby="multiTab" tabindex="0" hidden>
+        <h2>Remote play</h2><p>Planned for a future release. Host a match, invite friends, and take turns on your own devices.</p>
+      </section>
+      <section class="future-mode" id="accountPane" role="tabpanel" aria-labelledby="accountTab" tabindex="0" hidden>
+        <h2>Player accounts</h2><p>Player profiles for online matches are planned. For now, local games save on this device.</p>
+      </section>
+      <nav class="menu-tools" aria-label="Practice and reference">
+        <a class="menu-tool" href="#exercises"><span class="tool-icon"><svg aria-hidden="true"><use href="#m-fronts"/></svg></span><span><strong>Combat exercises</strong><small>Practice on a single front</small></span><span class="tool-arrow" aria-hidden="true">↗</span></a>
+        <button class="menu-tool" id="menuGuide"><span class="tool-icon"><svg aria-hidden="true"><use href="#m-guide"/></svg></span><span><strong>Field guide</strong><small>Map controls and playtest rules</small></span><span class="tool-arrow" aria-hidden="true">↗</span></button>
+      </nav>
+    </div>
+    <section id="exerciseChoices" class="exercise-index" hidden>
+      <div class="exercise-links"><a class="back-link" href="#">← Main menu</a><button class="plain-action" id="exerciseSettings">Settings</button></div>
+      <h1>Combat exercises</h1><p>Choose a front to practice land combat.</p>
+      <nav id="frontList" aria-label="Exercises"></nav>
+    </section>
+    <footer class="menu-foot"><span><i aria-hidden="true"></i>Local playtest</span><button id="menuLicense">License &amp; credits</button><button id="menuAbout">Version <span data-version></span></button></footer>
+  </div>
+</section>
+<dialog id="menuDialog" class="menu-dialog" aria-labelledby="menuDialogTitle">
+  <div class="menu-dialog-head"><h2 id="menuDialogTitle"></h2><button id="menuClose" class="menu-close" aria-label="Close window">×</button></div>
+  <div class="menu-dialog-body">
+    <section id="setupWindow" hidden>
+      <p class="form-intro">Global 1940 · Second Edition</p>
+      <dl class="setup-list"><div><dt>Board</dt><dd>Full world map</dd></div><div><dt>Opening power</dt><dd>Germany · Round 1</dd></div><div><dt>First playable phase</dt><dd>Purchase &amp; Repair</dd></div></dl>
+      <p class="dialog-note">All nine powers start with Player 1 on this device. You can assign local players in the board’s Guide.</p>
+      <p id="replaceNote" class="save-notice" hidden>Starting a new game will replace the global match saved on this device.</p>
+      <div class="dialog-actions"><button class="plain-action" id="cancelGame">Cancel</button><button class="ink-action" id="startGame">Start local game</button></div>
+    </section>
+    <section id="settingsWindow" hidden>
+      <fieldset><legend>Graphics</legend>
+        <label class="setting-row" for="menuMotion"><strong>Map and dice animation</strong><select id="menuMotion"><option value="system">Use device setting</option><option value="reduce">Reduce motion</option></select></label>
+        <label class="setting-row"><strong>Terrain detail</strong><select data-map-setting="terrain"><option value="auto">Automatic</option><option value="overview">Overview only</option></select></label>
+        <label class="setting-row"><strong>Territory names</strong><select data-map-setting="labels"><option value="auto">Show when zoomed in</option><option value="hidden">Hidden</option></select></label>
+      </fieldset>
+      <fieldset><legend>Controls &amp; interface</legend>
+        <label class="setting-row" for="menuOrders"><strong>Orders panel on opening</strong><select id="menuOrders"><option value="shown">Expanded</option><option value="hidden">Minimized</option></select></label>
+        <label class="setting-row"><strong>Map controls</strong><select data-map-setting="side"><option value="right">Right side</option><option value="left">Left side</option></select></label>
+        <label class="setting-row"><strong>Zoom button steps</strong><select data-map-setting="zoom"><option value="standard">Standard</option><option value="fine">Fine</option><option value="large">Large</option></select></label>
+        <label class="setting-row"><strong>Mouse wheel</strong><select data-map-setting="wheel"><option value="zoom">Zoom</option><option value="pan">Pan</option></select></label>
+      </fieldset>
+      <p class="dialog-note">Settings apply to games and exercises on this device. Open or hide orders during play for the current board visit.</p>
+    </section>
+    <section id="guideWindow" class="guide-copy" hidden>
+      <h3>Turn briefings</h3><p>Each power begins with a briefing. The calendar advances one season when France finishes the round. Hold End turn in combat review to hand over the board in this playtest.</p>
+      <h3>Read the staff map</h3><p>Drag to pan. Pinch or use + and − to zoom. Tap a territory or sea zone to inspect it. Tap it again to deselect.</p>
+      <h3>Purchase and repair</h3><p>Order units with IPCs and use Repairs to remove facility damage. Hold to pay or pass. Purchases wait in the mobilization zone. The UK spends from its Europe and Pacific treasuries separately.</p>
+      <h3>Plan and resolve combat</h3><p>Select a unit counter and a highlighted destination. On the global map, tanks can move two territories. Choose the territory they pass through when prompted. Revise your orders, then hold to commit. Choose the battle order and resolve the dice in the orders panel.</p>
+      <h3>Return to your match</h3><p>Your position, orders and map view save on this device. Choose Continue game from the main menu to return.</p>
+    </section>
+    <section id="licenseWindow" class="guide-copy" hidden>
+      <h3>Community code</h3><p>The original playtest code by nicholas-vanson and the WarTable contributors is available under the MIT License. You can use, modify, and share it. Keep the copyright and license notice with copies or substantial portions. <a href="https://github.com/nicholas-vanson/WarTable/tree/gh-pages" target="_blank" rel="noopener">Browse the playtest source</a></p>
+      <details id="licenseDetails"><summary>Read the MIT License</summary><pre id="licenseText"></pre></details>
+      <h3>Independent fan project</h3><p>WarTable is unaffiliated with and is neither endorsed nor sponsored by the creators, publishers, or rights holders of Axis &amp; Allies. Axis &amp; Allies and associated marks belong to their respective owners.</p>
+      <h3>Map and artwork credits</h3><p>The code license excludes artwork, map data, and trademarks. WarTable’s staff maps draw on Natural Earth geography, GMT Earth Relief, and elevation data from USGS and NOAA. The printed Global 1940 board and the TripleA Global 1940 scenario served as references.</p>
+    </section>
+    <section id="aboutWindow" class="guide-copy" hidden><h3>WarTable · Version <span data-version></span></h3><p>New global games open with a Spring 1940 briefing before Germany’s Purchase &amp; Repair phase. The global board and three combat exercises are available to play.</p><button id="checkUpdate" class="ink-action" hidden>Check for updates</button><p id="updateStatus" class="dialog-note" role="status"></p></section>
+    <p id="menuError" role="alert" hidden></p>
+  </div>
+</dialog>
+<header id="exerciseHeader" hidden><div class="brand"><img class="mark" src="./assets/wartable-mark.svg" alt=""> WarTable</div><span class="divider"></span><h1 class="theater">Western Front</h1><div class="head-end"><span class="local" id="storage">Local playtest</span><button id="exerciseMenu" class="header-button" aria-label="Main menu">Menu</button><button id="journal" class="header-button">Review</button><button id="help" class="header-button" aria-label="Playtest guide">Guide</button></div></header>
+<main id="exerciseBoard" hidden>
 <section class="board" aria-label="European staff map">
 <svg id="map" role="group" aria-label="Pan or pinch the map. Select a German force and a French destination." tabindex="0">
 <defs>
+<!-- Organization marks share the rectangular counter frame and its national ink. -->
+<path id="fixed-wing-mark" d="M8 3.2L3.9 .8C1.1 -.9 -.1 2 .8 4.3C1.4 6 2.7 6.4 4.1 5.5L8 3.2L11.9 5.5C13.5 6.5 15 5.6 15.3 3.8C16 1.1 14.4 -.6 12.3 .6Z" fill="currentColor"/>
+<rect id="installation-tab" x="7" y="0" width="10" height="2" fill="currentColor"/>
+<symbol id="unit-inf" viewBox="0 0 16 12">
+  <path d="M0 0L16 12M0 12L16 0" fill="none" stroke="currentColor" stroke-width="1.2"/>
+</symbol>
+<symbol id="unit-tank" viewBox="0 0 16 12">
+  <rect x="2.2" y="2.6" width="11.6" height="6.8" rx="3.4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+</symbol>
+<symbol id="unit-mech_infantry" viewBox="0 0 16 12">
+  <use href="#unit-inf" width="16" height="12"/>
+  <use href="#unit-tank" width="16" height="12"/>
+</symbol>
+<symbol id="unit-artillery" viewBox="0 0 16 12">
+  <circle cx="8" cy="6" r="3.15" fill="currentColor"/>
+</symbol>
+<symbol id="unit-aaGun" viewBox="0 0 16 12">
+  <path d="M0 11.4Q8 5.9 16 11.4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+</symbol>
+<symbol id="unit-fighter" viewBox="0 0 16 12">
+  <text class="counter-designator" x="8" y="6.1" font-size="8.5">F</text>
+  <use href="#fixed-wing-mark" transform="translate(1.6 6.75) scale(.8)"/>
+</symbol>
+<symbol id="unit-tactical_bomber" viewBox="0 0 16 12">
+  <text class="counter-designator" x="8" y="6.1" font-size="8.5">TB</text>
+  <use href="#fixed-wing-mark" transform="translate(1.6 6.75) scale(.8)"/>
+</symbol>
+<symbol id="unit-bomber" viewBox="0 0 16 12">
+  <text class="counter-designator" x="8" y="6.1" font-size="8.5">SB</text>
+  <use href="#fixed-wing-mark" transform="translate(1.6 6.75) scale(.8)"/>
+</symbol>
+<symbol id="unit-submarine" viewBox="0 0 16 12">
+  <path d="M1 6.3L4.5 3H7V1.5H9V3H11.5L15 6.3 11.5 9.5H4.5Z" fill="currentColor"/>
+</symbol>
+<symbol id="unit-transport" viewBox="0 0 16 12">
+  <path d="M6 2H10V5H14L9.5 9H14.8V10.8H7.6L1.8 5H6Z" fill="currentColor"/>
+</symbol>
+<symbol id="unit-destroyer" viewBox="0 0 16 12">
+  <text class="counter-designator" x="8" y="9.6" font-size="11.5">DD</text>
+</symbol>
+<symbol id="unit-cruiser" viewBox="0 0 16 12">
+  <text class="counter-designator" x="8" y="9.6" font-size="11.5">CC</text>
+</symbol>
+<symbol id="unit-battleship" viewBox="0 0 16 12">
+  <text class="counter-designator" x="8" y="9.6" font-size="11.5">BB</text>
+</symbol>
+<symbol id="unit-carrier" viewBox="0 0 16 12">
+  <path d="M2.1 2.3H4.5V4.4H14.7L8 10.6 2.1 5Z" fill="currentColor"/>
+</symbol>
+<symbol id="unit-factory_minor" viewBox="0 0 24 14">
+  <use href="#installation-tab"/>
+  <path d="M4.5 12V4.8H19.5V12" fill="none" stroke="currentColor" stroke-width="1.7"/>
+</symbol>
+<symbol id="unit-factory_major" viewBox="0 0 24 14">
+  <use href="#installation-tab"/>
+  <path d="M2 12V4.8H22V12M12 4.8V12" fill="none" stroke="currentColor" stroke-width="1.7"/>
+</symbol>
+<symbol id="unit-airfield" viewBox="0 0 24 14">
+  <use href="#installation-tab"/>
+  <use href="#fixed-wing-mark" transform="translate(1.6 4.3) scale(1.3)"/>
+</symbol>
+<symbol id="unit-harbour" viewBox="0 0 24 14">
+  <use href="#installation-tab"/>
+  <circle cx="12" cy="4.5" r="1.35" fill="none" stroke="currentColor" stroke-width="1.3"/>
+  <path d="M12 5.8V12.6M8 7.2H16M3 8Q4.4 11.6 12 12.5Q19.6 11.6 21 8" fill="none" stroke="currentColor" stroke-width="1.6"/>
+</symbol>
+
+<linearGradient id="fadeX"><stop stop-color="black"/><stop offset=".024" stop-color="white"/><stop offset=".976" stop-color="white"/><stop offset="1" stop-color="black"/></linearGradient>
+<linearGradient id="fadeY" x2="0" y2="1"><stop stop-color="black"/><stop offset=".028" stop-color="white"/><stop offset=".972" stop-color="white"/><stop offset="1" stop-color="black"/></linearGradient>
+<mask id="plateFadeX"><rect width="2006" height="1716" fill="url(#fadeX)"/></mask><mask id="plateFadeY"><rect width="2006" height="1716" fill="url(#fadeY)"/></mask>
 <filter id="pencil-grain" filterUnits="userSpaceOnUse" x="-49" y="-24" width="98" height="48" color-interpolation-filters="sRGB">
 <feTurbulence type="fractalNoise" baseFrequency=".75 .95" numOctaves="2" seed="17"/>
 <feColorMatrix result="grain" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  3.1 0 0 0 -.8"/>
@@ -26,13 +190,17 @@
 <mask id="pencil-reveal" maskUnits="userSpaceOnUse" x="-35" y="-24" width="70" height="48">
 <path id="pencil-stroke" fill="none" stroke="white" stroke-width="7" stroke-linecap="round" pathLength="1" stroke-dasharray="1 1"/>
 </mask></defs>
-<image href="./assets/staff-overview.webp" width="2006" height="1716" pointer-events="none"/>
+<image id="worldPlate" data-src="./assets/world-staff.webp" x="0" y="0" width="16000" height="7294.4" preserveAspectRatio="none" display="none" pointer-events="none"/>
+<g id="worldTiles" pointer-events="none"></g>
+<image id="worldEngraving" data-src="./assets/world-engraving.svg" x="0" y="0" width="16000" height="7294.4" preserveAspectRatio="none" pointer-events="none"/>
+<g id="europeX"><g id="europeY"><image href="./assets/staff-overview.webp" width="2006" height="1716" pointer-events="none"/>
 <image id="detailPlate" display="none" href="./assets/staff-map.svg" width="2006" height="1716" pointer-events="none"/>
-<g id="seaZones"></g><g id="controlBands" pointer-events="none"></g><g id="regions"></g><g id="labels" pointer-events="none"></g><g id="routes" pointer-events="none"></g><g id="fronts" pointer-events="none" aria-hidden="true"></g><g id="forces"></g><g id="selection" pointer-events="none"></g>
+</g></g><g id="seaZones"></g><g id="controlBands" pointer-events="none"></g><g id="regions"></g><g id="labels" pointer-events="none"></g><g id="routes" pointer-events="none"></g><g id="fronts" pointer-events="none" aria-hidden="true"></g><g id="forces"></g><g id="selection" pointer-events="none"></g>
 </svg>
-<div class="navbox"><button id="zoomIn" aria-label="Zoom in">+</button><button id="zoomOut" aria-label="Zoom out">−</button><button id="recenter" aria-label="Center on the western front">⌖</button><button id="overview" aria-label="Show entire theater">⤢</button></div>
+<div class="navbox"><button id="zoomIn" aria-label="Zoom in">+</button><button id="zoomOut" aria-label="Zoom out">−</button><button id="recenter" aria-label="Center on the active front">⌖</button><button id="overview" aria-label="Show entire theater">⤢</button></div>
 <div class="map-foot"><span class="north">↑ N</span><span id="scale"></span><span id="controlKey"><i class="ink-de"></i>Germany <i class="ink-fr"></i>France</span><span id="mapIntel" role="status"></span><span id="coordinates"></span></div>
 </section>
+<div id="mapNotice" role="status"></div>
 <button id="openPanel" aria-controls="ordersPanel" aria-expanded="false" hidden>Open orders</button>
 <aside id="ordersPanel" aria-label="Operations panel">
 <div id="resizePanel" tabindex="0" role="separator" aria-controls="ordersPanel" aria-label="Resize orders panel" title="Drag to resize orders panel"></div>
@@ -46,5 +214,5 @@
 <div class="dialog-head"><h2 id="dialogTitle"></h2><button id="closeDialog" aria-label="Close">×</button></div>
 <div id="dialogBody"></div>
 </dialog>
-<script type="module" src="./app.js"></script>
+<script type="module" src="./menu.js"></script>
 </body></html>

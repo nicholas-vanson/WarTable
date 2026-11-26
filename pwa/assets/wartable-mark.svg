@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Three folded chart panels and a two-tone north needle. -->
+  <path fill="#d1ad6d" d="m3 20 17-7v36L3 56z"/>
+  <path fill="#b28b53" d="m22 13 17 7v36l-17-7z"/>
+  <path fill="#e9ce95" d="m41 20 20-8v36l-20 8z"/>
+  <path fill="none" stroke="#27382f" stroke-width="2.3" d="m4 41 8-4 2-7 6-3m22 13 6-2 4-8 8-3"/>
+  <path fill="#27382f" stroke="#27382f" stroke-width="4" stroke-linejoin="round" d="m41 5-5 30-14 9 4-19z"/>
+  <path fill="#fff0cb" d="m41 5-15 20 6 3z"/>
+  <path fill="#dbad69" d="m41 5-9 23 4 7z"/>
+  <path fill="#84673f" d="m22 44 10-16 4 7z"/>
+</svg>

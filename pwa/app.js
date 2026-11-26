@@ -1,19 +1,64 @@
-import {places,stats,types,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,rollAttack,rollDefense,casualties,retreat,theaterVictoryCities} from './rules.js';
-import {atlas} from './map.js';
-const $=id=>document.getElementById(id), key='wartable.western-front.v1';
+import {ordersPanelKey,reducedMotion} from './preferences.js';
+import {neutralKey,strictKey,allianceOf,hostileNeutral,activationOptions,activateFriendly} from './neutral-rules.js';
+import {globalKey,loadGlobalBoard,saveGlobalPosition,purchaseGroups,spendingEconomies,purchasePlan,eligibleShipRepairs,changePurchase,changeFacilityOrder,confirmPurchase,openingAddress,seasonForRound,nextPower,nextPlaytestTurn,globalUnits,boardUnitType,isFacility,globalPowers,ownerNames,nationalArmies} from './global-game.js';
+import {places,stats,types,exercises,adjectives,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,mobileTypes,targetsFor,defendingRows,openingFireKind,rollOpening,casualtyLimits,retreatSites,rollAttack,rollDefense,casualties,retreat,theaterVictoryCities} from './rules.js';
+import {drawFormationNames} from './formation-names.js';
+import {atlas,styleFor} from './map.js';
+const $=id=>document.getElementById(id);
+const isGlobal=location.hash==='#global';
+const exerciseId=isGlobal?'global':location.hash.slice('#exercise/'.length);
+const globalBoard=isGlobal?await loadGlobalBoard():null;
+let lastGlobalSave=isGlobal?localStorage.getItem(globalKey):null;
+const key=isGlobal?globalKey:exerciseId==='west'?'wartable.western-front.v1':'wartable.exercise.'+exerciseId+'.v1';
+const exercise=exercises[exerciseId],{attacker,defender}=exercise;
+const panelPalette=styleFor(attacker);
+$('ordersPanel').style.setProperty('--nation-ink',panelPalette.ink);
+$('ordersPanel').style.setProperty('--nation-paper',panelPalette.paper);
+const exercisePlaces=Object.fromEntries(Object.keys(exercise.forces).map(id=>[id,places[id]]));
 const newLayoutSeed=()=>crypto.getRandomValues(new Uint32Array(1))[0];
 let layoutSeed=newLayoutSeed();
 const freshUI=()=>({from:null,to:null,stack:null,quantity:1,units:{inf:0,tank:0},losses:{inf:0,tank:0}});
-let s=newGame(),ui=freshUI(),view=null,draw=()=>{},message='';
+let s=isGlobal?structuredClone(globalBoard.game):newGame(exerciseId),ui=freshUI(),view=null,draw=()=>{},message='';
 try{
-  const saved=JSON.parse(localStorage.getItem(key)||'null');
-  if(saved?.game?.version===1){s=saved.game;ui={...freshUI(),...saved.ui};view=saved.view;layoutSeed=saved.layoutSeed??0;}
+  const saved=isGlobal?globalBoard.match.combat:JSON.parse(localStorage.getItem(key)||'null');
+  if(saved?.game?.version===1&&(saved.game.exercise||'west')===exerciseId){s=saved.game;ui={...freshUI(),...saved.ui};view=saved.view;layoutSeed=saved.layoutSeed??0;}
 }catch{message='The saved exercise could not be read. A new exercise is open.';}
+const inPurchase=()=>globalBoard?.match.phase==='purchase';
+const inBriefing=()=>globalBoard?.match.phase==='briefing';
+view??=globalBoard?.openingView??null;
+function nameFormations(){
+  if(s.formationNames)return;
+  const areas={...exercisePlaces};
+  if(isGlobal){
+    // Guest formations retain their own nation's designations in allied territory.
+    for(const [id,stacks] of Object.entries(s.pieces)){
+      for(const [p,t,n] of stacks){
+        const nation=ownerNames[p]||p;
+        if(n&&types.includes(t)&&nation!==places[id].owner)areas[id+'/'+nation]={name:places[id].name,owner:nation};
+      }
+    }
+  }
+  s.formationNames=drawFormationNames(areas);
+}
+nameFormations();
 function save(){
-  try{localStorage.setItem(key,JSON.stringify({game:s,ui,view,layoutSeed}));}
+  try{
+    const snapshot={game:s,ui,view,layoutSeed};
+    if(isGlobal){
+      if(localStorage.getItem(key)!==lastGlobalSave){location.reload();return;}
+      const match=globalBoard.match;
+      if(!inBriefing()&&!inPurchase()){
+        saveGlobalPosition(match,s);
+        match.phase=s.phase==='plan'?'combatMove':s.phase==='combat'?'conductCombat':'combatReview';
+      }
+      match.combat=snapshot;
+      const serialized=JSON.stringify(match);
+      localStorage.setItem(key,serialized);lastGlobalSave=serialized;
+    }else localStorage.setItem(key,JSON.stringify(snapshot));
+  }
   catch{$('storage').textContent='Saving unavailable';}
 }
-function selectOrigin(id){ui.from=id;ui.to=null;ui.stack=null;message='';}
+function selectOrigin(id){delete ui.via;delete ui.routeTo;delete ui.twoSpace;ui.from=id;ui.to=null;ui.stack=null;delete ui.inspect;delete ui.inspectedType;delete ui.inspectedNation;delete ui.inspectedOrigin;message='';}
 function selectStack(id,type){
   if(ui.from===id && ui.stack===type){
     ui=freshUI();
@@ -24,27 +69,61 @@ function selectStack(id,type){
   selectOrigin(id);
   ui.stack=type;ui.quantity=remaining;
 }
+function moveChoices(){
+  if(!ui.stack)return [];
+  const direct=targetsFor(s,ui.from,ui.stack);
+  if(!isGlobal||ui.stack!=='tank')return direct;
+  const routes=places[ui.from].tankRoutes||{};
+  if(ui.routeTo)return routes[ui.routeTo]||[];
+  if(ui.twoSpace)return Object.keys(routes);
+  return [...new Set([...direct,...Object.keys(routes).filter(id=>id!==ui.from)])];
+}
+function addStackOrder(to,via=null){
+  const prior=s.orders.find(o=>o.from===ui.from&&o.to===to&&(o.via||null)===via);
+  const units={...prior?.units};
+  units[ui.stack]=(units[ui.stack]||0)+ui.quantity;
+  plan(s,ui.from,to,units,via);
+  ui=freshUI();
+}
 function selectTarget(id){
-  if(!ui.from)throw new Error('Select a German force first.');
-  if(!places[ui.from].targets.includes(id))throw new Error(places[id].name+' does not share a playable border with '+places[ui.from].name+'.');
-  const order=s.orders.find(o=>o.from===ui.from&&o.to===id);
-  if(ui.stack){
-    const assigned=order?{...order.units}:{inf:0,tank:0};
-    assigned[ui.stack]+=ui.quantity;
-    plan(s,ui.from,id,assigned);
-    ui=freshUI();
+  if(!moveChoices().includes(id))throw new Error('Choose a highlighted space for this move.');
+  if(ui.routeTo){addStackOrder(ui.routeTo,id);return;}
+  if(ui.stack==='tank'&&(ui.twoSpace||!targetsFor(s,ui.from,'tank').includes(id))){
+    ui.routeTo=id;return;
+  }
+  addStackOrder(id);
+}
+function pick(id,type,origin,nation){
+  if(!id){run(()=>{ui=freshUI();});return;}
+  if(inBriefing()||inPurchase()){
+    run(()=>{
+      const deselect=ui.inspect===id&&type===ui.inspectedType&&nation===ui.inspectedNation;
+      ui={...freshUI(),wallet:ui.wallet,buyGroup:ui.buyGroup};
+      if(!deselect)Object.assign(ui,{inspect:id,inspectedType:type,inspectedNation:nation,inspectedOrigin:origin});
+    });
     return;
   }
-  ui.to=id;
-  ui.units=order?{...order.units}:{inf:0,tank:0};
-}
-function pick(id,type){
   if(s.phase==='plan'){run(()=>{
-    if(places[id].owner==='Germany'&&type)selectStack(id,type);
-    else if(places[id].owner==='Germany')selectOrigin(id);
-    else if(ui.stack||ui.to)selectTarget(id);
-    else if(type)throw new Error('Choose an infantry or armor stack first.');
+    if(ui.stack&&moveChoices().includes(id)){selectTarget(id);return;}
+    if(!type&&(ui.to||ui.inspect||ui.from)===id){ui=freshUI();return;}
+    if(isGlobal&&ui.inspect===id&&type&&type===ui.inspectedType&&nation===ui.inspectedNation){ui=freshUI();return;}
+    if(type&&!origin&&mobileTypes.includes(type)&&(isGlobal?nation===attacker:s.owners[id]===attacker))selectStack(id,type);
+    else if(ui.stack&&id!==ui.from)selectTarget(id);
+    else if(isGlobal&&type){
+      ui=freshUI();ui.inspect=id;ui.inspectedType=type;ui.inspectedNation=nation;ui.inspectedOrigin=origin;
+    }
+    else if(s.owners[id]===attacker){selectOrigin(id);if(isGlobal)ui.inspect=id;}
+    else if(ui.stack)selectTarget(id);
+    else if(isGlobal){ui=freshUI();ui.inspect=id;ui.inspectedType=type;ui.inspectedNation=nation;ui.inspectedOrigin=origin;}
+    else{
+      ui.inspect=id;
+      if(type)message=s.formationNames[origin||id][type]+' · '+stats[type].name+' · '+s.owners[origin||id];
+    }
   });}
+  else if(s.phase==='review')run(()=>{
+    ui.inspect=ui.inspect===id?null:id;
+    if(isGlobal)ui.activation=!!ui.inspect&&activationOptions(s,id).length>0;
+  });
   else if(s.phase==='combat'&&!s.active&&s.battles.some(b=>b.to===id&&!b.resolved))run(()=>chooseBattle(s,id));
 }
 function run(fn){
@@ -59,47 +138,77 @@ function opt(id,label,sub,code,act,selected=false){
 }
 function title(t,sub){return '<h2>'+t+'</h2><p class="hint">'+sub+'</p>';}
 function block(t){return '<div class="block-title">'+t+'</div>';}
-function unitCounter(type,amount,nation){
-  const label=amount===undefined?stats[type].name:amount+' '+(type==='inf'?'infantry':amount===1?'tank':'tanks');
-  return '<span class="counter-face" data-nation="'+(nation||'')+'" role="img" aria-label="'+label+'" title="'+label+'"><i class="symbol '+type+'"></i>'+
+function combatColors(nation){
+  const palette=styleFor(nation);
+  return 'style="--combat-ink:'+palette.counter+';--combat-paper:'+palette.paper+'"';
+}
+function unitCounter(type,amount,nation,description){
+  const name=stats[type]?.name||globalUnits[type]?.[0]||type;
+  if(isFacility(type)){
+    return '<span class="counter-face facility" role="img" aria-label="'+esc(name)+'" title="'+esc(name)+'"><svg viewBox="0 0 24 14" aria-hidden="true"><use href="#unit-'+esc(type)+'" width="24" height="14"/></svg></span>';
+  }
+  const label=description||(amount===undefined?name:amount+' '+(type==='tank'&&amount!==1?'tanks':name.toLowerCase()));
+  return '<span class="counter-face" data-nation="'+esc(nation||'')+'" '+combatColors(nation)+' role="img" aria-label="'+esc(label)+'" title="'+esc(label)+'"><svg class="symbol" viewBox="0 0 16 12" aria-hidden="true"><use href="#unit-'+esc(type)+'" width="16" height="12"/></svg>'+
     (amount===undefined?'':'<b>'+amount+'</b>')+'</span>';
 }
+function defenseCounters(type,strengths){
+  return Object.entries(strengths).filter(([,n])=>n>0).map(([nation,n])=>
+    unitCounter(type,n,nation,stats[type].name+' · '+nation+' × '+n)).join(' ');
+}
 function unitLine(units,nation){
-  return types.filter(k=>units[k]>0).map(k=>unitCounter(k,units[k],nation)).join(' ')||'no units';
+  return Object.keys(units).filter(k=>units[k]>0).map(k=>unitCounter(k,units[k],nation)).join(' ')||'no units';
 }
 // The local journal stores sentences. Render counts in existing saved reviews as counters too.
-function reviewDetail(detail){
+function reviewDetail(detail,attacking=attacker,heldBy){
+  if(detail.includes(' held with ')){
+    if(!heldBy)return esc(detail);
+    return esc(detail.split(' held with ')[0])+' held with '+Object.entries(nationalArmies(heldBy)).map(([nation,units])=>
+      esc(nation)+' '+unitLine(units,nation)).join(' · ');
+  }
   return detail.split('; ').map(clause=>{
     // Historic records identify losses by country within each clause.
-    const nation=/^(France held|France:)/.test(clause)?'France':'Germany';
+    const nation=/^(?:Losses — )?([^:]+): /.exec(clause)?.[1]||attacking;
     return esc(clause).replace(/\b(\d+) (infantry|tanks?)\b/g,(_,n,name)=>unitCounter(name==='infantry'?'inf':'tank',Number(n),nation));
   }).join('; ');
 }
 const diePips=[[],[5],[1,9],[1,5,9],[1,3,7,9],[1,3,5,7,9],[1,3,4,6,7,9]];
-function dieFace(d,face,stage){
-  const label=stage==='rolling'?'Rolling':stats[d.type].name+' rolled '+face+(stage==='marked'?', '+(d.hit?'hit':'miss'):'');
+function dieFace(d,face,stage,nation){
+  const label=nation+' '+stats[d.type].name+(stage==='rolling'?' rolling':' rolled '+face+(stage==='marked'?', '+(d.hit?'hit':'miss'):''));
   const pips=diePips[face].map(pos=>'<i style="grid-area:'+Math.ceil(pos/3)+' / '+((pos-1)%3+1)+'"></i>').join('');
-  return '<span role="img" aria-label="'+label+'" title="'+label+'" class="die '+(stage==='marked'&&d.hit?'hit':'miss')+'">'+pips+'</span>';
+  return '<span role="img" aria-label="'+esc(label)+'" title="'+esc(label)+'" '+combatColors(nation)+' class="die '+(stage==='marked'&&d.hit?'hit':'miss')+'">'+pips+'</span>';
 }
 function stepper(kind,values,limits,keys=types,min=0){
-  return keys.map(k=>'<div class="stepper"><span>'+unitCounter(k,undefined,'Germany')+'</span><button aria-label="Remove one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="-1" '+(values[k]<=min?'disabled':'')+'>−</button><output>'+values[k]+'</output><button aria-label="Add one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="1" '+(values[k]>=limits[k]?'disabled':'')+'>+</button></div>').join('');
+  return keys.map(k=>'<div class="stepper"><span>'+unitCounter(k,undefined,attacker)+'</span><button aria-label="Remove one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="-1" '+((values[k]||0)<=min?'disabled':'')+'>−</button><output>'+ (values[k]||0) +'</output><button aria-label="Add one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="1" '+((values[k]||0)>=(limits[k]||0)?'disabled':'')+'>+</button></div>').join('');
 }
-function forceRoster(id){
-  const free=available(s,id);
-  const stacks=types.filter(k=>free[k]).map(k=>{
-    const label=stats[k].name+', '+free[k]+' available in '+places[id].name;
-    return '<button class="force" data-act="stack" data-id="'+id+'-'+k+'" aria-label="'+label+'">'+
-      unitCounter(k,free[k],s.owners[id])+'<span class="end" aria-hidden="true">›</span></button>';
-  });
-  return block(places[id].name)+(stacks.length?'<div class="roster">'+stacks.join('')+'</div>':'<p class="hint">All units assigned.</p>');
+function armiesAt(id,combatOnly=false){
+  const stacks=s.pieces?.[id]||[];
+  return nationalArmies(combatOnly?defendingRows(s,id):stacks);
+}
+function targetUnits(id){
+  if(!s.pieces)return unitLine(s.units[id],s.owners[id]);
+  return Object.entries(armiesAt(id,true)).map(([nation,units])=>esc(nation)+' '+unitLine(units,nation)).join(' · ')||'no units';
+}
+function boardGarrison(id){
+  const forces=[],facilities=new Set();
+  for(const [nation,army] of Object.entries(armiesAt(id))){
+    const units={};
+    for(const [type,n] of Object.entries(army)){
+      if(isFacility(type))facilities.add(type);
+      else units[type]=n;
+    }
+    if(Object.keys(units).length)forces.push(block(esc(nation))+unitLine(units,nation));
+  }
+  if(facilities.size)forces.push(block('Facilities')+[...facilities].map(type=>unitCounter(type)).join(' '));
+  return forces.join('')||'<p class="hint">No units present.</p>';
 }
 function plannedAttacks(){
   const destinations=new Map();
   s.orders.forEach((order,index)=>{
     if(!destinations.has(order.to))destinations.set(order.to,[]);
-    const label='Edit attack from '+places[order.from].name+' into '+places[order.to].name+', '+describe(order.units);
+    const origin=places[order.from].name+(order.via?' via '+places[order.via].name:'');
+    const label='Edit move from '+origin+' into '+places[order.to].name+', '+describe(order.units);
     destinations.get(order.to).push('<button class="origin-order" data-act="edit" data-id="'+index+'" aria-label="'+label+'">'+
-      '<span>'+places[order.from].name+'</span><span>'+unitLine(order.units,s.owners[order.from])+'</span>'+
+      '<span>'+origin+'</span><span>'+unitLine(order.units,attacker)+'</span>'+
       '<span class="end" aria-hidden="true">›</span></button>');
   });
   let html=block('Planned attacks · '+destinations.size);
@@ -108,65 +217,128 @@ function plannedAttacks(){
   }
   return html;
 }
+function inspectionPanel(backLabel){
+  const id=ui.inspect,place=places[id];
+  const origin=ui.inspectedOrigin||id,nation=ui.inspectedNation||s.owners[id];
+  const name=(ui.inspectedType&&s.formationNames[nation===places[origin].owner?origin:origin+'/'+nation]?.[ui.inspectedType])||
+    (ui.inspectedType?(stats[ui.inspectedType]?.name||globalUnits[ui.inspectedType]?.[0]):place.name);
+  const status=neutralKey(s.owners[id]);
+  let note='';
+  if(place.blocked)note='Units cannot enter, cross, or occupy this terrain.';
+  else if(strictKey(status))note='An invasion brings the remaining eligible strict neutrals into the opposing camp.';
+  else if(status?.startsWith('Joined_'))note='Uncontrolled. The surviving garrison stays here until a friendly power takes control.';
+  else if(status)note=hostileNeutral(s.power,status)?'The standing army defends this territory against an invasion.':'An eligible friendly land unit can enter during noncombat movement to take control and mobilize the standing army.';
+  return title(esc(name||place.name),place.blocked?'Impassable terrain':esc((ui.inspectedNation||s.owners[id])+' · '+place.name))+
+    (note?'<p class="hint">'+note+'</p>':'')+(place.blocked?'':boardGarrison(id))+btn(backLabel,'clear');
+}
 function planPanel(){
-  let html=title('Combat move','Select a stack here or on the map, then choose how many units to send.');
+  let html=title('Combat move','Tap a unit stack on the map to plan an attack.');
   if(ui.to){
-    const existing=s.orders.some(o=>o.from===ui.from&&o.to===ui.to);
-    html=title('Plan attack',places[ui.from].name+' → '+places[ui.to].name)+block('Assign units')+stepper('assign',ui.units,available(s,ui.from,ui.to))+
+    const existing=s.orders.some(o=>o.from===ui.from&&o.to===ui.to&&(o.via||null)===(ui.via||null));
+    const limit=available(s,ui.from,ui.to,ui.via);
+    html=title(ui.via?'Tank route':'Plan attack',[ui.from,ui.via,ui.to].filter(Boolean).map(id=>places[id].name).join(' → '))+block('Assign units')+stepper('assign',ui.units,limit,ui.via?['tank']:mobileTypes.filter(t=>limit[t]>0&&targetsFor(s,ui.from,t).includes(ui.to)))+
     '<div class="actions">'+btn('Back','back')+btn(existing?'Update order':'Add order','add','primary',count(ui.units)?'':'disabled')+'</div>';
     if(existing)html+=btn('Cancel this order','remove','danger','style="margin-top:8px"');
+  }else if(ui.routeTo){
+    html=title('Choose tank route',places[ui.from].name+' → '+places[ui.routeTo].name)+
+      moveChoices().map(via=>{
+        const friendly=exercise.friends[s.power].includes(places[via].startOwner);
+        const battle=s.pieces[ui.routeTo].some(([,t,n])=>stats[t]&&n)&&!exercise.friends[s.power].includes(places[ui.routeTo].startOwner);
+        const note=(friendly?'Friendly passage':'Capture by blitz')+(battle?' · Retreat via '+places[via].name:'');
+        return opt(via,'Via '+places[via].name,note,'↗','target');
+      }).join('')+btn('Back to destinations','route-back');
   }else if(ui.stack){
-    html=title(unitCounter(ui.stack,undefined,s.owners[ui.from])+' stack',places[ui.from].name)+block('Units to move')+
+    html=title(unitCounter(ui.stack,undefined,attacker)+' '+esc(s.formationNames[ui.from+'/'+attacker]?.[ui.stack]||s.formationNames[ui.from]?.[ui.stack]||stats[ui.stack].name),stats[ui.stack].name+' · '+places[ui.from].name)+block('Units to move')+
       stepper('quantity',{[ui.stack]:ui.quantity},available(s,ui.from),[ui.stack],1)+
-      block('Tap destination to plan move')+
-      places[ui.from].targets.map(id=>opt(id,places[id].name,unitLine(s.units[id],s.owners[id]),'↗','target')).join('')+
+      (ui.stack==='tank'&&Object.keys(places[ui.from].tankRoutes||{}).length?btn(ui.twoSpace?'Show all moves':'Choose a two-space route','two-space'):'')+
+      block(moveChoices().length?'Tap destination to plan move':'No eligible enemy spaces')+
+      moveChoices().map(id=>{
+        const routed=ui.twoSpace||!targetsFor(s,ui.from,ui.stack).includes(id);
+        return opt(id,places[id].name,(routed?'Two spaces · ':'')+targetUnits(id),'↗','target');
+      }).join('')+
       '<div class="actions">'+btn('Deselect stack','clear')+'</div>';
-  }else{
-    const origins=ui.from?[ui.from]:['hb','wg'];
-    html+=origins.map(forceRoster).join('');
-    if(ui.from)html+=btn('All forces','clear');
   }
-  if(!ui.to&&s.orders.length)html+=plannedAttacks();
-  $('action').innerHTML=!ui.to&&!ui.stack?'<button class="primary" id="hold" '+(s.orders.length?'':'disabled')+'>Hold to commit attacks</button>':'';
+  if(isGlobal&&ui.inspect&&!ui.stack&&!ui.to){
+    html=inspectionPanel('Back to orders');
+  }
+  if(!ui.to&&s.orders.length){
+    html+=plannedAttacks();
+    if(isGlobal&&s.orders.some(o=>strictKey(neutralKey(s.owners[o.to])))){
+      html+='<p class="hint">Committing this invasion shifts eligible strict neutrals to the '+(allianceOf(s.power)==='Axis'?'Allied':'Axis')+' side.</p>';
+    }
+  }
+  if(!ui.to&&!ui.stack)$('action').innerHTML='<button class="primary hold-to-confirm" id="hold" '+(s.orders.length||isGlobal?'':'disabled')+'>'+(isGlobal&&!s.orders.length?'Hold to finish combat moves':'Hold to commit attacks')+'</button>';
   return html;
 }
-function rollCard(rolls,side,play){
-  const label=side==='attack'?'German attack':'French defense';
-  let hits=0;
-  const groups=types.map(type=>{
-    const group=rolls.filter(d=>d.type===type);
-    if(!group.length)return '';
-    let stage='marked';
-    if(play){
-      const index=play.types.indexOf(type);
-      if(index>play.index)stage='waiting';
-      if(index===play.index)stage=play.stage;
-    }
-    if(stage==='marked')hits+=group.filter(d=>d.hit).length;
-    const dice=group.map((d,i)=>{
-      if(stage==='waiting')return '<span class="die pending" aria-hidden="true"></span>';
-      if(stage==='rolling')return dieFace(d,1+(play.frame+i*2)%6,stage);
-      return dieFace(d,d.face,stage);
-    }).join('');
-    const threshold=stats[type][side];
-    return '<div class="roll-unit" data-unit="'+type+'" data-stage="'+stage+'">'+
-      unitCounter(type,undefined,side==='attack'?'Germany':'France')+'<small>Hits on '+(threshold===1?'1':'1–'+threshold)+
-      '</small><div class="dice-row">'+dice+'</div></div>';
-  }).join('');
-  const total=play&&play.index===0&&play.stage!=='marked'?'Rolling…':hits+' '+(hits===1?'hit':'hits');
-  return '<section class="roll-card" data-side="'+side+'"><h4>'+label+'<span>'+total+'</span></h4>'+groups+'</section>';
+// Older rounds carry powers on individual dice. Exercises use the territorial defender.
+function defendingNations(dice,fallback){
+  const powers=dice?.defendingPowers||dice?.defense?.map(d=>d.power).filter(Boolean)||[];
+  const nations=[...new Set(powers.map(p=>ownerNames[p]||p))];
+  return nations.length?nations:fallback;
 }
-function rollsBox(dice,play=null){
+function liveDefenders(b){
+  return s.pieces?Object.keys(armiesAt(b.to,true)):[s.owners[b.to]];
+}
+function groupRolls(rolls,side){
+  const groups=new Map();
+  for(const die of rolls){
+    // Older saved rounds only recorded the unit type and side.
+    const threshold=die.threshold??stats[die.type][side];
+    if(!groups.has(threshold))groups.set(threshold,[]);
+    groups.get(threshold).push(die);
+  }
+  return [...groups].sort(([a],[b])=>a-b);
+}
+const hitRange=threshold=>threshold===1?'1':'1–'+threshold;
+function rollStacks(group,nations){
+  const stacks=new Map();
+  for(const die of group){
+    const nation=ownerNames[die.power]||die.power||nations[0]||'Defenders';
+    const key=die.type+'/'+nation;
+    if(!stacks.has(key))stacks.set(key,{type:die.type,nation,rolls:[]});
+    stacks.get(key).rolls.push(die);
+  }
+  return [...stacks.values()].sort((a,b)=>
+    stats[a.type].name.localeCompare(stats[b.type].name,'en')||a.nation.localeCompare(b.nation,'en'));
+}
+function rollDice(ordered,stage,frame){
+  return ordered.flatMap(({nation,rolls})=>rolls.map((d,i)=>{
+    if(stage==='waiting')return '<span class="die pending" aria-hidden="true"></span>';
+    return dieFace(d,stage==='rolling'?1+(frame+i*2)%6:d.face,stage,nation);
+  })).join('');
+}
+function rollTotal(hits,play){
+  if(play&&play.index===0&&play.stage!=='marked')return 'Rolling…';
+  return hits+' '+(hits===1?'hit':'hits');
+}
+function rollCard(rolls,side,play,nations){
+  const label=side==='defense'?'Defense Rolls':(adjectives[nations[0]]||nations[0])+' attack';
+  let hits=0;
+  const groups=(play?.groups||groupRolls(rolls,side)).map(([threshold,group],index)=>{
+    let stage='marked';
+    if(play&&index>=play.index)stage=index===play.index?play.stage:'waiting';
+    if(stage==='marked')hits+=group.filter(d=>d.hit).length;
+    const ordered=rollStacks(group,nations);
+    const counters=ordered.map(({type,nation,rolls})=>
+      unitCounter(type,rolls.length,nation,stats[type].name+' · '+nation+' × '+rolls.length)).join('');
+    const dice=rollDice(ordered,stage,play?.frame);
+    return '<div class="roll-unit" data-threshold="'+threshold+'" data-stage="'+stage+'"><strong>Hits on '+hitRange(threshold)+
+      '</strong><div class="roll-counters">'+counters+'</div><div class="dice-row">'+dice+'</div></div>';
+  }).join('');
+  const total=rollTotal(hits,play);
+  return '<section class="roll-card" data-side="'+side+'" '+combatColors(nations.length===1?nations[0]:null)+'><h4>'+label+'<span>'+total+'</span></h4>'+groups+'</section>';
+}
+function rollsBox(dice,play,attacking,defending){
   if(!dice)return '';
-  return ['attack','defense'].filter(side=>dice[side]).map(side=>rollCard(dice[side],side,play?.side===side?play:null)).join('');
+  return ['attack','defense'].filter(side=>dice[side]).map(side=>rollCard(dice[side],side,play?.side===side?play:null,side==='attack'?[attacking]:defending)).join('');
 }
 // The game has already rolled and saved. Only the presentation is timed.
 let playback=null,rollTimer;
 function beginRoll(side){
-  if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
-  const rolls=currentBattle(s).dice[side],unitTypes=types.filter(t=>rolls.some(d=>d.type===t));
-  if(!unitTypes.length)return;
-  playback={side,rolls,types:unitTypes,index:0,stage:'rolling',frame:0};
+  if(reducedMotion())return;
+  const rolls=currentBattle(s).dice[side],groups=groupRolls(rolls,side);
+  if(!groups.length)return;
+  playback={side,groups,index:0,stage:'rolling',frame:0};
   rollTimer=setTimeout(advanceRoll,100);
 }
 function endPlayback(){
@@ -183,80 +355,96 @@ function advanceRoll(){
   }else if(play.stage==='settled'){
     play.stage='marked';delay=1000;
   }else{
-    if(++play.index===play.types.length){endPlayback();render();return;}
+    if(++play.index===play.groups.length){endPlayback();render();return;}
     play.stage='rolling';play.frame=0;
   }
   const card=$('panel').querySelector('.roll-card[data-side="'+play.side+'"]');
-  card.outerHTML=rollCard(play.rolls,play.side,play);
+  const battle=currentBattle(s);
+  const nations=play.side==='attack'?[attacker]:defendingNations(battle.dice,liveDefenders(battle));
+  const [threshold,rolls]=play.groups[play.index];
+  const activeGroup=card.querySelector('[data-threshold="'+threshold+'"]');
+  activeGroup.dataset.stage=play.stage;
+  activeGroup.querySelector('.dice-row').innerHTML=rollDice(rollStacks(rolls,nations),play.stage,play.frame);
+  const revealed=play.groups.slice(0,play.index+Number(play.stage==='marked'));
+  const totalHits=revealed.reduce((sum,[,group])=>sum+group.filter(d=>d.hit).length,0);
+  card.querySelector('h4 span').textContent=rollTotal(totalHits,play);
   if((play.frame===0||play.index===0&&play.frame===1)&&play.stage==='rolling'){
-    $('panel').querySelector('[data-side="'+play.side+'"] [data-unit="'+play.types[play.index]+'"]').scrollIntoView({block:'nearest'});
+    activeGroup.scrollIntoView({block:'nearest'});
   }
-  const name=stats[play.types[play.index]].name;
-  const hits=play.rolls.filter(d=>d.type===play.types[play.index]&&d.hit).length;
-  const note=play.stage==='marked'?name+' · '+hits+(hits===1?' hit':' hits'):'Rolling '+name.toLowerCase()+'…';
+  const hits=rolls.filter(d=>d.hit).length;
+  const note=play.stage==='marked'?'Hits on '+hitRange(threshold)+' · '+hits+(hits===1?' hit':' hits'):'Rolling for '+hitRange(threshold)+'…';
   if($('rollStatus').textContent!==note)$('rollStatus').textContent=note;
   rollTimer=setTimeout(advanceRoll,delay);
 }
-function forceColumns(attack,defense,defendingNation,metric='total'){
-  function column(role,nation,units){
-    const icons=types.filter(k=>units[k]>0).map(k=>unitCounter(k,units[k],nation)).join(' ');
-    return '<span class="battle-column"><span class="force-heading"><small>'+role+'</small> <strong>'+nation+'</strong></span>'+
-      '<span class="force-strength">'+icons+'<span class="force-total">'+count(units)+' '+metric+'</span></span></span>';
+function forceColumns(attack,defense,defendingNation,metric='total',armies=null,attacking=attacker){
+  function column(heading,icons,total){
+    return '<span class="battle-column"><span class="force-heading">'+heading+'</span>'+
+      '<span class="force-strength">'+icons+'<span class="force-total">'+total+' '+metric+'</span></span></span>';
   }
-  return column('Attacking','Germany',attack)+column('Defending',defendingNation,defense);
+  const defenders=armies&&Object.keys(armies).length?armies:{[defendingNation]:defense};
+  const defenseIcons=Object.keys(stats).map(type=>defenseCounters(type,
+    Object.fromEntries(Object.entries(defenders).map(([nation,units])=>[nation,units[type]])))).join(' ');
+  const attackIcons=Object.keys(attack).filter(k=>attack[k]>0).map(k=>unitCounter(k,attack[k],attacking)).join(' ');
+  return column('<small>Attacking</small> <strong>'+esc(attacking)+'</strong>',attackIcons,count(attack))+
+    column('<strong>'+(metric==='lost'?'Defense Losses':'Defense Units')+'</strong>',defenseIcons,count(defense));
 }
 function updateBattleForces(){
   const b=currentBattle(s),header=$('battleForces');
   if(!b){header.replaceChildren();return;}
-  header.innerHTML=forceColumns(b.attack,s.units[b.to],s.owners[b.to]);
+  header.innerHTML=forceColumns(b.attack,s.units[b.to],s.owners[b.to],'total',isGlobal?armiesAt(b.to,true):null);
 }
 function cityObjective(territory){
-  const city=theaterVictoryCities.find(c=>c.territory===territory);
-  if(!city)return '';
+  const city=(exercise.cities||theaterVictoryCities).find(c=>c.territory===(territory==='af'?'fr':territory));
+  if(!city)return isGlobal&&places[territory].city?'<span class="objective">◆ Victory city</span>':'';
   return '<span class="objective"><span aria-hidden="true">'+(city.capitalOf?'★':'◆')+'</span> '+city.name+
     ' · Victory city'+(city.capitalOf?' · '+city.capitalOf+'’s capital':'')+'</span>';
 }
 function battleChoice(b){
-  if(b.resolved)return '<div class="review-item"><strong>'+places[b.to].name+'</strong><p>'+reviewDetail(b.result)+'</p></div>';
+  if(b.resolved)return '<div class="review-item"><strong>'+places[b.to].name+'</strong><p>'+reviewDetail(b.result,attacker,b.heldBy)+'</p></div>';
   return '<button class="battle-choice" data-act="battle" data-id="'+b.to+'">'+
     '<span class="battle-choice-title"><strong>'+places[b.to].name+'</strong><span class="end" aria-hidden="true">›</span></span>'+
-    cityObjective(b.to)+'<span class="force-columns">'+forceColumns(b.attack,s.units[b.to],s.owners[b.to])+'</span></button>';
+    cityObjective(b.to)+'<span class="force-columns">'+forceColumns(b.attack,s.units[b.to],s.owners[b.to],'total',isGlobal?armiesAt(b.to,true):null)+'</span></button>';
 }
 function battlePanel(){
   const b=currentBattle(s);
   if(!b){
     return title('Conduct combat','Choose the next battle to resolve.')+block('Battle order')+s.battles.map(battleChoice).join('');
   }
-  const info='<h2>'+places[b.to].name+'</h2>'+block(b.round?'Battle round '+b.round:'Land battle')+
-    (b.round?'':cityObjective(b.to))+rollsBox(b.dice,playback);
+  const dice=b.step==='openingLosses'?b.openingDice:b.step==='regular'?null:b.dice;
+  const nations=defendingNations(dice,liveDefenders(b));
+  const info='<h2>'+places[b.to].name+'</h2>'+block(b.step==='openingLosses'?'Opening fire · round '+b.round:b.round?'Battle round '+b.round:places[b.to].water?'Naval battle':'Land battle')+
+    (b.round?'':cityObjective(b.to))+rollsBox(dice,playback,attacker,nations);
   if(playback){
-    $('action').innerHTML='<div class="roll-progress" id="rollStatus" role="status">Rolling '+stats[playback.types[playback.index]].name.toLowerCase()+'…</div>';
+    $('action').innerHTML='<div class="roll-progress" id="rollStatus" role="status">Rolling for '+hitRange(playback.groups[playback.index][0])+'…</div>';
     return info;
   }
   if(b.step==='defense'){
-    $('action').innerHTML=btn('Roll French defense','defend','primary');
+    $('action').innerHTML=btn('Roll defense','defend','primary',combatColors(nations.length===1?nations[0]:null));
     return info+'<p class="hint">All defenders return fire this round, including marked casualties.</p>';
   }
-  if(b.step==='losses' && !b.hits){
-    $('action').innerHTML=btn('Resolve round','loss','primary');
-    return info+'<p class="hint">Germany takes no casualties this round.</p>';
+  const assigning=['losses','openingLosses'].includes(b.step);
+  if(assigning && !b.hits){
+    $('action').innerHTML=btn(b.step==='openingLosses'?'Resolve opening fire':'Resolve round','loss','primary');
+    return info+'<p class="hint">'+attacker+' takes no casualties this round.</p>';
   }
-  if(b.step==='losses'){
-    const limits={};
-    for(const k of types)limits[k]=Math.min(b.attack[k],ui.losses[k]+b.hits-count(ui.losses));
+  if(assigning){
+    const limits=casualtyLimits(s,b),keys=Object.keys(limits);
+    const shipNote=keys.some(k=>['carrier','battleship'].includes(k))?' An undamaged carrier or battleship takes two hits to sink.':'';
+    for(const k of keys)limits[k]=Math.min(limits[k],(ui.losses[k]||0)+b.hits-count(ui.losses));
     $('action').innerHTML=btn('Confirm casualties','loss','primary',count(ui.losses)===b.hits?'':'disabled');
-    return info+'<h3>Choose your casualties</h3><p class="hint">Assign '+b.hits+' German '+(b.hits===1?'loss':'losses')+'. Confirm to apply both sides’ losses.</p>'+stepper('casualty',ui.losses,limits);
+    return info+'<h3>Assign hits</h3><p class="hint">Assign '+b.hits+' '+(b.hits===1?'hit':'hits')+' to your force.'+shipNote+'</p>'+stepper('casualty',ui.losses,limits,keys);
   }
-  $('action').innerHTML=btn(b.round?'Continue · roll German attack':'Roll German attack','roll','primary');
+  const opening=b.step==='regular'?'':openingFireKind(s,b);
+  $('action').innerHTML=opening?btn('Roll '+opening.toLowerCase(),'opening-fire','primary'):btn((b.step==='decision'?'Continue · roll ':'Roll ')+adjectives[attacker]+' attack','roll','primary');
   if(b.step==='decision'){
-    return info+'<h3>Continue or retreat?</h3><p class="hint">Retreat all survivors to one origin.</p>'+b.origins.map(id=>btn('Retreat to '+places[id].name,'retreat','secondary','data-id="'+id+'"')).join('');
+    return info+'<h3>Continue or retreat?</h3><p class="hint">Choose one territory or sea zone from which your force entered this battle.</p>'+retreatSites(s,b).map(id=>btn('Retreat to '+places[id].name,'retreat','secondary','data-id="'+id+'"')).join('');
   }
   return info;
 }
 // Earlier saved rounds recorded losses as a sentence, without separate unit counts.
 function savedRoundLosses(entry){
   if(entry.losses)return entry.losses;
-  const sides=/^Losses — Germany: (.+); France: (.+)\.$/.exec(entry.detail);
+  const sides=/^Losses — [^:]+: (.+); [^:]+: (.+)\.$/.exec(entry.detail);
   if(!sides)return null;
   function readUnits(text){
     const units={inf:0,tank:0};
@@ -265,24 +453,29 @@ function savedRoundLosses(entry){
   }
   return {attack:readUnits(sides[1]),defense:readUnits(sides[2])};
 }
-function timeline(){
-  return s.record.map(e=>{
+function timeline(record=s.record,attacking=attacker){
+  return record.map(e=>{
     const heading=esc(e.title);
-    if(!e.dice)return '<div class="review-item"><strong>'+heading+'</strong><p>'+reviewDetail(e.detail)+'</p></div>';
+    if(!e.dice)return '<div class="review-item"><strong>'+heading+'</strong><p>'+reviewDetail(e.detail,attacking,e.heldBy)+'</p></div>';
     const losses=savedRoundLosses(e);
-    const breakdown=losses?'<div class="force-columns">'+forceColumns(losses.attack,losses.defense,'France','lost')+'</div>':
-      '<p>'+reviewDetail(e.detail)+'</p>';
-    return '<details class="review-item review-round"><summary>'+heading+'</summary>'+breakdown+rollsBox(e.dice)+'</details>';
+    const owner=e.defender||/^Losses — [^:]+: .+; ([^:]+): /.exec(e.detail)?.[1]||exercise.defender;
+    const nations=defendingNations(e.dice,owner?[owner]:[]);
+    const casualtiesByNation=nationalArmies(Object.entries(e.nationalLosses||{}).flatMap(([p,army])=>
+      Object.entries(army).map(([type,n])=>[p,type,n])));
+    if(isGlobal&&e.nationalLosses)for(const nation of nations)casualtiesByNation[nation]??={};
+    const breakdown=losses?'<div class="force-columns">'+forceColumns(losses.attack,losses.defense,owner||'Defenders','lost',casualtiesByNation,attacking)+'</div>':
+      '<p>'+reviewDetail(e.detail,attacking)+'</p>';
+    return '<details class="review-item review-round"><summary>'+heading+'</summary>'+breakdown+rollsBox(e.dice,null,attacking,nations)+'</details>';
   }).join('');
 }
 let stopHold=()=>{};
-function bindHold(){
-  const button=$('hold');if(!button||button.disabled)return;
+function bindHold(button,confirm){
+  if(!button||button.disabled)return;
   let timer=null;
   const cancel=()=>{clearTimeout(timer);timer=null;button.classList.remove('holding');};
   stopHold=cancel;
-  const start=()=>{if(timer)return;button.classList.add('holding');timer=setTimeout(()=>{cancel();run(()=>{commit(s);ui=freshUI();});},850);};
-  button.onpointerdown=e=>{if(e.button!==0)return;e.preventDefault();button.setPointerCapture(e.pointerId);start();};
+  const start=()=>{if(timer)return;button.classList.add('holding');timer=setTimeout(()=>{cancel();confirm();},850);};
+  button.onpointerdown=e=>{if(e.button!==0||!e.isPrimary)return;e.preventDefault();button.setPointerCapture(e.pointerId);start();};
   button.onpointermove=e=>{const b=button.getBoundingClientRect();if(e.clientX<b.left||e.clientX>b.right||e.clientY<b.top||e.clientY>b.bottom)cancel();};
   button.onpointerup=button.onpointercancel=button.onlostpointercapture=button.onblur=cancel;
   button.oncontextmenu=e=>e.preventDefault();
@@ -293,22 +486,123 @@ window.addEventListener('blur',()=>stopHold());
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden){stopHold();if(playback){endPlayback();render();}}
 });
+function friendlyMovesPanel(){
+  const id=ui.inspect,options=activationOptions(s,id);
+  if(!options.length){
+    const reachable=Object.keys(s.owners).filter(to=>activationOptions(s,to).length);
+    return title('Friendly neutral moves','Select a territory on the map or below to enter it with an unmoved adjacent land unit.')+
+      reachable.map(to=>btn(esc(places[to].name),'activation-place','secondary','data-id="'+to+'"')).join('');
+  }
+  return title(esc(places[id].name),'Noncombat move · '+s.owners[id])+boardGarrison(id)+
+    block('Move units in and take control')+options.map(({from,type,available})=>
+      '<div class="activation-order"><label>'+esc(places[from].name)+' '+unitCounter(type,undefined,attacker)+
+      ' <input aria-label="Units entering from '+esc(places[from].name)+'" type="number" value="1" min="1" max="'+available+'"></label>'+
+      btn('Activate','activate-neutral','secondary','data-id="'+from+'" data-k="'+type+'"')+'</div>').join('');
+}
+function orderRow({unit,name,caption,quantity,plus,facility='',operation='buy'}){
+  const change=(delta,disabled)=>btn(delta>0?'+':'−',operation,'order-step',
+    'data-k="'+unit+'" data-id="'+esc(facility)+'" data-n="'+delta+'" aria-label="'+
+    (delta>0?'Add ':'Remove ')+esc(name)+'" '+(disabled?'disabled':''));
+  return '<div class="order-line">'+unitCounter(boardUnitType(unit==='upgrade'?'factory_major':unit),undefined,attacker)+
+    '<span><strong>'+esc(name)+'</strong><small>'+esc(caption)+'</small></span>'+
+    change(-1,!quantity)+'<output>'+quantity+'</output>'+change(1,!plus)+'</div>';
+}
+function purchasePanel(){
+  const match=globalBoard.match,wallet=ui.wallet||match.power,plan=purchasePlan(match,wallet);
+  const group=ui.buyGroup||'All',china=wallet==='Chinese',british=match.power==='British';
+  const unitGroups=china?['Land']:Object.keys(purchaseGroups);
+  const categories=china?['All','Land']:['All',...unitGroups,'Repairs'];
+  const total=spendingEconomies(match).reduce((sum,id)=>sum+(id===wallet?plan.cost:purchasePlan(match,id).cost),0);
+  $('action').innerHTML='<div class="order-totals" aria-live="polite">'+
+    [['Treasury',match.treasury[wallet]],['Order',plan.cost],['Left',plan.remaining]].map(([label,value])=>
+      '<span>'+label+'<b>'+value+' <small>IPC</small></b></span>').join('')+'</div>'+
+    '<button id="confirmOrder" class="primary hold-to-confirm">'+(total?'Hold to spend '+total+' IPCs':'Hold to finish without spending')+'</button>';
+  if(ui.inspect)return inspectionPanel('Back to purchases');
+  let html='<h2>Purchase &amp; Repair</h2>';
+  if(british)html+='<div class="economy-switch" aria-label="British treasury">'+
+    spendingEconomies(match).map(id=>btn(id==='British'?'Europe':'Pacific','wallet','secondary',
+    'data-id="'+id+'" aria-pressed="'+(wallet===id)+'"')).join('')+'</div>';
+  if(!plan.allowed)return html+'<p class="hint">This economy’s capital is occupied. Its treasury is closed.</p>';
+  html+='<div class="order-tools"><select id="buyGroup" aria-label="Order category">'+categories.map(c=>
+    '<option '+(group===c?'selected':'')+'>'+c+'</option>').join('')+'</select>'+
+    btn('View order','inspect-order')+'</div>';
+  if(group==='Repairs'){
+    const ships=eligibleShipRepairs(match);
+    html+=plan.repairs.map(r=>orderRow({unit:r.unit,name:r.name+' · '+globalUnits[r.unit][0],caption:r.damage+' damage · 1 IPC each',
+      quantity:r.quantity,plus:r.quantity<r.damage&&plan.remaining>=1,facility:r.name,operation:'facility-order'})).join('');
+    if(!plan.repairs.length)html+='<p class="hint">No damaged facilities in this economy.</p>';
+    for(const ship of ships)html+='<p class="hint">'+esc(ship.name)+' · '+ship.count+' × '+globalUnits[ship.type][0]+' will repair free.</p>';
+    return html;
+  }
+  if(china)html+='<p class="hint">Burma Road '+(plan.roadOpen?'open · Infantry and artillery available.':'closed · Infantry available.')+'</p>';
+  else if(group!=='Facilities')html+='<p class="hint">'+(group==='Sea'?'Coastal production · '+plan.seaCount+' of '+plan.coastalCapacity:'Production · '+plan.combatCount+' of '+plan.capacity)+' slots ordered</p>';
+  for(const category of group==='All'?unitGroups:[group]){
+    if(group==='All'&&unitGroups.length>1)html+=block(category);
+    const units=china?(plan.roadOpen?['infantry','artillery']:['infantry']):purchaseGroups[category];
+    html+=units.map(unit=>orderRow({unit,name:globalUnits[unit][0],caption:globalUnits[unit][1]+' IPCs',
+      quantity:plan.orders[unit]||0,plus:plan.limits[unit]})).join('');
+  }
+  if(group==='Facilities'||group==='All')html+=plan.upgrades.map(site=>orderRow({unit:'upgrade',name:'Upgrade · '+site.name,
+    caption:site.ready?'Minor to major · 20 IPCs':'Fully repair this complex first',quantity:Number(site.selected),
+    plus:!site.selected&&site.ready&&plan.remaining>=20,facility:site.name,operation:'facility-order'})).join('');
+  return html;
+}
+function orderSummary(){
+  const match=globalBoard.match;
+  return spendingEconomies(match).map(wallet=>{
+    const plan=purchasePlan(match,wallet);
+    const items=Object.entries(plan.orders).map(([unit,n])=>'<p>'+unitCounter(boardUnitType(unit),n,attacker)+' '+(isFacility(unit)?n+' × ':'')+globalUnits[unit][0]+'</p>');
+    for(const r of plan.repairs)if(r.quantity)items.push('<p>'+esc(r.name)+' · '+globalUnits[r.unit][0]+' · Repair '+r.quantity+'</p>');
+    for(const u of plan.upgrades)if(u.selected)items.push('<p>'+esc(u.name)+' · Upgrade to major complex</p>');
+    return '<h3>'+(match.power==='British'?(wallet==='British'?'UK Europe':'UK Pacific'):attacker)+' · '+plan.cost+' IPCs</h3>'+
+      (items.join('')||'<p>No spending ordered.</p>');
+  }).join('');
+}
+
 let panelView;
 function render(){
   stopHold();$('action').innerHTML='';
-  if(s.phase==='plan')$('panel').innerHTML=planPanel();
+  const briefing=inBriefing();
+  $('exerciseBoard').classList.toggle('opening-briefing',briefing);
+  document.querySelector('.power-tab').textContent=briefing?'Turn briefing':attacker;
+  if(briefing){
+    const match=globalBoard.match;
+    $('panel').innerHTML=ui.inspect?inspectionPanel('Back to briefing'):
+      '<h2>'+seasonForRound(match.round)+'</h2><p class="briefing-round">Round '+match.round+' · '+attacker+(match.power==='Germans'?' moves first':' to move')+'</p>'+
+      '<p class="briefing-address">'+esc(openingAddress(match,match.controllers[match.power]))+' Survey the board, then begin your turn when you’re ready.</p>';
+    $('action').innerHTML=btn('Begin '+attacker+'’s turn','begin-turn','primary');
+  }else if(inPurchase())$('panel').innerHTML=purchasePanel();
+  else if(s.phase==='plan')$('panel').innerHTML=planPanel();
   else if(s.phase==='combat')$('panel').innerHTML=battlePanel();
   else{
-    $('panel').innerHTML=title('Exercise review','Committed attacks and resolved outcomes.')+timeline();
-    $('action').innerHTML=btn('Start another exercise','reset');
+    $('panel').innerHTML=title(isGlobal?'Combat review':'Exercise review','Committed attacks and resolved outcomes.')+timeline();
+    if(isGlobal&&ui.activation){
+      $('panel').innerHTML=friendlyMovesPanel();$('action').innerHTML=btn('Back to combat review','clear');
+    }else{
+      const canActivate=isGlobal&&Object.keys(s.owners).some(to=>activationOptions(s,to).length);
+      $('action').innerHTML=(canActivate?btn('Friendly neutral moves','open-activation'):'')+(isGlobal?'<button id="endTurn" class="primary hold-to-confirm">Hold to end turn · '+globalPowers[nextPower(s.power)]+' next</button>':btn('Start another exercise','reset'));
+    }
   }
   updateBattleForces();
-  const nextView=[s.phase,s.active,currentBattle(s)?.step,ui.from,ui.to,ui.stack].join('|');
+  const nextView=[briefing,inPurchase(),ui.buyGroup,ui.wallet,ui.inspect,s.phase,s.active,currentBattle(s)?.step,ui.from,ui.to,ui.stack,ui.routeTo,ui.twoSpace].join('|');
   if(panelView!==nextView)document.querySelector('.panel-scroll').scrollTop=0;
   panelView=nextView;
   $('notice').textContent=message;
-  if(message&&$('ordersPanel').hidden)$('openPanel').click();
-  draw(s,ui.from,ui.to,ui.stack,layoutSeed);bindHold();
+  $('mapNotice').textContent=message;
+  $('openPanel').textContent=briefing?'Open briefing':'Open orders';
+  draw(s,ui.inspect||ui.from,ui.routeTo||ui.to,ui.stack||ui.inspectedType,layoutSeed,ui.stack?null:ui.inspectedNation,briefing||inPurchase(),ui.stack?moveChoices():null);
+  if($('endTurn'))bindHold($('endTurn'),endTurn);
+  else if(inPurchase())bindHold($('confirmOrder'),()=>run(()=>{
+    const receipt=confirmPurchase(globalBoard.match);
+    globalBoard.match.combatStart=structuredClone(globalBoard.match.board);
+    for(const [id,place] of Object.entries(exercisePlaces)){
+      const damage=globalBoard.match.board[place.name]?.shipDamage;
+      if(damage)(s.shipDamage??={})[id]=structuredClone(damage);
+    }
+    s.record.push(receipt);ui=freshUI();
+    $('map').setAttribute('aria-label',combatMapLabel);
+  }));
+  else bindHold($('hold'),()=>run(()=>{commit(s);ui=freshUI();}));
 }
 function showDialog(heading,html){
   $('dialogTitle').textContent=heading;
@@ -317,45 +611,126 @@ function showDialog(heading,html){
   if(!$('dialog').open)$('dialog').showModal();
   $('closeDialog').focus();
 }
+function endTurn(){
+  try{
+    if(localStorage.getItem(key)!==lastGlobalSave){location.reload();return;}
+    const next=nextPlaytestTurn(globalBoard.match);
+    localStorage.setItem(key,JSON.stringify(next));
+    location.reload();
+  }catch(error){
+    message='Could not hand over the turn. '+error.message;render();
+  }
+}
+document.addEventListener('change',event=>{
+  if(event.target.id==='buyGroup'){
+    run(()=>{ui.buyGroup=event.target.value;});
+    $('buyGroup')?.focus({preventScroll:true});
+  }
+});
 document.addEventListener('click',e=>{
   const b=e.target.closest('button[data-act]');if(!b)return;
   const {act,id,k,n}=b.dataset;
   run(()=>{
     switch(act){
-      case 'stack': {const [place,type]=id.split('-');selectStack(place,type);break;}
+      case 'begin-turn':
+        if(inBriefing()){
+          globalBoard.match.phase='purchase';ui=freshUI();
+          $('map').setAttribute('aria-label','Purchase and repair. Select a territory or force to inspect.');
+        }
+        break;
+      case 'wallet':ui.wallet=id;break;
+      case 'inspect-order':showDialog('Current order',orderSummary());break;
+      case 'buy':changePurchase(globalBoard.match,k,Number(n),ui.wallet||s.power);break;
+      case 'facility-order':changeFacilityOrder(globalBoard.match,ui.wallet||s.power,id,k,Number(n));break;
+      case 'open-activation': ui=freshUI();ui.activation=true;break;
+      case 'activation-place': ui.inspect=id;break;
+      case 'activate-neutral':
+        activateFriendly(s,ui.inspect,id,k,Number(b.closest('.activation-order').querySelector('input').value));
+        message=places[ui.inspect].name+' is now controlled by '+attacker+'.';ui.activation=false;break;
       case 'quantity': ui.quantity=Math.max(1,Math.min(available(s,ui.from)[ui.stack],ui.quantity+Number(n)));break;
       case 'target': selectTarget(id);break;
-      case 'assign': ui.units[k]+=Number(n);break;
-      case 'casualty': ui.losses[k]+=Number(n);break;
-      case 'back': ui.to=null;break;
-      case 'clear': ui=freshUI();break;
-      case 'edit': {const order=s.orders[Number(id)];selectOrigin(order.from);selectTarget(order.to);break;}
-      case 'add': plan(s,ui.from,ui.to,ui.units);ui=freshUI();break;
-      case 'remove': plan(s,ui.from,ui.to,{inf:0,tank:0});ui=freshUI();break;
+      case 'route-back': delete ui.routeTo;break;
+      case 'two-space': ui.twoSpace=!ui.twoSpace;break;
+      case 'assign': ui.units[k]=(ui.units[k]||0)+Number(n);break;
+      case 'casualty': ui.losses[k]=(ui.losses[k]||0)+Number(n);break;
+      case 'back': ui=freshUI();break;
+      case 'clear': ui=inPurchase()?{...freshUI(),wallet:ui.wallet,buyGroup:ui.buyGroup}:freshUI();break;
+      case 'edit': {const order=s.orders[Number(id)];selectOrigin(order.from);ui.to=order.to;ui.via=order.via||null;ui.units={...order.units};break;}
+      case 'add': plan(s,ui.from,ui.to,ui.units,ui.via);ui=freshUI();break;
+      case 'remove': plan(s,ui.from,ui.to,{},ui.via);ui=freshUI();break;
       case 'battle': chooseBattle(s,id);break;
+      case 'opening-fire': ui.losses={};rollOpening(s);break;
       case 'roll': ui.losses={inf:0,tank:0};rollAttack(s);beginRoll('attack');break;
       case 'defend': rollDefense(s);beginRoll('defense');break;
       case 'loss': casualties(s,ui.losses);ui.losses={inf:0,tank:0};break;
       case 'retreat': retreat(s,id);break;
-      case 'reset': showDialog('Restart exercise?','<p>This replaces the position and its local review on this device.</p>'+btn('Restart exercise','confirm-reset','danger'));break;
-      case 'confirm-reset': endPlayback();s=newGame();layoutSeed=newLayoutSeed();ui=freshUI();$('dialog').close();$('recenter').click();break;
+      case 'players': {
+        if(!isGlobal)break;
+        const locked=s.orders.length>0||s.phase!=='plan';
+        const rows=Object.entries(globalPowers).map(([p,name])=>'<label class="power-seat">'+name+'<select data-power="'+p+'" '+(locked?'disabled':'')+'>'+
+          Array.from({length:9},(_,i)=>'<option value="'+(i+1)+'" '+(i+1===globalBoard.match.controllers[p]?'selected':'')+'>Player '+(i+1)+'</option>').join('')+'</select></label>').join('');
+        showDialog('Local players',rows+(locked?'':btn('Save players','save-players','primary')));break;
+      }
+      case 'save-players':
+        if(isGlobal&&s.phase==='plan'&&!s.orders.length){
+          for(const select of $('dialogBody').querySelectorAll('[data-power]'))globalBoard.match.controllers[select.dataset.power]=Number(select.value);
+          $('dialog').close();
+        }
+        break;
+
+      case 'reset':
+        showDialog(isGlobal?'Restart global combat?':'Restart exercise?', '<p>'+(isGlobal?'Restore the position at the start of this combat move and clear its orders and review?':'This replaces the position and its local review on this device.')+'</p>'+btn(isGlobal?'Restart combat':'Restart exercise','confirm-reset','danger'));break;
+      case 'confirm-reset':
+        endPlayback();
+        if(isGlobal){
+          const procurement=s.record.filter(entry=>entry.title==='Purchase & Repair');
+          globalBoard.match.board=structuredClone(globalBoard.match.combatStart);s=structuredClone(globalBoard.game);s.record=procurement;
+        }
+        else s=newGame(exerciseId);
+        nameFormations();layoutSeed=newLayoutSeed();ui=freshUI();$('dialog').close();$('recenter').click();break;
     }
   });
+  if(e.detail===0&&['buy','facility-order','wallet'].includes(act)){
+    const rowButtons=[...$('panel').querySelectorAll('button[data-act]')].filter(button=>
+      button.dataset.act===act&&button.dataset.id===id&&button.dataset.k===k&&!button.disabled);
+    (rowButtons.find(button=>button.dataset.n===n)||rowButtons[0])?.focus({preventScroll:true});
+  }
 });
+$('exerciseMenu').onclick=()=>{location.hash='';};
+document.querySelector('.theater').textContent=exercise.name;
+const combatMapLabel='Pan or pinch the map. Select a unit from '+attacker+' and an eligible destination.';
+$('map').setAttribute('aria-label',inBriefing()?'Opening board. Pan or pinch the map and select a territory or force to inspect.':inPurchase()?'Purchase and repair. Select a territory or force to inspect.':combatMapLabel);
+$('controlKey').innerHTML=(isGlobal?[attacker]:[attacker,defender]).map(n=>'<i data-nation="'+n+'"></i>'+n).join(' ');
 $('closeDialog').onclick=()=>$('dialog').close();
-$('journal').onclick=()=>showDialog('Exercise review',(s.phase==='review'?timeline():'<p>The record opens after the last battle. It includes committed attacks, dice, casualties, retreats, and control of each territory.</p>'));
-$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The narrow olive hatch marks German control and the blue hatch marks French control. Tap a territory to read its controller. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><h3>Plan an attack</h3><p>German counters use '+unitCounter('inf',undefined,'Germany')+' for infantry and '+unitCounter('tank',undefined,'Germany')+' for armor. Adjust the quantity, then tap a highlighted French territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this exercise</h3><p>This local exercise covers adjacent land attacks with infantry and tanks. The starting forces are arranged for testing. The surrounding atlas is for exploration.</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+btn('Restart exercise','reset','danger'));
+$('journal').onclick=()=>{
+  const current=s.phase==='review'?timeline()||'<p>No combat was recorded.</p>':'<p>The current combat review opens after all battles are resolved.</p>';
+  const previous=(globalBoard?.match.turnReviews||[]).slice().reverse().map(turn=>{
+    const nation=globalPowers[turn.power];
+    return '<details class="review-item review-round"><summary>'+seasonForRound(turn.round)+' · '+nation+'</summary>'+
+      (timeline(turn.record,nation)||'<p>No combat was recorded.</p>')+'</details>';
+  }).join('');
+  showDialog(isGlobal?'Game review':'Exercise review',current+previous);
+};
+$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. '+(isGlobal?'The global map wraps east and west across the Americas. ':'')+'Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The national color fades inward from the hatched border. Neutral hatching slopes up to the right across the whole territory. Single grey lines mark strict neutrals, paired lines mark pro-Allied neutrals, and dashed lines mark pro-Axis neutrals. Grey stippling marks impassable terrain. Units cannot enter or cross these spaces. A committed strict-neutral invasion changes the other eligible strict neutrals immediately. Friendly neutrals can be activated after combat. Tap a territory to mark it in violet and read its status. Tap it again to clear the selection. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><details class="unit-key"><summary>Unit symbols</summary><ul>'+Object.entries(globalUnits).map(([type,[name]])=>'<li>'+unitCounter(boardUnitType(type),undefined,attacker)+' '+name+'</li>').join('')+'</ul></details><h3>Plan an attack</h3><p>Select a stack on the map, adjust the quantity, then tap a highlighted enemy territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this board</h3><p>'+ (isGlobal?'Global 1940 uses the opening forces of all nine powers. Tap any territory or counter to inspect it. Land units can attack adjacent hostile territories. Tanks can also enter a battle through friendly land or blitz through an empty enemy territory. Choose a two-space route to see the intermediate territory before adding the order. Aircraft can join adjacent land or naval battles. Ships can attack adjacent enemy fleets. AAA fires at incoming aircraft during opening fire.':'This local exercise covers adjacent land attacks with infantry and tanks. The forces are arranged for testing.')+'</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+(isGlobal?'<p>Inland China terrain data courtesy of Mapzen, the U.S. Geological Survey and NOAA. Rivers and lakes from Natural Earth.</p>'+btn('Local players','players','secondary')+((inBriefing()||inPurchase())?'':btn('Restart combat','reset','danger')):btn('Restart exercise','reset','danger')));
 // Store the two panel dimensions separately so rotating the phone restores the last fit.
 function setupOrdersPanel(){
   const main=document.querySelector('main'),sheet=$('ordersPanel'),grip=$('resizePanel');
   const open=$('openPanel'),hide=$('hidePanel'),stacked=matchMedia('(max-width:650px) and (orientation:portrait)');
-  const prefKey='wartable.orders-panel.v1';
-  let prefs={};
+  // Visibility is local to this board visit. Only Settings changes the opening preference.
+  const sizeKey='wartable.orders-panel-size.v1';
+  let collapsed=false,sizes={};
   try{
-    const saved=JSON.parse(localStorage.getItem(prefKey));
-    if(saved&&typeof saved==='object')prefs=saved;
+    const opening=JSON.parse(localStorage.getItem(ordersPanelKey))||{};
+    collapsed=opening.hidden===true;
+    const saved=JSON.parse(localStorage.getItem(sizeKey))||opening;
+    sizes={width:saved.width,height:saved.height};
   }catch{}
-  const persist=()=>{try{localStorage.setItem(prefKey,JSON.stringify(prefs));}catch{}};
+  function persistSize(axis){
+    try{
+      const stored=JSON.parse(localStorage.getItem(sizeKey))||sizes;
+      localStorage.setItem(sizeKey,JSON.stringify({...stored,[axis]:sizes[axis]}));
+    }catch{}
+  }
   function dimensions(){
     const vertical=stacked.matches,axis=vertical?'height':'width';
     const extent=main.getBoundingClientRect()[axis];
@@ -363,14 +738,13 @@ function setupOrdersPanel(){
     return {axis,extent,min,max,coordinate:vertical?'clientY':'clientX'};
   }
   function apply(){
-    const collapsed=prefs.hidden===true;
     sheet.hidden=collapsed;open.hidden=!collapsed;main.classList.toggle('panel-closed',collapsed);
     hide.setAttribute('aria-expanded',String(!collapsed));
     main.style.gridTemplateColumns='';main.style.gridTemplateRows='';
     if(collapsed)return;
     const {axis,extent,min,max}=dimensions();
-    if(Number.isFinite(prefs[axis])){
-      const size=Math.max(min,Math.min(max,Math.round(prefs[axis]*extent)));
+    if(Number.isFinite(sizes[axis])){
+      const size=Math.max(min,Math.min(max,Math.round(sizes[axis]*extent)));
       const property=axis==='height'?'gridTemplateRows':'gridTemplateColumns';
       main.style[property]='minmax(0,1fr) '+size+'px';
     }
@@ -379,13 +753,14 @@ function setupOrdersPanel(){
     const actual=Math.round(sheet.getBoundingClientRect()[axis]);
     grip.setAttribute('aria-valuenow',actual);grip.setAttribute('aria-valuetext',actual+' pixels '+(axis==='height'?'high':'wide'));
   }
-  function toggle(collapsed){
-    prefs.hidden=collapsed;apply();persist();(collapsed?open:hide).focus({preventScroll:true});
+  function toggle(hidden){
+    stopHold();collapsed=hidden;
+    apply();(collapsed?open:hide).focus({preventScroll:true});
   }
   hide.onclick=()=>toggle(true);open.onclick=()=>toggle(false);
   function sizeTo(pixels){
     const {axis,extent,min,max}=dimensions();
-    prefs[axis]=Math.max(min,Math.min(max,pixels))/extent;apply();
+    sizes[axis]=Math.max(min,Math.min(max,pixels))/extent;apply();
   }
   let drag=null;
   grip.onpointerdown=e=>{
@@ -398,7 +773,7 @@ function setupOrdersPanel(){
     if(drag&&grip.hasPointerCapture(e.pointerId)&&drag.axis===dimensions().axis)
       sizeTo(drag.size+drag.start-e[drag.coordinate]);
   };
-  grip.onlostpointercapture=()=>{drag=null;persist();};
+  grip.onlostpointercapture=()=>{if(drag)persistSize(drag.axis);drag=null;};
   grip.onkeydown=e=>{
     const {min,max,axis}=dimensions(),size=sheet.getBoundingClientRect()[axis];
     const larger=axis==='width'?'ArrowLeft':'ArrowUp',smaller=axis==='width'?'ArrowRight':'ArrowDown';
@@ -406,7 +781,7 @@ function setupOrdersPanel(){
     else if(e.key==='Home')sizeTo(min);
     else if(e.key==='End')sizeTo(max);
     else return;
-    e.preventDefault();persist();
+    e.preventDefault();persistSize(axis);
   };
   apply();
   const layoutObserver=new ResizeObserver(apply);
@@ -414,7 +789,4 @@ function setupOrdersPanel(){
 }
 setupOrdersPanel();
 render();
-try{draw=await atlas(pick,v=>{view=v;save();},view);render();save();}catch{message='The map could not load. Reopen the playtest while online to finish the download.';render();}
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('./sw.js').catch(()=>{$('storage').textContent='Offline install unavailable';});
-}
+try{draw=await atlas(pick,v=>{view=v;save();},view,exercise);render();save();}catch{message='The map could not load. Reopen the playtest while online to finish the download.';render();}

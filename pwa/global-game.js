@@ -1,0 +1,399 @@
+import {places,exercises,stats,aircraft,ships,mobileTypes,samePower,strengthOf} from './rules.js';
+import {neutralOwners,neutralKey,canEnterNeutral,hostileNeutral,openingLand} from './neutral-rules.js';
+// Global 1940 Second Edition order of play. Both British economies share a controller.
+export const globalPowers={
+  Germans:'Germany',Russians:'Soviet Union',Japanese:'Japan',Americans:'United States',
+  Chinese:'China',British:'United Kingdom',Italians:'Italy',ANZAC:'ANZAC',French:'France'
+};
+export const ownerNames={...globalPowers,UK_Pacific:'United Kingdom',Dutch:'Netherlands',
+  ...neutralOwners};
+// Both British treasuries can field pieces in the same battle under the same flag.
+export function nationalArmies(stacks){
+  const armies={};
+  for(const [power,type,n] of stacks){
+    if(!n)continue;
+    const nation=ownerNames[power]||power,army=armies[nation]??={};
+    army[type]=(army[type]||0)+n;
+  }
+  return armies;
+}
+export const globalUnits={
+  infantry:['Infantry',3],artillery:['Artillery',4],mech_infantry:['Mechanized infantry',4],armour:['Tank',6],aaGun:['AAA',5],
+  fighter:['Fighter',10],tactical_bomber:['Tactical bomber',11],bomber:['Strategic bomber',12],
+  submarine:['Submarine',6],transport:['Transport',7],destroyer:['Destroyer',8],cruiser:['Cruiser',12],
+  carrier:['Aircraft carrier',16],battleship:['Battleship',20],factory_minor:['Minor industrial complex',12],
+  factory_major:['Major industrial complex',30],airfield:['Air base',15],harbour:['Naval base',15]
+};
+export function startGlobalMatch(setup,controllers){
+  for(const power of Object.keys(globalPowers)){
+    if(!Number.isInteger(controllers[power])||controllers[power]<1||controllers[power]>9)throw Error('Assign a local player to each power.');
+  }
+  const match={version:1,round:1,power:'Germans',phase:'purchase',controllers:{...controllers},
+    treasury:{...setup.treasury},draft:{},mobilization:{},board:Object.fromEntries(
+      Object.entries(setup.regions).map(([name,r])=>[name,{owner:r.owner,units:r.units.map(stack=>[...stack])}]))};
+  preparePurchaseSites(match,setup);
+  return match;
+}
+// The briefing precedes spending for each power.
+export function startGlobalPlaytest(setup,controllers){
+  const match=startGlobalMatch(setup,controllers);
+  match.phase='briefing';
+  return match;
+}
+const turnOrder=Object.keys(globalPowers);
+export function seasonForRound(round){
+  const index=round-1,year=1940+Math.floor(index/4);
+  const season=['Spring','Summer','Autumn','Winter'][index%4];
+  return season+' '+year+(index%4===3?'–'+String(year+1).slice(-2):'');
+}
+export function nextPower(power){
+  return turnOrder[(turnOrder.indexOf(power)+1)%turnOrder.length];
+}
+export function nextPlaytestTurn(match){
+  if(match.phase!=='combatReview'||match.combat?.game.phase!=='review')throw Error('Complete combat before handing over the turn.');
+  const power=nextPower(match.power);
+  const review={power:match.power,round:match.round,record:match.combat.game.record};
+  return {...match,power,round:match.round+Number(power===turnOrder[0]),phase:'briefing',
+    turnReviews:[...(match.turnReviews||[]),review],combat:null,combatStart:null,combatStartPactBroken:!!match.mongolianPactBroken};
+}
+export function openingAddress(match,seat){
+  const powers=seat===match.controllers[match.power]?[match.power]:turnOrder.filter(power=>match.controllers[power]===seat);
+  const names=powers.map(power=>({British:'the United Kingdom',Americans:'the United States',Russians:'the Soviet Union'}[power]||globalPowers[power]));
+  return names.length?'You command '+new Intl.ListFormat('en').format(names)+'.':'You are observing this game.';
+}
+export const purchaseGroups={
+  Land:['infantry','artillery','mech_infantry','armour','aaGun'],
+  Air:['fighter','tactical_bomber','bomber'],
+  Sea:['submarine','transport','destroyer','cruiser','carrier','battleship'],
+  Facilities:['factory_minor','factory_major','airfield','harbour']
+};
+export const isFacility=type=>purchaseGroups.Facilities.includes(type);
+// Global rules pp. 34–35. West India is UK Pacific and mainland North America is UK Europe.
+const pacificOriginals=new Set(['UK_Pacific','Japanese','Chinese','ANZAC','Mongolians']);
+const otherPacificLand=new Set(['French Indo China','New Hebrides','Celebes','Java','Dutch New Guinea','Sumatra',
+  'Sakha','Evenkiyskiy','Yenisey','Soviet Far East','Amur','Yakut S.S.R.','Timguska','Siberia','Kazakhstan','Buryatia',
+  'Philippines','Line Islands','Guam','Wake Island','Johnston Island','Hawaiian Islands','Midway']);
+const capitals={Germans:'Germany',Russians:'Russia',Japanese:'Japan',Americans:'Eastern United States',
+  British:'United Kingdom',UK_Pacific:'India',Italians:'Southern Italy',ANZAC:'New South Wales',French:'France'};
+
+function preparePurchaseSites(match,setup){
+  match.diplomacy??=setup.diplomacy;
+  for(const [name,region] of Object.entries(setup.regions)){
+    const area=match.board[name];
+    if(!area)continue;
+    if(region.water){
+      area.coasts??=region.links.filter(link=>!setup.regions[link].water);
+    }else{
+      area.ipc=region.ipc;area.original=region.original;
+      area.coastal=region.links.some(link=>setup.regions[link].water);
+      area.island=area.coastal&&region.links.every(link=>setup.regions[link].water);
+    }
+  }
+}
+export const spendingEconomies=match=>match.power==='British'?['British','UK_Pacific']:[match.power];
+const hasFacility=(area,type)=>area.units.some(([,unit,n])=>unit===type&&n>0);
+export function purchaseTotal(draft){
+  return Object.entries(draft).reduce((sum,[unit,n])=>sum+n*globalUnits[unit][1],0);
+}
+export function purchasePlan(match,wallet=match.power){
+  if(!spendingEconomies(match).includes(wallet))throw Error('Choose an economy of the active power.');
+  const orders=(wallet===match.power?match.draft:match.pacificDraft)||{};
+  const allowed=purchaseCapitalAvailable(match,wallet);
+  const roadOpen=['India','Burma','Yunnan','Szechwan'].every(name=>['British','UK_Pacific','Chinese','Americans','ANZAC','French','Russians'].includes(match.board[name]?.owner));
+  const repairs=[],upgrades=[],sites={factory_minor:0,factory_major:0,airfield:0,harbour:0};
+  let capacity=0,coastalCapacity=0,cost=purchaseTotal(orders),combatCount=0,seaCount=0;
+  for(const [name,area] of Object.entries(match.board)){
+    if(area.owner!==wallet)continue;
+    const minor=hasFacility(area,'factory_minor'),major=hasFacility(area,'factory_major');
+    for(const unit of purchaseGroups.Facilities){
+      const damage=area.facilityDamage?.[unit]||0;
+      if(damage&&hasFacility(area,unit)){
+        const quantity=match.repairDraft?.[name]?.[unit]||0;
+        repairs.push({name,unit,damage,quantity});cost+=quantity;
+      }
+    }
+    if(minor||major){
+      const unit=major?'factory_major':'factory_minor';
+      const slots=Math.max(0,(major?10:3)-(area.facilityDamage?.[unit]||0)+(match.repairDraft?.[name]?.[unit]||0));
+      capacity+=slots;if(area.coastal)coastalCapacity+=slots;
+      if(minor&&area.original===wallet&&area.ipc>=3&&!match.pendingUpgrades?.[name]){
+        const selected=!!match.upgradeDraft?.[name],ready=(area.facilityDamage?.[unit]||0)===(match.repairDraft?.[name]?.[unit]||0);
+        upgrades.push({name,selected,ready});if(selected)cost+=20;
+      }
+    }else if(!area.island&&area.ipc>=2){
+      sites.factory_minor++;if(area.original===wallet&&area.ipc>=3)sites.factory_major++;
+    }
+    if(!hasFacility(area,'airfield'))sites.airfield++;
+    if(area.coastal&&!hasFacility(area,'harbour'))sites.harbour++;
+  }
+  for(const [unit,n] of Object.entries(orders)){
+    if(!purchaseGroups.Facilities.includes(unit))combatCount+=n;
+    if(purchaseGroups.Sea.includes(unit))seaCount+=n;
+  }
+  const remaining=match.treasury[wallet]-cost;
+  const limits={};
+  for(const [unit,[,price]] of Object.entries(globalUnits)){
+    let room=wallet==='Chinese'?(unit==='infantry'||unit==='artillery'&&roadOpen?Infinity:0):capacity-combatCount;
+    if(wallet!=='Chinese'&&Object.hasOwn(sites,unit)){
+      room=sites[unit]-(orders[unit]||0);
+      if(unit.startsWith('factory_'))room=Math.min(room,sites.factory_minor-(orders.factory_major||0)-(orders.factory_minor||0));
+    }
+    if(purchaseGroups.Sea.includes(unit))room=Math.min(room,coastalCapacity-seaCount);
+    limits[unit]=allowed?Math.max(0,Math.min(room,Math.floor(remaining/price))):0;
+  }
+  return {wallet,orders,cost,remaining,limits,allowed,repairs,upgrades,capacity,coastalCapacity,combatCount,seaCount,sites,roadOpen};
+}
+export function changePurchase(match,unit,delta,wallet=match.power){
+  if(match.phase!=='purchase'||!Object.hasOwn(globalUnits,unit)||![-1,1].includes(delta))throw Error('This purchase cannot be changed.');
+  const plan=purchasePlan(match,wallet),n=(plan.orders[unit]||0)+delta;
+  if(n<0||delta>0&&!plan.limits[unit])throw Error('This order exceeds the available funds, eligible sites or production capacity.');
+  const orders={...plan.orders,[unit]:n};
+  if(!n)delete orders[unit];
+  match[wallet===match.power?'draft':'pacificDraft']=orders;
+}
+function validatePlan(plan){
+  const {orders,remaining,allowed,cost,wallet,capacity,combatCount,seaCount,coastalCapacity,sites,upgrades,repairs,roadOpen}=plan;
+  if(!Number.isSafeInteger(remaining)||remaining<0||(!allowed&&cost))throw Error('The treasury cannot cover this order.');
+  for(const [type,n] of Object.entries(orders)){
+    if(!Number.isSafeInteger(n)||n<0||wallet==='Chinese'&&!(type==='infantry'||type==='artillery'&&roadOpen))throw Error('An ordered unit is unavailable.');
+  }
+  if(wallet!=='Chinese'&&(combatCount>capacity||seaCount>coastalCapacity))throw Error('Reduce the unit order before removing this factory repair.');
+  if(Object.entries(sites).some(([unit,max])=>(orders[unit]||0)>max)||(orders.factory_minor||0)+(orders.factory_major||0)>sites.factory_minor)throw Error('There are too few eligible facility sites.');
+  if(repairs.some(r=>!Number.isSafeInteger(r.quantity)||r.quantity<0||r.quantity>r.damage)||upgrades.some(u=>u.selected&&!u.ready))throw Error('Repair the complex fully before upgrading.');
+}
+export function changeFacilityOrder(match,wallet,name,unit,delta){
+  if(match.phase!=='purchase'||![-1,1].includes(delta))throw Error('Repairs are closed.');
+  const plan=purchasePlan(match,wallet),next={...match};
+  if(unit==='upgrade'){
+    const site=plan.upgrades.find(row=>row.name===name);
+    if(!site||site.selected===(delta===1))throw Error('This complex cannot be upgraded.');
+    next.upgradeDraft={...match.upgradeDraft};
+    if(delta===1)next.upgradeDraft[name]=true;else delete next.upgradeDraft[name];
+  }else{
+    const site=plan.repairs.find(row=>row.name===name&&row.unit===unit);
+    if(!site)throw Error('This facility has no repairable damage.');
+    next.repairDraft={...match.repairDraft,[name]:{...match.repairDraft?.[name],[unit]:site.quantity+delta}};
+  }
+  validatePlan(purchasePlan(next,wallet));
+  match.repairDraft=next.repairDraft;match.upgradeDraft=next.upgradeDraft;
+}
+export function eligibleShipRepairs(match){
+  const eligible=[];
+  for(const [name,sea] of Object.entries(match.board)){
+    const damage=sea.shipDamage?.[match.power];
+    if(!damage||!sea.coasts)continue;
+    const wallet=match.power==='British'&&parseInt(name)<=63?'UK_Pacific':match.power;
+    if(!purchaseCapitalAvailable(match,wallet))continue;
+    const serviced=sea.coasts.some(coast=>{
+      const area=match.board[coast],owner=area.owner==='UK_Pacific'?'British':area.owner;
+      const friendly=owner===match.power||match.diplomacy.some(([a,b,rel])=>rel==='Allied'&&(a===owner&&b===match.power||b===owner&&a===match.power));
+      return friendly&&hasFacility(area,'harbour')&&(area.facilityDamage?.harbour||0)-(match.repairDraft?.[coast]?.harbour||0)<3;
+    });
+    if(!serviced)continue;
+    for(const type of ['battleship','carrier']){
+      const count=sea.units.find(([owner,unit])=>owner===match.power&&unit===type)?.[2]||0;
+      const eligibleCount=Math.min(count,damage[type]||0);
+      if(eligibleCount>0)eligible.push({name,type,count:eligibleCount});
+    }
+  }
+  return eligible;
+}
+function purchaseCapitalAvailable(match,wallet){
+  return wallet==='Chinese'||match.board[capitals[wallet]]?.owner===wallet;
+}
+export function confirmPurchase(match){
+  if(match.phase!=='purchase')throw Error('This purchase was already recorded.');
+  const plans=spendingEconomies(match).map(wallet=>purchasePlan(match,wallet));
+  plans.forEach(validatePlan);
+  const ships=eligibleShipRepairs(match);
+  const receipt=[];
+  for(const {wallet,orders,repairs,upgrades,cost} of plans){
+    const items=[];
+    match.treasury[wallet]-=cost;
+    const pool=match.mobilization[wallet]??={};
+    for(const [unit,n] of Object.entries(orders)){
+      pool[unit]=(pool[unit]||0)+n;items.push(n+' × '+globalUnits[unit][0]);
+    }
+    for(const {name,unit,quantity} of repairs){
+      if(!quantity)continue;
+      match.board[name].facilityDamage[unit]-=quantity;
+      items.push(name+' '+globalUnits[unit][0]+' repaired '+quantity);
+    }
+    for(const {name,selected} of upgrades){
+      if(!selected)continue;
+      (match.pendingUpgrades??={})[name]=wallet;items.push(name+' complex upgrade');
+    }
+    const economy=match.power==='British'?(wallet==='British'?'Europe · ':'Pacific · '):'';
+    receipt.push(economy+cost+' IPCs spent'+(items.length?' · '+items.join(', '):''));
+  }
+  for(const {name,type,count} of ships){
+    match.board[name].shipDamage[match.power][type]-=count;
+    receipt.push(name+' · '+count+' × '+globalUnits[type][0]+' repaired free');
+  }
+  match.draft={};delete match.pacificDraft;delete match.repairDraft;delete match.upgradeDraft;
+  match.phase='combatMove';
+  return {title:'Purchase & Repair',detail:receipt.join('. ')+'.'};
+}
+export const globalKey='wartable.global1940.match.v1';
+const regionAliases={'Holland Belgium':'hb','Western Germany':'wg','Normandy Bordeaux':'nb','France':'fr',
+  'Northern Italy':'ni','Southern France':'sf','Baltic States':'bs','Eastern Poland':'ep','Bessarabia':'be','Poland':'pl','Romania':'ro'};
+const typeKeys={infantry:'inf',armour:'tank'};
+export const boardUnitType=type=>typeKeys[type]||type;
+export function prepareGlobalBoard(setup,atlas,match){
+  const {sectors,projection}=atlas;
+  const forces={},shapes={},units={},owners={},pieces={};
+  const ids=Object.fromEntries(Object.keys(setup.regions).map(name=>[name,regionAliases[name]||'world-'+name.toLowerCase().replace(/[^a-z0-9]+/g,'-')]));
+  const attacker=globalPowers[match.power];
+  const relations=match.diplomacy||setup.diplomacy;
+  const enemies=new Set(relations.filter(([a,b,rel])=>rel==='War'&&(a===match.power||b===match.power)).map(([a,b])=>a===match.power?b:a));
+  if(enemies.has('British'))enemies.add('UK_Pacific');
+  const friendlyPowers={},friends={};
+  for(const p of [...Object.keys(globalPowers),'UK_Pacific']){
+    const canonical=p==='UK_Pacific'?'British':p;
+    const side=new Set([canonical,...relations.filter(([a,b,r])=>r==='Allied'&&(a===canonical||b===canonical)).map(([a,b])=>a===canonical?b:a)]);
+    if(side.has('British'))side.add('UK_Pacific');
+    friendlyPowers[p]=[...side];friends[p]=[...side].map(key=>ownerNames[key]||key);
+  }
+  const allies=new Set(friendlyPowers[match.power]);
+  const gates={'64-89':['Central America'],'81-98':['Egypt','Trans-Jordan'],'99-100':['Turkey'],'91-92':['Gibraltar'],'112-113':['Denmark']};
+  const shipDamage={};
+  const neighbors={},neutralEntry={},unmovedLand={};
+  function hostileLand(name){
+    const region=setup.regions[name],owner=match.board[name].owner;
+    return enemies.has(owner)||neutralOwners[owner]&&canEnterNeutral(match.power,enemies,region)&&hostileNeutral(match.power,owner);
+  }
+  function tankRoutesFrom(region){
+    const routes={};
+    for(const via of region.links){
+      const middle=setup.regions[via],area=match.board[via];
+      if(middle.water||middle.blocked)continue;
+      const blitz=enemies.has(area.owner)&&!area.units.some(([, ,n])=>n>0);
+      if(!blitz&&!allies.has(area.owner))continue;
+      const ends=middle.links.filter(to=>{
+        const dest=setup.regions[to];
+        return !dest.water&&!dest.blocked&&(hostileLand(to)||blitz&&allies.has(match.board[to].owner));
+      });
+      for(const end of ends)(routes[ids[end]]??=[]).push(ids[via]);
+    }
+    return routes;
+  }
+  for(const [name,r] of Object.entries(setup.regions)){
+    const id=ids[name],position=match.board[name],owner=r.blocked?'Impassable':r.water?'Sea zone':ownerNames[position.owner]||'Impassable';
+    neighbors[id]=r.links.map(n=>ids[n]);
+    neutralEntry[id]=!r.blocked&&canEnterNeutral(match.power,enemies,r);
+    pieces[id]=position.units.map(([power,unit,n])=>[power,boardUnitType(unit),n]);
+    if(position.shipDamage)shipDamage[id]=structuredClone(position.shipDamage);
+    const unitTargets={};
+    for(const [power,type,n] of pieces[id]){
+      if(!n||!samePower(power,match.power)||!mobileTypes.includes(type)||r.blocked)continue;
+      unitTargets[type]=r.links.filter(to=>{
+        const dest=setup.regions[to],area=match.board[to];
+        if(dest.blocked)return false;
+        if(match.power==='Chinese'&&(dest.water||dest.original!=='Chinese'&&!['Burma','Kwangtung'].includes(to)))return false;
+        if(dest.water){
+          if(!aircraft.includes(type)&&!(r.water&&ships.includes(type)))return false;
+          if(ships.includes(type)){
+            const gate=[parseInt(name),parseInt(to)].sort((a,b)=>a-b).join('-');
+            if(!(type==='submarine'&&gate==='91-92')&&gates[gate]?.some(coast=>!allies.has(match.board[coast].owner)))return false;
+          }
+          return area.units.some(([p,t,n])=>n&&enemies.has(p)&&ships.includes(t));
+        }
+        if(ships.includes(type)||r.water&&!aircraft.includes(type))return false;
+        return hostileLand(to);
+      }).map(to=>ids[to]);
+    }
+    const targets=[...new Set(Object.values(unitTargets).flat())];
+    places[id]={name,owner:r.blocked?owner:ownerNames[r.owner]||owner,startOwner:owner,blocked:r.blocked,targets,unitTargets,water:r.water,city:r.city,ipc:r.ipc,links:r.links,original:r.original};
+    if(unitTargets.tank&&match.power!=='Chinese')places[id].tankRoutes=tankRoutesFrom(r);
+    shapes[id]={...sectors[name],garrison:pieces[id].filter(row=>row[2]>0),homePower:position.owner};
+    owners[id]=owner;forces[id]=true;
+    if(!r.water&&!r.blocked)unmovedLand[id]=openingLand(pieces[id],match.power);
+    units[id]=strengthOf(pieces[id].filter(([power,type])=>stats[type]&&
+      (r.water?enemies.has(power):owner!==attacker||samePower(power,match.power))));
+  }
+  // Draw each physical leg separately, including the approach from an empty transit territory.
+  for(const id of Object.keys(forces))places[id].movementEdges=new Set(places[id].targets);
+  for(const id of Object.keys(forces)){
+    for(const [end,middles] of Object.entries(places[id].tankRoutes||{})){
+      for(const via of middles){
+        places[id].movementEdges.add(via);
+        places[via].movementEdges.add(end);
+      }
+    }
+  }
+  const cities=[
+    ['London','United Kingdom',-.12,51.51,'United Kingdom'],['Paris','France',2.35,48.86,'France'],
+    ['Berlin','Germany',13.41,52.52,'Germany'],['Rome','Southern Italy',12.5,41.9,'Italy'],['Moscow','Russia',37.62,55.75,'Soviet Union'],
+    ['Warsaw','Poland',21.01,52.23],['Leningrad','Novgorod',30.32,59.94],['Stalingrad','Volgograd',44.51,48.71],
+    ['Cairo','Egypt',31.24,30.04],['Ottawa','Ontario',-75.7,45.42],['Washington','Eastern United States',-77.04,38.9,'United States'],
+    ['San Francisco','Western United States',-122.42,37.77],['Honolulu','Hawaiian Islands',-157.86,21.3],
+    ['Tokyo','Japan',139.69,35.68,'Japan'],['Shanghai','Kiangsu',121.47,31.23],['Hong Kong','Kwangtung',114.17,22.32],
+    ['Manila','Philippines',120.98,14.6],['Calcutta','India',88.36,22.57,'UK Pacific'],['Sydney','New South Wales',151.21,-33.87,'ANZAC']
+  ].map(([name,region,lon,lat,capitalOf])=>({name,territory:ids[region],lon,lat,point:sectors[region].city,capitalOf}));
+  const home={Germans:'Germany',Russians:'Russia',Japanese:'Japan',Americans:'Eastern United States',Chinese:'Szechwan',
+    British:'United Kingdom',Italians:'Southern Italy',ANZAC:'New South Wales',French:'France'}[match.power];
+  const [x,y]=sectors[home].center;
+  const camera={x,y,z:.7*projection.detailScale,surveyZoom:true};
+  const exercise={name:'Global 1940',attacker,power:match.power,camera,forces,shapes,cities,world:true,friendlyPowers,friends,enemies:[...enemies],projection,neighbors,neutralEntry,unmovedLand};
+  exercises.global=exercise;
+  let openingView;
+  if(match.phase==='briefing'&&match.power!=='Germans'){
+    openingView={...camera,z:.72,projection:projection.id};
+  }else if(match.phase==='briefing'){
+    // Fit the opening theater in the map's 650 by 480 reference viewport.
+    const landmarks=['United Kingdom','France','Novgorod','Russia'].map(name=>sectors[name].city);
+    const xs=landmarks.map(point=>point[0]),ys=landmarks.map(point=>point[1]);
+    const left=Math.min(...xs)-360,right=Math.max(...xs)+360;
+    const top=Math.min(...ys)-320,bottom=Math.max(...ys)+320;
+    openingView={x:(left+right)/2,y:(top+bottom)/2,z:projection.detailScale*Math.min(650/(right-left),480/(bottom-top)),
+      surveyZoom:true,projection:projection.id};
+  }
+  return {exercise,openingView,game:{version:1,exercise:'global',phase:'plan',mongolianPactBroken:!!match.mongolianPactBroken,power:match.power,units,owners,pieces,shipDamage,orders:[],battles:[],active:null,record:[]}};
+}
+export function saveGlobalPosition(match,game){
+  match.mongolianPactBroken=!!game.mongolianPactBroken;
+  for(const [id,stacks] of Object.entries(game.pieces)){
+    const area=match.board[places[id].name];
+    if(game.owners[id]===globalPowers[match.power]&&ownerNames[area.owner]!==game.owners[id]){
+      const pacific=pacificOriginals.has(area.original)||otherPacificLand.has(places[id].name);
+      area.owner=match.power==='British'&&pacific?'UK_Pacific':match.power;
+      if(area.facilityDamage?.factory_major&&stacks.some(([,unit,n])=>unit==='factory_minor'&&n)){
+        area.facilityDamage.factory_minor=Math.min(6,area.facilityDamage.factory_major);
+        delete area.facilityDamage.factory_major;
+      }
+    }
+    else if(neutralKey(game.owners[id]))area.owner=neutralKey(game.owners[id]);
+    else if(game.owners[id]==='Soviet Union'&&places[id].original==='Mongolians')area.owner='Russians';
+    if(game.shipDamage?.[id])area.shipDamage=structuredClone(game.shipDamage[id]);
+    area.units=stacks.filter(row=>row[2]>0).map(([p,t,n])=>[p,t==='inf'?'infantry':t==='tank'?'armour':t,n]);
+  }
+}
+export async function loadGlobalSetup(){
+  return await (await fetch('./assets/global-setup.json')).json();
+}
+export async function loadGlobalBoard(){
+  const setup=await loadGlobalSetup();
+  const sectors=await (await fetch('./assets/world-sectors.json')).json();
+  const saved=localStorage.getItem(globalKey);
+  const match=saved?JSON.parse(saved):startGlobalPlaytest(setup,Object.fromEntries(Object.keys(globalPowers).map(k=>[k,1])));
+  if(match.version!==1||!match.board?.Germany)throw Error('The saved global match could not be opened.');
+  match.combatStart??=structuredClone(match.board);
+  match.combatStartPactBroken??=!!match.mongolianPactBroken;
+  // Older saves omit the Sahara and display the Himalayas with China's setup color.
+  for(const [name,region] of Object.entries(setup.regions)){
+    if(!region.blocked)continue;
+    match.board[name]??={owner:region.owner,units:[]};
+    match.combatStart[name]??={owner:region.owner,units:[]};
+  }
+  preparePurchaseSites(match,setup);
+  const board=prepareGlobalBoard(setup,sectors,{...match,board:match.combatStart,mongolianPactBroken:match.combatStartPactBroken});
+  const savedGame=match.combat?.game;
+  if(savedGame)savedGame.shipDamage??=structuredClone(board.game.shipDamage);
+  if(savedGame)for(const id of Object.keys(board.game.owners)){
+    if(!places[id].blocked)continue;
+    savedGame.owners[id]=board.game.owners[id];
+    savedGame.units[id]??=board.game.units[id];
+    savedGame.pieces[id]??=board.game.pieces[id];
+  }
+  return {...board,match};
+}
