@@ -126,14 +126,12 @@ function passageArc(points,tokenScale){
   return path;
 }
 
-// Measure each curved stroke from its broad departure end. Segment count follows
-// the route on the board, so a pinch never adds or removes a break.
+// Trace both edges of one ink silhouette along the measured route.
 function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detailScale,{originShift,viaShift,gates,period}){
   const {from,via,to,units}=order,entry=via||from;
   const start=seat(from,'home',type,spread,offsets),end=seat(to,entry,type,spread,offsets);
   start[0]+=originShift;
-  const departure=formations[from].home[type],arrival=formations[to][entry][type];
-  let distance,path;
+  let path;
   if(via){
     const [x,y]=position(via),passage=[x+viaShift,y];
     const loop=from===to;
@@ -155,73 +153,39 @@ function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detail
       if(loop)controls.push([passage[0]+.18*dy,y-.18*dx]);
     }
     path=passageArc([start,...controls,end],tokenScale);
-    const fixed=[[departure[0]+originShift,departure[1]],...controls,arrival];
-    distance=fixed.slice(1).reduce((sum,p,i)=>sum+Math.hypot(p[0]-fixed[i][0],p[1]-fixed[i][1]),0);
   }else{
     path=movementArc(start,end,approaches[from+'-'+to][type],tokenScale);
-    distance=Math.hypot(arrival[0]-departure[0]-originShift,arrival[1]-departure[1]);
   }
   const centerline=node('path',{d:path});
   const length=centerline.getTotalLength();
   const baseWidth=Math.min(length*.09,6.8*tokenScale*bound(.83+length/(570*detailScale),.94,1.32));
   const width=baseWidth*(1+.5*Math.log2(units[type]));
-  const segments=1+Math.floor(distance/(125*detailScale));
-  const gap=Math.min(6.2*tokenScale,length/segments*.12);
   const headLength=Math.min(length*.17,4.4*tokenScale+width*.56);
   const neck=length-headLength;
-  const bodies=[],leads=[],glints=[],pencilLanes=[-.62,-.13,.49];
-  function section(at){
-    const p=centerline.getPointAtLength(at);
-    const a=centerline.getPointAtLength(Math.max(0,at-.65)),b=centerline.getPointAtLength(Math.min(length,at+.65));
-    const span=Math.hypot(b.x-a.x,b.y-a.y);
-    const nx=(a.y-b.y)/span,ny=(b.x-a.x)/span;
-    const fraction=at/length;
-    const radius=width*(.50-.394*fraction);
-    // Fixed, low-amplitude deviations leave the edges as steady as marks on paper.
-    const wobble=.16*tokenScale*Math.sin(at*.43)*Math.sin(Math.PI*fraction);
-    return (across,along=0)=>{
-      const offset=across*radius+wobble;
-      return [p.x+offset*nx+along*ny,p.y+offset*ny-along*nx].map(n=>Number(n.toFixed(2))).join(' ');
-    };
-  }
-  for(let part=0;part<segments;part++){
-    const start=part===0?0:length*part/segments+gap/2;
-    const final=part===segments-1;
-    const end=final?neck:length*(part+1)/segments-gap/2;
-    const edges=[[],[]],strokes=[[],[],[]];
-    const steps=Math.max(5,Math.ceil((end-start)/4));
-    for(let i=0;i<=steps;i++){
-      const at=start+(end-start)*i/steps,point=section(at);
-      // Matching oblique ends suggest a pencil lifted briefly along the same arc.
-      const cut=(i===0&&part>0||i===steps&&!final)?Math.min(gap*.23,width*.16):0;
-      edges[0].push(point(1,cut));edges[1].push(point(-1,-cut));
-      for(const [j,lane] of pencilLanes.entries()){
-        strokes[j].push(point(lane+.045*Math.sin(at*.26+j),lane*cut));
-      }
+  const left=[],right=[];
+  const steps=Math.max(5,Math.ceil(neck/4));
+  for(let i=0;i<=steps;i++){
+    const at=neck*i/steps,p=centerline.getPointAtLength(at);
+    const before=centerline.getPointAtLength(Math.max(0,at-.65));
+    const after=centerline.getPointAtLength(Math.min(length,at+.65));
+    const dx=after.x-before.x,dy=after.y-before.y,span=Math.hypot(dx,dy)||1;
+    const edge=offset=>(p.x-dy/span*offset).toFixed(2)+' '+(p.y+dx/span*offset).toFixed(2);
+    const radius=width*(.50-.394*at/(length||1));
+    left.push(edge(radius));right.push(edge(-radius));
+    if(i===steps){
+      const tip=centerline.getPointAtLength(length);
+      left.push(edge(width*.32),tip.x.toFixed(2)+' '+tip.y.toFixed(2),edge(-width*.32));
     }
-    const [outline,opposite]=edges;
-    if(final){
-      const shoulder=section(neck);
-      const ratio=.32/(.50-.394*neck/length);
-      outline.push(shoulder(ratio),section(length)(0),shoulder(-ratio));
-    }
-    bodies.push('M'+outline.concat(opposite.reverse()).join(' L')+' Z');
-    leads.push(...strokes.filter((_,i)=>i!==1).map(line=>'M'+line.join(' L')));
-    glints.push('M'+strokes[1].join(' L'));
   }
   const group=node('g',{'data-from':from,'data-to':to,'data-unit':type});
   if(via)group.dataset.via=via;
   else if(!places[from].water&&!places[to].water)group.setAttribute('clip-path','url(#route-'+from+'-'+to+')');
-  const ink=node('g',{filter:'url(#route-grain)','stroke-linecap':'round','stroke-linejoin':'round'});
-  ink.append(node('path',{d:bodies.join(' '),fill:planned?'#ad5540':'#943d2e','fill-opacity':planned?.60:.79,
-    stroke:'#833929','stroke-width':1.15*tokenScale}),
-    node('path',{d:leads.join(' '),fill:'none',stroke:'#8b3529','stroke-width':.75*tokenScale,opacity:.79}),
-    node('path',{d:glints.join(' '),fill:'none',stroke:planned?'#f5ddab':'#9b4733','stroke-width':.85*tokenScale,
-      'stroke-dasharray':planned?4.5*tokenScale+' '+5.5*tokenScale:'none',opacity:.84}));
+  const ink=node('path',{d:'M'+left.concat(right.reverse()).join(' L')+' Z',
+    fill:planned?'#b23d30':'#912e25'});
   group.append(ink);
-  const duration=320+90*segments;
+  const duration=410+90*length/(125*detailScale);
   if(elapsed<duration&&!reducedMotion()){
-    const id='pencil-route-'+[from,via,to,type].filter(Boolean).join('-');
+    const id='marker-route-'+[from,via,to,type].filter(Boolean).join('-');
     const mask=node('mask',{id,maskContentUnits:'userSpaceOnUse'});
     centerline.setAttribute('pathLength',1);
     centerline.setAttribute('fill','none');centerline.setAttribute('stroke','white');
