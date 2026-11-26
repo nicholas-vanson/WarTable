@@ -20,7 +20,7 @@ export const pointGap=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]);
 // Measure separation along the final stretch of the original curves, before counters
 // snap to their rows. Crossing paths and arrows pointing back out get separate heads.
 export function approachGap(a,b){
-  if(a.loop||b.loop)return Infinity;
+  if(a.category!==b.category||a.loop||b.loop)return Infinity;
   const dot=a.direction[0]*b.direction[0]+a.direction[1]*b.direction[1];
   if(dot<.53)return Infinity;
   return Math.max(pointGap(a.tip,b.tip),pointGap(a.upstream,b.upstream)*.8);

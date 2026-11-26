@@ -119,10 +119,10 @@ function borderCrossings(shapes){
     cache.set(key,gates);return gates;
   };
 }
-function passageArc(points,tokenScale){
+function passageArc(points,tokenScale,startAtSeat=false){
   // A rounded corner blends each pair of legs. Consecutive quadratics have
   // matching tangent directions at their shared midpoint, including on a U-turn.
-  const tail=atCounterEdge(points[0],points[1],tokenScale);
+  const tail=startAtSeat?points[0]:atCounterEdge(points[0],points[1],tokenScale);
   const tip=atCounterEdge(points.at(-1),points.at(-2),tokenScale);
   let path='M'+tail;
   for(let i=1;i<points.length-1;i++){
@@ -229,7 +229,8 @@ function soloInk(route,k,line){
   const head=1.55*width;
   return [{line,length,width:head,elapsed:route.elapsed,d:ribbon(line,length,width,.72*width,head)}];
 }
-function arrowPort(group,seats,obstacles,used,k){
+function arrowPort(group,seats,obstacles,used,k,mixed){
+  const category=group[0].category;
   const center=meanPoint(group.map(r=>r.surveyed));
   const v=direction([0,0],meanPoint(group.map(r=>r.direction)));
   const upstream=meanPoint(group.map(r=>routePoint(r.line,r.length-Math.min(r.length*.8,100*k))));
@@ -241,7 +242,14 @@ function arrowPort(group,seats,obstacles,used,k){
     let vIn=heading,line,tip;
     if(group.length===1){
       const route=group[0];
-      line=pointGap(face,route.surveyed)<.001?route.line:route.lineAt(face);
+      const shift=pointGap(face,route.surveyed);
+      if(mixed&&!route.passages.length&&shift>k&&pointGap(route.start,route.surveyed)<70*k){
+        // A short branch can now approach a different edge of the shared grid.
+        // Aim the arc at that edge so its tip clears the neighboring category.
+        const v=direction(route.start,face),span=pointGap(route.start,face);
+        const control=advance(meanPoint([route.start,face]),[-v[1],v[0]],.16*span);
+        line=node('path',{d:passageArc([route.start,control,face],k,route.tail===route.start)});
+      }else line=shift<.001?route.line:route.lineAt(face);
       const length=line.getTotalLength();
       tip=routePoint(line,length);
       vIn=direction(routePoint(line,Math.max(0,length-8*k)),tip);
@@ -257,8 +265,11 @@ function arrowPort(group,seats,obstacles,used,k){
       if(obstacles.some(p=>p!==face&&Math.abs(p[0]-x)<(distance?26:21)*k&&Math.abs(p[1]-y)<(distance?18:13)*k))
         score+=distance?80:500;
     }
-    for(const p of used)score+=Math.max(0,32-pointGap(tip,p)/k)*4;
-    if(score<best){best=score;port={tip,v:vIn,line};}
+    for(const prior of used){
+      const gap=pointGap(tip,prior.tip)/k;
+      score+=prior.category===category?4*Math.max(0,32-gap):9*Math.max(0,38-gap);
+    }
+    if(score<best){best=score;port={tip,v:vIn,line,category};}
   }
   return port;
 }
@@ -340,15 +351,21 @@ function joinedInk(group,k,{tip,v},obstacles,tails){
   }
   return pieces;
 }
+const movementInk={
+  land:{planned:'#a6352d',committed:'#892d26'},
+  air:{planned:'#305f98',committed:'#234979'},
+  sea:{planned:'#90600f',committed:'#724a0a'}
+};
 function drawArrows(group,planned,k,port,obstacles,tails){
   const first=group[0],{from,to}=first.order,merged=group.length>1;
   const arrow=node('g',merged?{'data-to':to,'data-branches':group.length}:
     {'data-from':from,'data-to':to,'data-unit':first.type});
+  arrow.dataset.category=first.category;
   if(!merged&&first.passages.length)arrow.dataset.via=first.passages.join(' ');
   const pieces=merged?joinedInk(group,k,port,obstacles,tails):soloInk(first,k,port.line);
   const ink=node('g',{opacity:.87}),halo=2.1*k;
   ink.append(node('path',{d:pieces.map(p=>p.d).join(' '),
-    fill:planned?'#a6352d':'#892d26',stroke:'#f6e9be','stroke-width':halo,
+    fill:movementInk[first.category][planned?'planned':'committed'],stroke:'#f6e9be','stroke-width':halo,
     'stroke-linejoin':'round','paint-order':'stroke fill'}));
   arrow.append(ink);
   const duration=p=>revealDuration(p.length,k);
@@ -1195,7 +1212,8 @@ export async function atlas(onPick,onView,initial,exercise) {
           const lineAt=end=>routeLine(order,type,start,end,surveyed,tokenScale,shifts,gates,period);
           const line=lineAt(surveyed),length=line.getTotalLength(),tip=routePoint(line,length);
           const upstream=routePoint(line,length-Math.min(36*tokenScale,length*.42));
-          const r={order,type,entry,passages,shifts,key,start,surveyed,lineAt,line,length,tip,upstream,
+          const category=aircraft.includes(type)?'air':ships.includes(type)?'sea':'land';
+          const r={order,type,category,entry,passages,shifts,key,start,surveyed,lineAt,line,length,tip,upstream,
             direction:direction(upstream,tip),loop:order.from===order.to,elapsed:game.phase==='plan'?now-since:Infinity};
           r.width=routeWidth(r,line,length,tokenScale);
           byTarget.get(order.to).push(r);
@@ -1234,11 +1252,14 @@ export async function atlas(onPick,onView,initial,exercise) {
           r.tail=occupied?routePoint(r.line,0):r.start;
         }
         const tails=legs.map(r=>r.tail);
-        const clusters=nearbyGroups(legs,approachGap,55*tokenScale).sort((a,b)=>a.length-b.length);
+        const mixed=legs.some(r=>r.category!==legs[0].category);
+        // Reserve room for the large forks before placing smaller arrows of another color.
+        const clusters=nearbyGroups(legs,approachGap,55*tokenScale);
+        clusters.sort(mixed?(a,b)=>b.length-a.length||b[0].length-a[0].length:(a,b)=>a.length-b.length);
         for(const group of clusters){
           const faces=[...new Set(group.flatMap(r=>r.cells))];
-          const port=arrowPort(group,faces,obstacles,used,tokenScale);
-          used.push(port.tip);
+          const port=arrowPort(group,faces,obstacles,used,tokenScale,mixed);
+          used.push(port);
           const arrow=drawArrows(group,game.phase==='plan',tokenScale,port,obstacles,tails);
           routes.append(arrow);
           for(const shift of new Set(group.flatMap(r=>r.shifts))){

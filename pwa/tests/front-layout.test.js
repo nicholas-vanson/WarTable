@@ -3,9 +3,17 @@ import assert from 'node:assert/strict';
 import {nearbyGroups,approachGap,frontGrid} from '../front-layout.js';
 
 test('only compatible nearby approaches share a head, including in a chain',()=>{
-  const leg=(x,dx=1,dy=0)=>({direction:[dx,dy],upstream:[x-30*dx,-30*dy],tip:[x,0]});
+  const leg=(x,dx=1,dy=0)=>({category:'land',direction:[dx,dy],upstream:[x-30*dx,-30*dy],tip:[x,0]});
   const a=leg(0),b=leg(20),c=leg(65),opposite=leg(0,-1),crossing=leg(0,0,1),loop={...a,loop:true};
   assert.deepEqual(nearbyGroups([a,b,c,opposite,crossing,loop],approachGap,50),[[a,b],[c],[opposite],[crossing],[loop]]);
+});
+
+test('coincident land, air and sea approaches group only with their own category',()=>{
+  const route=(category,type)=>({category,type,direction:[1,0],tip:[10,20],upstream:[-20,20]});
+  const land=route('land','tank'),air=route('air','fighter'),sea=route('sea','destroyer');
+  const infantry=route('land','inf'),bomber=route('air','tactical_bomber'),carrier=route('sea','carrier');
+  assert.deepEqual(nearbyGroups([land,air,sea,infantry,carrier,bomber],approachGap,55),
+    [[land,infantry],[air,bomber],[sea,carrier]]);
 });
 
 test('a crowded front uses aligned, unoccupied seats and a distant arrival stays local',()=>{

@@ -19,6 +19,16 @@ def formation(page):
     })""")
 
 
+def arrow_colors(page):
+    arrows = page.locator('#routes > g').evaluate_all("""groups => groups.map(g => [
+      g.dataset.category, Number(g.dataset.branches || 1), g.querySelector('g[opacity] > path').getAttribute('fill')
+    ])""")
+    by_category = {}
+    for category, count, color in arrows:
+        by_category.setdefault(category, []).append((count, color))
+    return {category: sorted(values) for category, values in by_category.items()}
+
+
 def check_crowded_front(page):
     # Include the Holland Belgium fighter and the separate southern bomber route.
     original = page.evaluate("""async () => {
@@ -38,7 +48,10 @@ def check_crowded_front(page):
     page.locator('#forces [data-origin="hb"]').first.wait_for(state="attached")
     front = formation(page)
     assert len(front["arrivals"]) == 10
-    assert sorted(int(n) for n, _, _ in front["arrows"]) == [1, 1, 4, 4]
+    assert arrow_colors(page) == {
+        'land': [(1, '#a6352d'), (2, '#a6352d'), (3, '#a6352d')],
+        'air': [(1, '#305f98'), (1, '#305f98'), (2, '#305f98')],
+    }
     facilities = page.locator('#forces [data-place="wg"][data-role="home"]').evaluate_all("""groups => groups
       .filter(g => ['factory_major', 'harbour', 'airfield'].includes(g.dataset.unit))
       .map(g => {
@@ -63,6 +76,32 @@ def check_crowded_front(page):
             assert covered / len(centers) < .16
     page.locator("#zoomIn").click()
     assert formation(page) == front
+    # Two submarines share an approach while aircraft enter the same sea battle.
+    page.evaluate("""async ([key, original]) => {
+      const {plan} = await import('./rules.js');
+      const match = JSON.parse(original), game = match.combat.game;
+      const sea = n => 'world-' + n + '-sea-zone', target = sea(110);
+      plan(game, sea(113), target, {battleship: 1}, [sea(112)]);
+      plan(game, sea(108), target, {submarine: 1}, [sea(104)]);
+      plan(game, sea(103), target, {submarine: 1}, [sea(104)]);
+      plan(game, 'hb', target, {fighter: 1});
+      plan(game, 'wg', target, {fighter: 2, tactical_bomber: 3}, ['hb']);
+      localStorage.setItem(key, JSON.stringify(match));
+    }""", original)
+    page.reload()
+    page.locator('#routes > g[data-category="sea"]').first.wait_for(state="attached")
+    assert arrow_colors(page) == {
+        'air': [(1, '#305f98'), (2, '#305f98')],
+        'sea': [(1, '#90600f'), (2, '#90600f')],
+    }
+    page.locator("#hold").focus()
+    page.keyboard.down("Enter")
+    page.locator('#routes path[fill="#724a0a"]').first.wait_for(state="attached")
+    page.keyboard.up("Enter")
+    assert arrow_colors(page) == {
+        'air': [(1, '#234979'), (2, '#234979')],
+        'sea': [(1, '#724a0a'), (2, '#724a0a')],
+    }
     page.evaluate("([key, original]) => localStorage.setItem(key, original)", original)
     page.reload()
     page.locator("#hold").wait_for(state="attached")
