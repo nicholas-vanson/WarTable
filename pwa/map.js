@@ -1,7 +1,8 @@
+import {orderPassages,entrySpace} from './movement.js';
 import {reducedMotion,readMapPreferences} from './preferences.js';
 import {neutralKey} from './neutral-rules.js';
 import {ownerNames,globalUnits,isFacility} from './global-game.js';
-import {places,types,stats,available,mobileTypes,samePower,theaterVictoryCities} from './rules.js';
+import {places,types,stats,available,mobileTypes,aircraft,ships,samePower,theaterVictoryCities} from './rules.js';
 const ns='http://www.w3.org/2000/svg';
 function node(tag,attrs,text=''){
   const el=document.createElementNS(ns,tag);
@@ -127,30 +128,36 @@ function passageArc(points,tokenScale){
 }
 
 // Trace both edges of one ink silhouette along the measured route.
-function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detailScale,{originShift,viaShift,gates,period,scale}){
-  const {from,via,to,units}=order,entry=via||from;
+function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detailScale,{shifts,gates,period,scale}){
+  const {from,to,units}=order,passages=orderPassages(order),entry=entrySpace(order);
   const start=seat(from,'home',type,spread,offsets),end=seat(to,entry,type,spread,offsets);
-  start[0]+=originShift;
+  start[0]+=shifts[0];
   let path;
-  if(via){
-    const [x,y]=position(via),passage=[x+viaShift,y];
-    const loop=from===to;
-    const entrance=gates(via,from)[loop?0:1],exit=gates(via,to)[loop?2:1];
-    const controls=[];
-    if(entrance&&exit){
-      const align=p=>[p[0]+sheetOffset(p[0],passage[0],period),p[1]];
-      const first=align(entrance),last=align(exit);
-      controls.push(first);
-      // On the return leg, turn inside the passage near the shared border.
-      if(loop)controls.push([.5*passage[0]+.25*(first[0]+last[0]),.5*y+.25*(first[1]+last[1])]);
-      else controls.push(passage);
-      controls.push(last);
-    }else{
-      // The split edges at the wrap may share no vertices on this sheet.
-      const dx=passage[0]-start[0],dy=y-start[1];
-      if(loop)controls.push([passage[0]-.18*dy,y+.18*dx]);
-      controls.push(passage);
-      if(loop)controls.push([passage[0]+.18*dy,y-.18*dx]);
+  if(passages.length){
+    const stops=[from,...passages,to],controls=[];
+    for(let i=1;i<stops.length-1;i++){
+      const via=stops[i],[x,y]=position(via),passage=[x+shifts[i],y],loop=from===to;
+      const crossing=(neighbor,fraction)=>{
+        if(places[via].water||places[neighbor].water)return null;
+        const p=gates(via,neighbor)[fraction];
+        return p&&[p[0]+sheetOffset(p[0],passage[0],period),p[1]];
+      };
+      const first=crossing(stops[i-1],loop?0:1),last=crossing(stops[i+1],loop?2:1);
+      if(first)controls.push(first);
+      if(loop&&first&&last)controls.push([.5*passage[0]+.25*(first[0]+last[0]),.5*y+.25*(first[1]+last[1])]);
+      else if(loop){
+        const dx=passage[0]-start[0],dy=y-start[1];
+        controls.push([passage[0]-.18*dy,y+.18*dx],passage,[passage[0]+.18*dy,y-.18*dx]);
+      }else{
+        controls.push(passage);
+        // Sea zones lack shared land-border vertices. An inter-zone midpoint
+        // carries the curve through the waypoint before it turns toward the next.
+        if(!last&&i<stops.length-2){
+          const [nx,ny]=position(stops[i+1]);
+          controls.push([(passage[0]+nx+shifts[i+1])/2,(y+ny)/2]);
+        }
+      }
+      if(last)controls.push(last);
     }
     path=passageArc([start,...controls,end],tokenScale);
   }else{
@@ -186,8 +193,8 @@ function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detail
     }
   }
   const group=node('g',{'data-from':from,'data-to':to,'data-unit':type});
-  if(via)group.dataset.via=via;
-  const routeId=[from,via,to,type].filter(Boolean).join('-');
+  if(passages.length)group.dataset.via=passages.join(' ');
+  const routeId=[from,...passages,to,type].join('__');
   const ink=node('g',{opacity:.87});
   // Paint the stroke beneath the fill to leave a 1.4 CSS-pixel paper rim at every zoom.
   const haloWidth=2.8/scale;
@@ -225,7 +232,7 @@ function combineLegs(legs){
   return [...grouped.values()];
 }
 function arrivals(game,to){
-  const orders=combineLegs(game.orders.filter(o=>o.to===to).map(o=>({...o,from:o.via||o.from})));
+  const orders=combineLegs(game.orders.filter(o=>o.to===to).map(o=>({...o,from:entrySpace(o)})));
   if(game.phase==='plan')return orders;
   const battle=game.battles.find(b=>b.to===to&&!b.resolved);
   if(!battle)return [];
@@ -481,6 +488,9 @@ function worldSeats(exercise,bands,zones){
         fit*=.85;seats=arrivals();
       }
       const extras=Object.keys(places[from].unitTargets).filter(t=>!types.includes(t)&&places[from].unitTargets[t].includes(to));
+      const transitTypes=places[to].water&&places[from].water?[...aircraft,...ships]:
+        places[to].water||places[from].water?aircraft:[...aircraft,'mech_infantry'];
+      for(const t of transitTypes)if(!extras.includes(t))extras.push(t);
       extras.forEach((t,i)=>{seats[t]=offset(114+Math.floor(i/3)*32,side*((i%3)-1)*46);});
       formations[to][from]=seats;
       const key=from+'-'+to;
@@ -948,32 +958,34 @@ export async function atlas(onPick,onView,initial,exercise) {
       highlightedSea=inspectedSea;
     }
     const choosingMove=!surveying&&game.phase==='plan'&&routeChoices!==null;
-    const tankStage=choosingMove&&exercise.world&&selectedType==='tank'?(target?'passage':'destination'):null;
-    const prompt=tankStage==='passage'?'Tap a passage to '+places[target].name:
-      routeChoices?.length?'Tap a tank destination':'No legal tank moves';
-    const info=tankStage?prompt:inspectedSea?'Sea zone '+inspectedSea+' · Adjacent '+zones.get(inspectedSea).neighbors.join(', '):
+    const moveStage=choosingMove&&exercise.world?(target?'passage':'destination'):null;
+    const prompt=moveStage==='passage'?(routeChoices.includes(target)?'Tap '+places[target].name+' to finish, or choose another passage':'Tap a passage to '+places[target].name):
+      routeChoices?.length?'Tap a destination':'No legal combat moves';
+    const info=moveStage?prompt:inspectedSea?'Sea zone '+inspectedSea+' · Adjacent '+zones.get(inspectedSea).neighbors.join(', '):
       bands[selected]?bands[selected].region.firstChild.textContent:'';
     if(intel.textContent!==info)intel.textContent=info;
-    if(tankStage&&routeChoices.length)intel.dataset.tankChoice=tankStage;
-    else delete intel.dataset.tankChoice;
+    if(moveStage&&routeChoices.length)intel.dataset.moveChoice=moveStage;
+    else delete intel.dataset.moveChoice;
     forces.replaceChildren();
     for(const region of regions.children){
       const id=region.dataset.place;
       const legal=choosingMove&&routeChoices.includes(id);
-      const tankChoice=legal&&tankStage;
+      const moveChoice=legal&&(id===target?'destination':moveStage);
       const outline=bands[id].selectedOutline;
       // At the wrap, paint the continuous outline and keep the split faces as tap targets.
       const paint=outline||region;
-      if(tankChoice)paint.dataset.tankChoice=tankChoice;
-      else delete paint.dataset.tankChoice;
-      region.classList.toggle('selected-territory',id===selected&&!tankChoice);
-      if(outline)outline.setAttribute('display',id===selected||tankChoice?'inline':'none');
-      region.setAttribute('fill',legal&&!tankChoice?'#d6b65728':'transparent');
-      region.setAttribute('stroke',legal&&!tankChoice?'#895a31':'none');
+      if(moveChoice)paint.dataset.moveChoice=moveChoice;
+      else delete paint.dataset.moveChoice;
+      region.classList.toggle('selected-territory',id===selected&&!moveChoice);
+      if(outline)outline.setAttribute('display',id===selected||moveChoice?'inline':'none');
+      region.setAttribute('fill',legal&&!moveChoice?'#d6b65728':'transparent');
+      region.setAttribute('stroke',legal&&!moveChoice?'#895a31':'none');
       region.setAttribute('stroke-width','2');
     }
     if(exercise.world)for(const {area} of zones.values()){
       const legal=choosingMove&&routeChoices.includes(area.dataset.place);
+      if(legal&&moveStage)area.dataset.moveChoice=area.dataset.place===target?'destination':moveStage;
+      else delete area.dataset.moveChoice;
       area.setAttribute('fill',legal?'#d6b65738':'transparent');
       area.setAttribute('stroke',legal?'#895a31':'none');
     }
@@ -987,16 +999,17 @@ export async function atlas(onPick,onView,initial,exercise) {
       routes.replaceChildren();
       for(const order of game.orders){
         for(const type of Object.keys(order.units).filter(t=>order.units[t]>0)){
-          const key=[order.from,order.via,order.to,type].filter(Boolean).join('-');
+          const stops=[order.from,...orderPassages(order),order.to];
+          const key=[...stops,type].join('__');
           const start=routeStarts.get(key)??(routeKey?now:-Infinity);
           nextStarts.set(key,start);
           const planned=game.phase==='plan';
-          const period=exercise.projection?.width,entry=order.via||order.from;
-          const entryShift=sheetOffset(position(entry)[0],position(order.to)[0],period);
-          const originShift=entryShift+sheetOffset(position(order.from)[0],position(entry)[0],period);
-          const arrow=attackArrow(order,type,spread,tokenScale,offsets,planned,planned?now-start:Infinity,detailScale,{originShift,viaShift:entryShift,gates,period,scale});
+          const period=exercise.projection?.width,shifts=Array(stops.length).fill(0);
+          for(let i=stops.length-2;i>=0;i--)
+            shifts[i]=shifts[i+1]+sheetOffset(position(stops[i])[0],position(stops[i+1])[0],period);
+          const arrow=attackArrow(order,type,spread,tokenScale,offsets,planned,planned?now-start:Infinity,detailScale,{shifts,gates,period,scale});
           routes.append(arrow);
-          for(const shift of new Set([entryShift,originShift])){
+          for(const shift of new Set(shifts)){
             if(!shift)continue;
             arrow.id='seam-route-'+key;
             routes.append(node('use',{href:'#'+arrow.id,x:-shift}));

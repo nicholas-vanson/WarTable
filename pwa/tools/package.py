@@ -12,7 +12,7 @@ root = Path(__file__).resolve().parents[1]
 out = Path(sys.argv[1]).resolve()
 site = out / "site"
 site.mkdir(parents=True, exist_ok=True)
-modules = ["preferences", "neutral-rules", "rules", "formation-names", "map", "global-game", "app", "menu"]
+modules = ["preferences", "neutral-rules", "movement", "rules", "formation-names", "map", "global-game", "app", "menu"]
 for name in ["LICENSE.txt", "index.html", "style.css", "sw.js", "manifest.webmanifest", *(m + ".js" for m in modules)]:
     shutil.copyfile(root / name, site / name)
 shutil.copytree(root / "assets", site / "assets", dirs_exist_ok=True)

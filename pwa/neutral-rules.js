@@ -29,7 +29,7 @@ function takeFriendlyControl(s,id,power,nation){
 }
 export function invadeNeutrals(s){
   const {neighbors,friends}=exerciseOf(s);
-  const entered=s.orders.flatMap(o=>o.via?[o.via,o.to]:[o.to]);
+  const entered=s.orders.flatMap(o=>o.via&&o.units.tank?[o.via,o.to]:[o.to]);
   const attacked=[...new Set(entered.filter(id=>!friends[s.power].includes(s.owners[id])))];
   const strict=attacked.filter(id=>strictKey(neutralKey(s.owners[id])));
   const mongo=id=>places[id].original==='Mongolians';
