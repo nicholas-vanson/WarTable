@@ -194,11 +194,10 @@ function direction(a,b){
 }
 function advance(p,v,n){return [p[0]+v[0]*n,p[1]+v[1]*n];}
 
-// Trace the two edges of a single filled ribbon. Joined branches end at shaft
-// width and overlap the common stem. Only the stem gets shoulders and a tip.
-function ribbon(line,length,tailWidth,endWidth,headWidth=0,maxHead=.18){
-  const shoulder=headWidth*.55;
-  const neck=length-Math.min(length*maxHead,shoulder*1.3);
+// Trace each ink silhouette in map units. Only a route that reaches the target gets a head.
+function ribbon(line,length,tailWidth,endWidth,headWidth=0){
+  const shoulder=headWidth/2;
+  const neck=length-Math.min(length*.38,headWidth*.60);
   const left=[],right=[],steps=Math.max(5,Math.ceil(neck/4));
   for(let i=0;i<=steps;i++){
     const at=neck*i/steps,p=routePoint(line,at);
@@ -211,8 +210,13 @@ function ribbon(line,length,tailWidth,endWidth,headWidth=0,maxHead=.18){
   if(shoulder)left.push(routePoint(line,length).map(n=>n.toFixed(2)).join(' '));
   return 'M'+left.concat(right.reverse()).join(' L')+' Z';
 }
+// A counter is 38 units wide. Use a narrow band of pen widths at that scale;
+// distance only limits a very short arrow that would crowd its own head.
+function forceWidth(count,k){
+  return (10+Math.min(6,2*Math.log2(count)))*k;
+}
 function routeWidth(route,line,length,k){
-  let width=Math.min(length*.16,14*k*bound(.83+length/(570*k),.94,1.32))*(1+.45*Math.log2(route.order.units[route.type]));
+  let width=Math.min(length*.32,forceWidth(route.order.units[route.type],k));
   if(route.loop){
     const clearance=Math.max(4*k,pointGap(routePoint(line,length*.25),routePoint(line,length*.75)));
     width*=clearance/(clearance+.65*width);
@@ -222,7 +226,8 @@ function routeWidth(route,line,length,k){
 function soloInk(route,k,line){
   const length=line.getTotalLength();
   const width=routeWidth(route,line,length,k);
-  return [{line,length,width,elapsed:route.elapsed,d:ribbon(line,length,width,.44*width,width)}];
+  const head=1.55*width;
+  return [{line,length,width:head,elapsed:route.elapsed,d:ribbon(line,length,width,.72*width,head)}];
 }
 function arrowPort(group,seats,obstacles,used,k){
   const center=meanPoint(group.map(r=>r.surveyed));
@@ -253,32 +258,55 @@ function arrowPort(group,seats,obstacles,used,k){
   return port;
 }
 const revealDuration=(length,detailScale)=>410+90*length/(125*detailScale);
+// Preserve the earlier legs of a routed move. The final cubic joins the receiving
+// curve along its tangent, so the paper edge flows into the shared shaft.
+function feedCurve(route,join,heading,k){
+  const {line,length}=route;
+  let cut=route.passages.length?length:0;
+  const retreat=Math.min(length*.46,52*k);
+  const behind=p=>(join[0]-p[0])*heading[0]+(join[1]-p[1])*heading[1];
+  while(cut>0&&behind(routePoint(line,cut))<retreat)cut=Math.max(0,cut-4*k);
+  let d='M'+routePoint(line,0);
+  const steps=Math.ceil(cut/(4*k));
+  for(let i=1;i<=steps;i++)d+=' L'+routePoint(line,cut*i/steps);
+  const p=routePoint(line,cut),gap=pointGap(p,join);
+  const tangent=direction(routePoint(line,Math.max(0,cut-k)),routePoint(line,Math.min(length,cut+k)));
+  const aim=direction(p,join),launch=direction([0,0],advance(aim,tangent,1));
+  return d+' C'+advance(p,launch,gap*.44)+' '+advance(join,heading,-gap*.36)+' '+join;
+}
 function joinedInk(group,k,{tip,v}){
-  const run=Math.min(43*k,...group.map(r=>pointGap(routePoint(r.line,0),tip)*.44));
-  const join=advance(tip,v,-run);
-  const width=Math.min(34*k,Math.max(...group.map(r=>r.width))*1.14,run*.82);
-  const pieces=group.map(route=>{
-    const {line,length}=route;
-    // Keep the earlier part of the surveyed route. Choose a turn-in point upstream
-    // of the junction so its final cubic arrives tangent to the common stem.
-    let cut=route.passages.length?length:0;
-    const retreat=Math.min(length*.46,62*k);
-    const behind=p=>(join[0]-p[0])*v[0]+(join[1]-p[1])*v[1];
-    while(cut>0&&behind(routePoint(line,cut))<retreat)cut=Math.max(0,cut-4*k);
-    let d='M'+routePoint(line,0);
-    const steps=Math.ceil(cut/(4*k));
-    for(let i=1;i<=steps;i++)d+=' L'+routePoint(line,cut*i/steps);
-    const p=routePoint(line,cut),gap=pointGap(p,join);
-    const tangent=direction(routePoint(line,Math.max(0,cut-k)),routePoint(line,Math.min(length,cut+k)));
-    const aim=direction(p,join),launch=direction([0,0],advance(aim,tangent,.85));
-    d+=' C'+advance(p,launch,gap*.46)+' '+advance(join,v,-gap*.43)+' '+join+' L'+advance(join,v,k);
-    const branch=node('path',{d}),len=branch.getTotalLength();
-    return {line:branch,length:len,width:Math.max(width,route.width),elapsed:route.elapsed,
-      d:ribbon(branch,len,route.width,Math.min(width,route.width*.78))};
-  });
-  const stem=node('path',{d:'M'+join+' L'+tip});
-  const stemWidth=Math.min(width,Math.max(...group.map(r=>r.width*.78)));
-  pieces.push({line:stem,length:run,width,elapsed:Math.max(...pieces.map(p=>p.elapsed-revealDuration(p.length,k))),d:ribbon(stem,run,stemWidth,stemWidth*.64,width*1.2,.48)});
+  // Carry the longest approach through to the head. Shorter branches enter it
+  // progressively closer to the front, leaving a visible stem beyond the last fork.
+  const reach=r=>pointGap(routePoint(r.line,0),tip);
+  const ordered=[...group].sort((a,b)=>reach(b)-reach(a));
+  const [lead,...feeders]=ordered;
+  const stem=advance(tip,v,-Math.min(28*k,reach(lead)*.28));
+  const spine=node('path',{d:feedCurve(lead,stem,v,k)+' L'+tip}),length=spine.getTotalLength();
+  const count=group.reduce((sum,r)=>sum+r.order.units[r.type],0);
+  const width=Math.min(forceWidth(count,k),length*.32);
+  const head=1.55*width;
+  const pieces=[{line:spine,length,width:head,elapsed:lead.elapsed,
+    d:ribbon(spine,length,Math.min(lead.width,width),.86*width,head)}];
+  for(const [i,route] of feeders.entries()){
+    const start=routePoint(route.line,0),dx=tip[0]-start[0],dy=tip[1]-start[1];
+    const forward=dx*v[0]+dy*v[1],sideways=Math.abs(dx*v[1]-dy*v[0]);
+    // A side approach needs room to turn downstream before touching the main shaft.
+    const room=Math.max(head*.70,forward*.72-sideways*.55);
+    const run=Math.min(length*.67,reach(route)*.58,room,(29+10*Math.min(4,feeders.length-1-i))*k);
+    const at=length-run,join=routePoint(spine,at);
+    const heading=direction(routePoint(spine,Math.max(0,at-k)),routePoint(spine,Math.min(length,at+k)));
+    const d=feedCurve(route,join,heading,k);
+    const line=node('path',{d}),len=line.getTotalLength();
+    const startWidth=Math.min(route.width*.85,len*.32);
+    const endWidth=Math.min(startWidth*.64,lead.width*.62,width*.60);
+    // Continue this branch's reveal mask along the spine. Adding a new leading
+    // route leaves the already drawn branches connected to their common arrowhead.
+    let reveal=d;
+    const steps=Math.ceil(run/(4*k));
+    for(let n=1;n<=steps;n++)reveal+=' L'+routePoint(spine,at+run*n/steps);
+    pieces.push({line:node('path',{d:reveal}),length:len+run,width:Math.max(startWidth,head),elapsed:route.elapsed,
+      d:ribbon(line,len,startWidth,endWidth)});
+  }
   return pieces;
 }
 function drawArrows(group,planned,k,port){
@@ -287,7 +315,7 @@ function drawArrows(group,planned,k,port){
     {'data-from':from,'data-to':to,'data-unit':first.type});
   if(!merged&&first.passages.length)arrow.dataset.via=first.passages.join(' ');
   const pieces=merged?joinedInk(group,k,port):soloInk(first,k,port.line);
-  const ink=node('g',{opacity:.87}),halo=2.8*k;
+  const ink=node('g',{opacity:.87}),halo=2.1*k;
   ink.append(node('path',{d:pieces.map(p=>p.d).join(' '),
     fill:planned?'#a6352d':'#892d26',stroke:'#f6e9be','stroke-width':halo,
     'stroke-linejoin':'round','paint-order':'stroke fill'}));
@@ -456,26 +484,46 @@ function homeStacks(game,id,exercise,offsets){
   }
   return stacks;
 }
-function drawStack(game,parent,id,type,number,nation,role,at,tokenScale,caption,selected,origin){
+// An attacker can rejoin a garrison after a capture, retreat or landing. The
+// opening roster and departures identify its unmoved portion even in older saves.
+function movedInGarrison(game,exercise,id,type,number){
+  if(game.phase==='plan'||!game.orders.length)return 0;
+  if(exercise.world&&neutralKey(places[id].startOwner)&&!game.battles.some(b=>b.to===id&&b.resolved))return 0;
+  const opening=exercise.world?exercise.shapes[id].garrison.reduce((n,[power,t,count])=>
+    n+(samePower(power,game.power)&&t===type?count:0),0):
+    places[id].owner===exercise.attacker?exercise.forces[id][types.indexOf(type)]:0;
+  const departures=game.orders.reduce((n,o)=>n+(o.from===id?(o.units[type]||0):0),game.activationMoves?.[id]?.[type]||0);
+  return Math.max(0,number-Math.max(0,opening-departures));
+}
+function drawStack(game,parent,id,type,number,nation,role,at,tokenScale,caption,selected,origin,moved){
   const [x,y]=at;
   const facility=isFacility(type);
   const style=styleFor(nation),unitInk=facility?'var(--facility-ink)':style.counter;
-  const ink=selected?'#fff9df':unitInk;
-  const paper=facility?'var(--facility-paper)':selected?selectionOrange:style.paper;
+  const assigned=role==='incoming';
+  const ink=selected?'#fff9df':moved?'color-mix(in srgb, '+unitInk+' 50%, #111810)':unitInk;
+  const wash='color-mix(in srgb, '+style.paper+' 76%, #656d68)';
+  const paper=facility?'var(--facility-paper)':selected?selectionOrange:moved===number?wash:style.paper;
   const name=stats[type]?.name||globalUnits[type]?.[0]||type;
   // After capture the counter represents the surviving attackers at this destination.
   const source=origin||(nation!==places[id].owner&&game.orders.find(o=>o.to===id&&o.units[type])?.from)||id;
   const designation=game.formationNames[nation===places[source].owner?source:source+'/'+nation]?.[type]||name;
-  const label=facility?name+' · '+places[id].name:designation+' · '+places[id].name+' · '+nation+' · '+name+' × '+number+(origin?' from '+places[origin].name:'');
+  const status=assigned?' · '+(game.phase==='plan'?'Assigned to attack':'Committed to attack')+' from '+places[origin].name:
+    moved?' · '+moved+' of '+number+' moved in combat':'';
+  const label=facility?name+' · '+places[id].name:designation+' · '+places[id].name+' · '+nation+' · '+name+' × '+number+status;
   const stack=node('g',{'data-place':id,'data-unit':type,'data-count':number,'data-role':role,
     'aria-label':label,cursor:'pointer',transform:'translate('+x+' '+y+') scale('+tokenScale+')'});
   if(origin)stack.dataset.origin=origin;
+  if(moved)stack.dataset.moved=String(moved);
   stack.dataset.nation=nation;
   stack.append(node('title',{},label));
   // On a crowded global board the territory already extends nearby tap targets.
   // Keep a neighboring stack's invisible padding clear of the printed symbols.
   if(game.exercise!=='global')stack.append(node('rect',{x:-22,y:-22,width:44,height:44,fill:'transparent'}));
   stack.append(node('rect',{x:-19,y:-11,width:38,height:22,rx:1,fill:paper,stroke:selected&&!facility?'#753515':unitInk,'stroke-width':1.6}));
+  if(moved){
+    if(moved<number&&!selected)stack.append(node('rect',{x:-18.2,y:-10.2,width:36.4*moved/number,height:20.4,fill:wash,'pointer-events':'none'}));
+    stack.append(node('path',{d:'M12 -10H18V-4Z',fill:unitInk,'pointer-events':'none'}));
+  }
   if(facility){
     stack.append(node('use',{href:'#unit-'+type,x:-18,y:-10.5,width:36,height:21,color:unitInk,'pointer-events':'none'}));
   }else{
@@ -1200,7 +1248,8 @@ export async function atlas(onPick,onView,initial,exercise) {
       for(const {type,country,primary,free,at} of homeStacks(game,id,exercise,offsets)){
         const selected=id===focus&&type===selectedType&&(!selectedNation||country===selectedNation);
         const caption=detailed&&selected&&!types.includes(type);
-        const stack=drawStack(game,forces,id,type,free,country,'home',at,tokenScale,caption,selected,null);
+        const moved=primary&&country===exercise.attacker?movedInGarrison(game,exercise,id,type,free):0;
+        const stack=drawStack(game,forces,id,type,free,country,'home',at,tokenScale,caption,selected,null,moved);
         reserveStack(at,tokenScale,caption&&stack.lastChild.textContent);
         if(game.phase==='plan'&&(exercise.world||friendly&&primary)){
           stack.setAttribute('role','button');stack.setAttribute('tabindex','0');
@@ -1212,7 +1261,7 @@ export async function atlas(onPick,onView,initial,exercise) {
         for(const type of Object.keys(group.units)){
           if(!group.units[type])continue;
           const at=frontSeats.get(id).get(group.from+'/'+type);
-          drawStack(game,forces,id,type,group.units[type],exercise.attacker,'incoming',at,tokenScale,false,false,group.from);
+          drawStack(game,forces,id,type,group.units[type],exercise.attacker,'incoming',at,tokenScale,false,false,group.from,group.units[type]);
           reserveStack(at,tokenScale);
         }
       }
