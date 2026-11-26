@@ -1,6 +1,6 @@
 const scope=self.registration.scope;
 const prefix='wartable:'+scope+':';
-const release='0.1.76';
+const release='0.1.77';
 const cacheName=prefix+'shell-'+release;
 const atlasRevision='d045665337249e6073797c2026edd27d40f1e96bf1998c86d982f435d4a7de5f';
 // 0.1.55 already cached this exact atlas. Adopt its cache under the original
