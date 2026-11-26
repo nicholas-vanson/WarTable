@@ -23,7 +23,7 @@ function changeUncontrolledStatus(s,id,key){
   s.owners[id]=neutralOwners[key];
   for(const row of s.pieces[id])if(neutralOwners[row[0]])row[0]=key;
 }
-function takeFriendlyControl(s,id,power,nation){
+export function takeFriendlyControl(s,id,power,nation){
   s.owners[id]=nation;
   for(const row of s.pieces[id])if(neutralOwners[row[0]])row[0]=power;
 }
