@@ -1,0 +1,40 @@
+name: Package WarTable 0.1.73
+on:
+  push:
+    branches: [build/marker-0.1.73]
+permissions:
+  contents: write
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: fec24c6d3b0fcd6d4e81f13b737777dc0811a0a3
+      - name: Package and verify the phone-tested source
+        run: |
+          cd pwa
+          npm test
+          python3 tools/package.py "$RUNNER_TEMP/playtest"
+          cd "$RUNNER_TEMP/playtest"
+          echo 'd37bb1501c46048a488a5a61429d682112a6464967f9853ef6ee4cbe61d350fd  WarTable-Playtest.html' | sha256sum --check
+          unzip -q WarTable-PWA.zip -d checked
+          diff -qr site checked
+      - name: Tag the packaged site and create the prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch --no-tags --depth=1 origin refs/heads/gh-pages
+          test "$(git rev-parse FETCH_HEAD)" = 1779869da46ae92d61ba95f92cf8dcae644d42f2
+          git checkout --detach FETCH_HEAD
+          cp -a "$RUNNER_TEMP/playtest/site/." .
+          cp "$RUNNER_TEMP/playtest/WarTable-PWA.zip" "$RUNNER_TEMP/playtest/WarTable-Playtest.html" downloads/
+          git add index.html map.js sw.js downloads/WarTable-PWA.zip downloads/WarTable-Playtest.html
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Publish solid red movement arrows in WarTable playtest 0.1.73'
+          git push origin HEAD:refs/tags/pwa-playtest-0.1.73
+          gh release create pwa-playtest-0.1.73 --verify-tag --prerelease --title 'WarTable PWA playtest 0.1.73' --notes-file - <<'NOTES'
+          Movement orders now use a solid red marker. The arrow tapers from the departing force and follows the selected passage to one final head, including on return blitzes.
+
+          [Install or update the playtest](https://nicholas-vanson.github.io/WarTable/?update=0.1.73) · [Standalone HTML](https://nicholas-vanson.github.io/WarTable/downloads/WarTable-Playtest.html) · [PWA ZIP](https://nicholas-vanson.github.io/WarTable/downloads/WarTable-PWA.zip)
+          NOTES
