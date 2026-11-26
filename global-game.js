@@ -51,7 +51,7 @@ export function nextPower(power){
   return turnOrder[(turnOrder.indexOf(power)+1)%turnOrder.length];
 }
 export function nextPlaytestTurn(match){
-  if(match.phase!=='noncombatMove'||match.combat?.game.phase!=='noncombatComplete')throw Error('Complete noncombat movement before handing over the turn.');
+  if(match.phase!=='mobilize'||match.combat?.game.phase!=='mobilized')throw Error('Complete mobilization before handing over the turn.');
   const power=nextPower(match.power);
   const review={power:match.power,round:match.round,record:match.combat.game.record};
   return {...match,power,round:match.round+Number(power===turnOrder[0]),phase:'briefing',
@@ -93,6 +93,17 @@ function preparePurchaseSites(match,setup){
 }
 export const spendingEconomies=match=>match.power==='British'?['British','UK_Pacific']:[match.power];
 const hasFacility=(area,type)=>area.units.some(([,unit,n])=>unit===type&&n>0);
+export function productionSlots(area,repairs={}){
+  const unit=hasFacility(area,'factory_major')?'factory_major':hasFacility(area,'factory_minor')?'factory_minor':null;
+  return unit?Math.max(0,(unit==='factory_major'?10:3)-(area.facilityDamage?.[unit]||0)+(repairs[unit]||0)):0;
+}
+export function facilitySite(area,unit,wallet){
+  if(unit==='harbour')return area.coastal&&!hasFacility(area,unit);
+  if(unit==='airfield')return !hasFacility(area,unit);
+  if(!['factory_major','factory_minor'].includes(unit)||area.island||area.ipc<2||
+    hasFacility(area,'factory_major')||hasFacility(area,'factory_minor'))return false;
+  return unit==='factory_minor'||area.original===wallet&&area.ipc>=3;
+}
 export function purchaseTotal(draft){
   return Object.entries(draft).reduce((sum,[unit,n])=>sum+n*globalUnits[unit][1],0);
 }
@@ -115,17 +126,14 @@ export function purchasePlan(match,wallet=match.power){
     }
     if(minor||major){
       const unit=major?'factory_major':'factory_minor';
-      const slots=Math.max(0,(major?10:3)-(area.facilityDamage?.[unit]||0)+(match.repairDraft?.[name]?.[unit]||0));
+      const slots=productionSlots(area,match.repairDraft?.[name]);
       capacity+=slots;if(area.coastal)coastalCapacity+=slots;
       if(minor&&area.original===wallet&&area.ipc>=3&&!match.pendingUpgrades?.[name]){
         const selected=!!match.upgradeDraft?.[name],ready=(area.facilityDamage?.[unit]||0)===(match.repairDraft?.[name]?.[unit]||0);
         upgrades.push({name,selected,ready});if(selected)cost+=20;
       }
-    }else if(!area.island&&area.ipc>=2){
-      sites.factory_minor++;if(area.original===wallet&&area.ipc>=3)sites.factory_major++;
     }
-    if(!hasFacility(area,'airfield'))sites.airfield++;
-    if(area.coastal&&!hasFacility(area,'harbour'))sites.harbour++;
+    for(const unit of purchaseGroups.Facilities)if(facilitySite(area,unit,wallet))sites[unit]++;
   }
   for(const [unit,n] of Object.entries(orders)){
     if(!purchaseGroups.Facilities.includes(unit))combatCount+=n;
