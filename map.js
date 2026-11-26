@@ -168,7 +168,9 @@ function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detail
   }
   const headLength=Math.min(length*.23,5*tokenScale+width*.8);
   const neck=length-headLength;
-  const left=[],right=[];
+  const left=[],right=[],wetEdge=[],washLeft=[],washRight=[];
+  const tip=centerline.getPointAtLength(length);
+  const tipPoint=tip.x.toFixed(2)+' '+tip.y.toFixed(2);
   const steps=Math.max(5,Math.ceil(neck/4));
   for(let i=0;i<=steps;i++){
     const at=neck*i/steps,p=centerline.getPointAtLength(at);
@@ -176,22 +178,38 @@ function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detail
     const after=centerline.getPointAtLength(Math.min(length,at+.65));
     const dx=after.x-before.x,dy=after.y-before.y,span=Math.hypot(dx,dy)||1;
     const edge=offset=>(p.x-dy/span*offset).toFixed(2)+' '+(p.y+dx/span*offset).toFixed(2);
-    const radius=width*(.5-.28*i/steps);
-    left.push(edge(radius));right.push(edge(-radius));
-    if(i===steps){
-      const tip=centerline.getPointAtLength(length);
-      left.push(edge(width*.50),tip.x.toFixed(2)+' '+tip.y.toFixed(2),edge(-width*.50));
-    }
+    // A felt tip deposits more ink on one side. Pressure changes the breadth
+    // of that wet edge and the paler band as the nib follows the curve.
+    const t=i/steps;
+    const wet=.60+.15*Math.sin(8*t+.4);
+    const wash=-.30+.09*Math.sin(6*t);
+    const halfWash=.15+.10*Math.sin(9*t+.7);
+    const addSection=radius=>{
+      left.push(edge(radius));right.push(edge(-radius));
+      wetEdge.push(edge(radius*wet));
+      washLeft.push(edge(radius*(wash+halfWash)));
+      washRight.push(edge(radius*(wash-halfWash)));
+    };
+    addSection(width*(.5-.28*t));
+    if(i===steps)addSection(width*.50);
   }
   const group=node('g',{'data-from':from,'data-to':to,'data-unit':type});
   if(via)group.dataset.via=via;
   else if(!places[from].water&&!places[to].water)group.setAttribute('clip-path','url(#route-'+from+'-'+to+')');
-  const ink=node('path',{d:'M'+left.concat(right.reverse()).join(' L')+' Z',
-    fill:planned?'#b52c23':'#912e25',opacity:planned ? .66 : .76});
-  group.append(ink);
+  const routeId=[from,via,to,type].filter(Boolean).join('-');
+  const ribbon=(a,b)=>'M'+a.concat(tipPoint,b.slice().reverse()).join(' L')+' Z';
+  const ink=node('g',{opacity:planned ? .66 : .76});
+  const body=node('path',{id:'marker-body-'+routeId,d:ribbon(left,right),fill:planned?'#b52c23':'#912e25'});
+  const clip=node('clipPath',{id:'marker-clip-'+routeId});
+  clip.append(node('use',{href:'#'+body.id}));
+  const pigment=node('g',{'clip-path':'url(#'+clip.id+')',filter:'url(#marker-pigment)'});
+  pigment.append(node('path',{d:ribbon(left,wetEdge),fill:'#681e1a',opacity:.42}),
+    node('path',{d:ribbon(washLeft,washRight),fill:'#ef9876',opacity:.32}));
+  ink.append(body,pigment);
+  group.append(clip,ink);
   const duration=410+90*length/(125*detailScale);
   if(elapsed<duration&&!reducedMotion()){
-    const id='marker-route-'+[from,via,to,type].filter(Boolean).join('-');
+    const id='marker-route-'+routeId;
     const mask=node('mask',{id,maskContentUnits:'userSpaceOnUse'});
     centerline.setAttribute('pathLength',1);
     centerline.setAttribute('fill','none');centerline.setAttribute('stroke','white');
