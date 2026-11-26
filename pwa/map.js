@@ -401,6 +401,7 @@ function combineLegs(legs){
   return [...grouped.values()];
 }
 function arrivals(game,to){
+  if(game.phase==='noncombat')return [];
   const orders=combineLegs(game.orders.filter(o=>o.to===to).map(o=>({...o,from:entrySpace(o)})));
   if(game.phase==='plan')return orders;
   const battle=game.battles.find(b=>b.to===to&&!b.resolved);
@@ -523,10 +524,11 @@ function homeStacks(game,id,exercise,offsets){
   for(const [power,type,n] of homeRows){
     const country=power?ownerNames[power]||power:nation;
     const own=exercise.world?samePower(power,game.power):friendly;
-    const primary=exercise.world?own&&mobileTypes.includes(type):types.includes(type);
+    const primary=exercise.world?own&&(mobileTypes.includes(type)||game.phase==='noncombat'&&type==='aaGun'):types.includes(type);
     const free=primary&&own&&game.phase==='plan'?units[type]:n;
     if(!free)continue;
-    const at=primary&&formations[id].home[type]?seat(id,'home',type,offsets):
+    const spot=game.redeploySeats?.[id]?.get(power+'/'+type);
+    const at=spot?formationPoint(id,spot):primary&&formations[id].home[type]?seat(id,'home',type,offsets):
       formationPoint(id,formations[id].slots.get(power+'/'+type)||formations[id].home[type]||position(id));
     stacks.push({type,country,primary,free,at});
   }
@@ -535,6 +537,7 @@ function homeStacks(game,id,exercise,offsets){
 // An attacker can rejoin a garrison after a capture, retreat or landing. The
 // opening roster and departures identify its unmoved portion even in older saves.
 function movedInGarrison(game,exercise,id,type,number){
+  if(game.phase==='noncombat')return Math.max(0,number-(game.unused[id][type]||0));
   if(game.phase==='plan'||!game.orders.length)return 0;
   if(exercise.world&&neutralKey(places[id].startOwner)&&!game.battles.some(b=>b.to===id&&b.resolved))return 0;
   const opening=exercise.world?exercise.shapes[id].garrison.reduce((n,[power,t,count])=>
@@ -556,7 +559,7 @@ function drawStack(game,parent,id,type,number,nation,role,at,tokenScale,caption,
   const source=origin||(nation!==places[id].owner&&game.orders.find(o=>o.to===id&&o.units[type])?.from)||id;
   const designation=game.formationNames[nation===places[source].owner?source:source+'/'+nation]?.[type]||name;
   const status=assigned?' · '+(game.phase==='plan'?'Assigned to attack':'Committed to attack')+' from '+places[origin].name:
-    moved?' · '+moved+' of '+number+' moved in combat':'';
+    moved?' · '+moved+' of '+number+(game.phase==='noncombat'?' unavailable to move':' moved in combat'):'';
   const label=facility?name+' · '+places[id].name:designation+' · '+places[id].name+' · '+nation+' · '+name+' × '+number+status;
   const stack=node('g',{'data-place':id,'data-unit':type,'data-count':number,'data-role':role,
     'aria-label':label,cursor:'pointer',transform:'translate('+x+' '+y+') scale('+tokenScale+')'});
@@ -1159,10 +1162,11 @@ export async function atlas(onPick,onView,initial,exercise) {
       zones.get(inspectedSea)?.area.classList.add('selected-territory');
       highlightedSea=inspectedSea;
     }
-    const choosingMove=!surveying&&game.phase==='plan'&&routeChoices!==null;
+    const redeploy=game.phase==='noncombat';
+    const choosingMove=!surveying&&(game.phase==='plan'||redeploy)&&routeChoices!==null;
     const moveStage=choosingMove&&exercise.world?(target?'passage':'destination'):null;
     const prompt=moveStage==='passage'?(routeChoices.includes(target)?'Tap '+places[target].name+' to finish, or choose another passage':'Tap a passage to '+places[target].name):
-      routeChoices?.length?'Tap a destination':'No legal combat moves';
+      routeChoices?.length?'Tap a destination':redeploy?'No legal noncombat moves':'No legal combat moves';
     const info=moveStage?prompt:inspectedSea?'Sea zone '+inspectedSea+' · Adjacent '+zones.get(inspectedSea).neighbors.join(', '):
       bands[selected]?bands[selected].region.firstChild.textContent:'';
     if(intel.textContent!==info)intel.textContent=info;
@@ -1193,11 +1197,41 @@ export async function atlas(onPick,onView,initial,exercise) {
     }
     const tacticalZoom=view.z;
     const compact=tacticalZoom<.66;
-    const nextRouteKey=[layoutSeed,game.phase,JSON.stringify(game.orders),JSON.stringify(game.battles)].join('|');
+    const nextRouteKey=[layoutSeed,game.phase,JSON.stringify(redeploy?game.moves:game.orders),JSON.stringify(game.battles)].join('|');
     if(routeKey!==nextRouteKey){
       const nextStarts=new Map(),now=performance.now(),period=exercise.projection?.width;
       const byTarget=new Map();
-      for(const order of game.orders){
+      let orders=game.orders;
+      if(redeploy){
+        // Give newly arrived types a garrison seat, including in previously empty spaces.
+        game.redeploySeats={};
+        for(const [id,rows] of Object.entries(game.pieces)){
+          const keys=[...new Set(rows.filter(row=>row[2]>0).map(([p,t])=>p+'/'+t))];
+          const formation=formations[id];
+          if(keys.every(key=>formation.slots.has(key)))continue;
+          const sea=places[id].water?zones.get(String(parseInt(places[id].name))):null;
+          const points=garrisonGrid(id,sea?.area||bands[id]?.region,{center:formation.center},keys.length,
+            detailScale,exercise.shapes[id].city,sea?zones:null);
+          game.redeploySeats[id]=new Map(keys.map((key,i)=>[key,points[i]]));
+        }
+        const moves=new Map();
+        const add=(path,type,n)=>{
+          if(path.length<2)return;
+          const key=path.join('/'),order=moves.get(key)||{from:path[0],to:path.at(-1),passages:path.slice(1,-1),units:{}};
+          order.units[type]=(order.units[type]||0)+n;moves.set(key,order);
+        };
+        for(const m of game.moves){
+          add(m.path,m.type,m.quantity);
+          if(m.extraInf)add(m.path,'inf',1);
+          if(m.transport)add(m.path.slice(1,-1),'transport',1);
+        }
+        orders=[...moves.values()];
+      }
+      function baseSeat(id,type){
+        return homeStacks(game,id,exercise,offsets).find(row=>row.type===type&&row.country===exercise.attacker)?.at||
+          formationPoint(id,formations[id].home[type]||position(id));
+      }
+      for(const order of orders){
         const passages=orderPassages(order),stops=[order.from,...passages,order.to],entry=entrySpace(order);
         const shifts=Array(stops.length).fill(0);
         for(let i=stops.length-2;i>=0;i--)
@@ -1207,9 +1241,19 @@ export async function atlas(onPick,onView,initial,exercise) {
           if(!count)continue;
           const key=[...stops,type].join('__'),since=routeStarts.get(key)??(routeKey?now:-Infinity);
           nextStarts.set(key,since);
-          const start=seat(order.from,'home',type,offsets),surveyed=seat(order.to,entry,type,offsets);
+          const start=redeploy?baseSeat(order.from,type):seat(order.from,'home',type,offsets);
+          const surveyed=redeploy?baseSeat(order.to,type):seat(order.to,entry,type,offsets);
           start[0]+=shifts[0];
-          const lineAt=end=>routeLine(order,type,start,end,surveyed,tokenScale,shifts,gates,period);
+          const lineAt=end=>{
+            if(!redeploy||aircraft.includes(type)&&passages.length)
+              return routeLine(order,type,start,end,surveyed,tokenScale,shifts,gates,period);
+            const via=passages.map((id,i)=>[position(id)[0]+shifts[i+1],position(id)[1]]);
+            if(!via.length){
+              const dx=end[0]-start[0],dy=end[1]-start[1];
+              via.push([(start[0]+end[0])/2-.14*dy,(start[1]+end[1])/2+.14*dx]);
+            }
+            return node('path',{d:passageArc([start,...via,end],tokenScale)});
+          };
           const line=lineAt(surveyed),length=line.getTotalLength(),tip=routePoint(line,length);
           const upstream=routePoint(line,length-Math.min(36*tokenScale,length*.42));
           const category=aircraft.includes(type)?'air':ships.includes(type)?'sea':'land';
@@ -1234,7 +1278,10 @@ export async function atlas(onPick,onView,initial,exercise) {
         }
         const area=bands[to]?.region||zones.get(String(parseInt(places[to].name)))?.area;
         const near=blocked.map(([x,y])=>[x+sheetOffset(x,position(to)[0],period),y]);
-        const {seats,fronts:cellGroups}=frontGrid([...entrances].map(([from,map])=>{
+        const {seats,fronts:cellGroups}=redeploy?{
+          seats:new Map(legs.map(r=>[r.entry+'/'+r.type,r.surveyed])),
+          fronts:new Map(legs.map(r=>[r.entry+'/'+r.type,[r.surveyed]]))
+        }:frontGrid([...entrances].map(([from,map])=>{
           const slots=[...map.values()];
           return {from,slots,center:meanPoint(slots.map(s=>s.point))};
         }),near,tokenScale,p=>!area||area.isPointInFill(new DOMPoint(...p)),extent);
@@ -1311,7 +1358,7 @@ export async function atlas(onPick,onView,initial,exercise) {
         const moved=primary&&country===exercise.attacker?movedInGarrison(game,exercise,id,type,free):0;
         const stack=drawStack(game,forces,id,type,free,country,'home',at,tokenScale,caption,selected,null,moved);
         reserveStack(at,tokenScale,caption&&stack.lastChild.textContent);
-        if(game.phase==='plan'&&(exercise.world||friendly&&primary)){
+        if((redeploy||game.phase==='plan')&&(exercise.world||friendly&&primary)){
           stack.setAttribute('role','button');stack.setAttribute('tabindex','0');
           stack.setAttribute('aria-pressed',String(selected));
         }

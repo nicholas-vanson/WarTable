@@ -335,6 +335,12 @@ function returnAircraft(s,b,order,type,n){
   const ex=exerciseOf(s),origin=order.from;
   const reachable=reachableLandingSites(s,origin,type,b.to,orderPassages(order).length+1);
   let left=n;
+  const range=ex.movement.allowance(origin,type)-orderPassages(order).length-1;
+  function noteFlight(base,count){
+    const flights=s.landedFlights??=[];
+    const prior=flights.find(f=>f.from===b.to&&f.type===type&&f.base===base&&f.range===range);
+    if(prior)prior.count+=count;else flights.push({from:b.to,type,range,base,count});
+  }
   const assigned=order.landings?.[type]||[];
   // Each reserved berth belongs to a particular surviving aircraft.
   const choices=[...assigned.slice(0,n).map(id=>[id,1]),...[origin,...reachable].map(id=>[id,n])];
@@ -347,10 +353,10 @@ function returnAircraft(s,b,order,type,n){
       seats=Math.min(seats,Math.max(0,deckSpace(s,id,ex.friendlyPowers[s.power])));
     }
     alterStack(s,id,s.power,type,seats);
-    if(seats)s.units[id][type]=(s.units[id][type]||0)+seats;
+    if(seats){s.units[id][type]=(s.units[id][type]||0)+seats;noteFlight(id,seats);}
     left-=seats;
   }
-  if(left)s.record.push({title:places[b.to].name,detail:left+' '+stats[type].name+' lost without a landing space.'});
+  if(left)noteFlight(null,left);
 }
 function placeSurvivors(s,b,destination){
   const origins=s.orders.filter(o=>o.to===b.to);
@@ -385,7 +391,7 @@ function captureBattle(s,b,attacker){
   }
   s.units[b.to]=empty();placeSurvivors(s,b,b.to);
   const result=occupies?'Captured by '+attacker+' with '+describe(b.attack)+'.':
-    sea?'Sea battle won by '+attacker+'.':'Defenders eliminated. Aircraft returned to base.';
+    sea?'Sea battle won by '+attacker+'.':'Defenders eliminated by air. Territory control is unchanged.';
   finishBattle(s,b,result);
 }
 function damageAt(s,id,power){

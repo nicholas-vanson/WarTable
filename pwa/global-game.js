@@ -51,7 +51,7 @@ export function nextPower(power){
   return turnOrder[(turnOrder.indexOf(power)+1)%turnOrder.length];
 }
 export function nextPlaytestTurn(match){
-  if(match.phase!=='combatReview'||match.combat?.game.phase!=='review')throw Error('Complete combat before handing over the turn.');
+  if(match.phase!=='noncombatMove'||match.combat?.game.phase!=='noncombatComplete')throw Error('Complete noncombat movement before handing over the turn.');
   const power=nextPower(match.power);
   const review={power:match.power,round:match.round,record:match.combat.game.record};
   return {...match,power,round:match.round+Number(power===turnOrder[0]),phase:'briefing',
@@ -263,7 +263,7 @@ export function prepareGlobalBoard(setup,atlas,match){
     const region=setup.regions[name],owner=match.board[name].owner;
     return enemies.has(owner)||neutralOwners[owner]&&canEnterNeutral(match.power,enemies,region)&&hostileNeutral(match.power,owner);
   }
-  const spaces={};
+  const spaces={},openingDamage={};
   function canalOpen(from,to,type){
     const gate=[parseInt(places[from].name),parseInt(places[to].name)].sort((a,b)=>a-b).join('-');
     return type==='submarine'&&gate==='91-92'||!gates[gate]?.some(coast=>!allies.has(match.board[coast].owner));
@@ -272,6 +272,7 @@ export function prepareGlobalBoard(setup,atlas,match){
     const base=(name,type)=>allies.has(board[name].owner)&&hasFacility(board[name],type)&&(board[name].facilityDamage?.[type]||0)<3;
     for(const [name,r] of Object.entries(setup.regions)){
       const space=spaces[ids[name]];
+      if(r.water)openingDamage[ids[name]]=structuredClone(board[name].shipDamage||{});
       space.airBase=!r.water&&base(name,'airfield');
       space.navalBase=r.water&&r.links.some(link=>base(link,'harbour'));
     }
@@ -290,7 +291,7 @@ export function prepareGlobalBoard(setup,atlas,match){
       enemyFleet:enemyAtSea.length>0,blockingFleet:enemyAtSea.some(([,t])=>t!=='transport'&&t!=='submarine'),
       destroyer:enemyAtSea.some(([,t])=>t==='destroyer')};
     places[id]={name,owner:r.blocked?owner:ownerNames[r.owner]||owner,startOwner:owner,blocked:r.blocked,targets:[],unitTargets:{},water:r.water,city:r.city,ipc:r.ipc,links:r.links,original:r.original};
-    shapes[id]={...sectors[name],garrison:pieces[id].filter(row=>row[2]>0),homePower:position.owner};
+    shapes[id]={...sectors[name],garrison:pieces[id].filter(row=>row[2]>0).map(row=>[...row]),homePower:position.owner};
     owners[id]=owner;forces[id]=true;
     if(!r.water&&!r.blocked)unmovedLand[id]=openingLand(pieces[id],match.power);
     units[id]=strengthOf(pieces[id].filter(([power,type])=>stats[type]&&
@@ -324,7 +325,7 @@ export function prepareGlobalBoard(setup,atlas,match){
     British:'United Kingdom',Italians:'Southern Italy',ANZAC:'New South Wales',French:'France'}[match.power];
   const [x,y]=sectors[home].center;
   const camera={x,y,z:.7*projection.detailScale,surveyZoom:true};
-  const exercise={name:'Global 1940',attacker,power:match.power,camera,forces,shapes,cities,world:true,friendlyPowers,friends,enemies:[...enemies],projection,neighbors,neutralEntry,unmovedLand,movement,refreshBases};
+  const exercise={name:'Global 1940',attacker,power:match.power,camera,forces,shapes,cities,world:true,friendlyPowers,friends,enemies:[...enemies],projection,neighbors,neutralEntry,unmovedLand,movement,refreshBases,canalOpen,openingDamage};
   exercises.global=exercise;
   let openingView;
   if(match.phase==='briefing'&&match.power!=='Germans'){
