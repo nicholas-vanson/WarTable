@@ -102,10 +102,8 @@ export function movementFor(s,from,type,quantity=1){
   function canLand(to,spent){
     const key=to+'/'+spent;
     if(landingCache.has(key))return landingCache.get(key);
-    const sites=movement.landingSites(from,type,to,spent);
     const flight={from,to,units:{[type]:quantity}};
-    const possible=sites.some(id=>!places[id].water)||
-      !!flightRecoveries(s,[...s.orders,flight],flight,spent);
+    const possible=!!flightRecoveries(s,[...s.orders,flight],flight,spent);
     landingCache.set(key,possible);
     return possible;
   }
@@ -275,8 +273,14 @@ function deckSpace(s,id,side){
   }
   return spaces;
 }
+function reachableLandingSites(s,from,type,to,spent){
+  const ex=exerciseOf(s);
+  // The movement graph uses start-of-turn control. Land must also still be friendly.
+  return ex.movement.landingSites(from,type,to,spent)
+    .filter(id=>places[id].water||ex.friends[s.power].includes(s.owners[id]));
+}
 // Assign scarce carrier berths jointly so a flexible flight cannot strand another.
-function flightRecoveries(s,orders,preview=null,previewSpent=0){
+export function flightRecoveries(s,orders,preview=null,previewSpent=0){
   const ex=exerciseOf(s),plans=new Map(),decks=new Map(),flights=[];
   function capacity(id){
     if(decks.has(id))return decks.get(id);
@@ -306,7 +310,7 @@ function flightRecoveries(s,orders,preview=null,previewSpent=0){
     for(const type of aircraft){
       const n=order.units[type];if(!n)continue;
       const spent=order===preview?previewSpent:orderPassages(order).length+1;
-      const sites=ex.movement.landingSites(order.from,type,order.to,spent);
+      const sites=reachableLandingSites(s,order.from,type,order.to,spent);
       const land=sites.includes(order.from)&&!places[order.from].water?order.from:sites.find(id=>!places[id].water);
       const bases=plans.get(order)||{};plans.set(order,bases);
       if(land){bases[type]=Array(n).fill(land);continue;}
@@ -329,7 +333,7 @@ function flightRecoveries(s,orders,preview=null,previewSpent=0){
 }
 function returnAircraft(s,b,order,type,n){
   const ex=exerciseOf(s),origin=order.from;
-  const reachable=ex.movement.landingSites(origin,type,b.to,orderPassages(order).length+1);
+  const reachable=reachableLandingSites(s,origin,type,b.to,orderPassages(order).length+1);
   let left=n;
   const assigned=order.landings?.[type]||[];
   // Each reserved berth belongs to a particular surviving aircraft.
@@ -341,7 +345,7 @@ function returnAircraft(s,b,order,type,n){
     if(places[id].water){
       if(type==='bomber'||defendingRows(s,id).length)continue;
       seats=Math.min(seats,Math.max(0,deckSpace(s,id,ex.friendlyPowers[s.power])));
-    }else if(id!==origin&&(!ex.friends[s.power].includes(places[id].startOwner)||!ex.friends[s.power].includes(s.owners[id])))continue;
+    }
     alterStack(s,id,s.power,type,seats);
     if(seats)s.units[id][type]=(s.units[id][type]||0)+seats;
     left-=seats;

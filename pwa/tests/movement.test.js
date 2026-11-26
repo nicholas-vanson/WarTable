@@ -130,3 +130,50 @@ test('fighters share carrier berths across sorties and strategic bombers require
   assert(exercise.movement.landingSites('wg','bomber',to,6).every(id=>!exercise.movement.spaces[id].water));
   commit(game);assert.deepEqual(game.orders[0].landings.fighter,[zone(109)]);
 });
+
+test('a five-leg attack on France leaves landing movement only for the strategic bombers',()=>{
+  const {game}=opening();
+  const germany='world-germany',south='world-greater-southern-germany',via=['wg',south,'ni','sf'];
+  const tactical=movementFor(game,germany,'tactical_bomber');
+  assert.equal(tactical.range,4);
+  assert(tactical.destinations().includes('fr'));
+  assert(tactical.legal('fr',[south,'ni']));
+  assert(!tactical.passagesTo('fr',['wg']).includes(south));
+  assert.throws(()=>plan(game,germany,'fr',{tactical_bomber:1},via));
+  plan(game,germany,'fr',{bomber:2},via);
+  commit(game);
+  assert.deepEqual(game.orders[0].landings.bomber,['hb','hb']);
+
+  const based=opening(board=>board.Germany.units.push(['Germans','airfield',1])).game;
+  const withBase=movementFor(based,germany,'tactical_bomber');
+  assert.equal(withBase.range,5);
+  assert(withBase.legal('fr',via.slice(0,3)));
+  assert(!withBase.passagesTo('fr',via.slice(0,3)).includes('sf'));
+  assert(!withBase.legal('fr',via));
+  assert.throws(()=>plan(based,germany,'fr',{tactical_bomber:1},via),/landing/);
+});
+
+test('highlighting, ordering and recovery require land held both at turn start and at landing',()=>{
+  const germany='world-germany',uk='world-united-kingdom',scotland='world-scotland';
+  const route=['wg',zone(112),zone(110)];
+  const based=board=>board.Germany.units.push(['Germans','airfield',1]);
+  const {game}=opening(based);
+  game.owners[scotland]='Germany'; // Captured this turn, one space beyond the battle.
+  const checkClosed=s=>{
+    const planner=movementFor(s,germany,'tactical_bomber');
+    assert(!planner.destinations().includes(uk));
+    assert.deepEqual(planner.passagesTo(uk),[]);
+    assert(!planner.legal(uk,route));
+    assert.throws(()=>plan(s,germany,uk,{tactical_bomber:1},route),/landing/);
+  };
+  checkClosed(game);
+
+  const prior=opening(board=>{based(board);board.Scotland.owner='Germans';}).game;
+  assert(movementFor(prior,germany,'tactical_bomber').legal(uk,route));
+  prior.owners[scotland]='United Kingdom'; // A turn-start site that is no longer friendly.
+  checkClosed(prior);
+  prior.owners[scotland]='Germany';
+  plan(prior,germany,uk,{tactical_bomber:1},route);
+  commit(prior);
+  assert.deepEqual(prior.orders[0].landings.tactical_bomber,[scotland]);
+});
