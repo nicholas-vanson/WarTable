@@ -247,6 +247,11 @@ function arrowPort(group,seats,obstacles,used,k){
       vIn=direction(routePoint(line,Math.max(0,length-8*k)),tip);
     }else tip=atCounterEdge(face,advance(face,heading,-100*k),k);
     let score=pointGap(tip,center)/k+(members.has(face)?0:65);
+    if(group.length>1)for(const r of group){
+      // Leave space for a side branch to approach from behind the head.
+      const dx=tip[0]-r.tail[0],dy=tip[1]-r.tail[1];
+      score+=2*Math.max(0,50-Math.hypot(dx,dy)/k)+Math.max(0,28-(dx*vIn[0]+dy*vIn[1])/k);
+    }
     for(const distance of [0,10,23]){
       const [x,y]=advance(tip,vIn,-distance*k);
       if(obstacles.some(p=>p!==face&&Math.abs(p[0]-x)<(distance?26:21)*k&&Math.abs(p[1]-y)<(distance?18:13)*k))
@@ -260,42 +265,68 @@ function arrowPort(group,seats,obstacles,used,k){
 const revealDuration=(length,detailScale)=>410+90*length/(125*detailScale);
 // Preserve the earlier legs of a routed move. The final cubic joins the receiving
 // curve along its tangent, so the paper edge flows into the shared shaft.
-function feedCurve(route,join,heading,k){
+function feedCurve(route,join,heading,k,obstacles,tails){
   const {line,length}=route;
   let cut=route.passages.length?length:0;
   const retreat=Math.min(length*.46,52*k);
   const behind=p=>(join[0]-p[0])*heading[0]+(join[1]-p[1])*heading[1];
   while(cut>0&&behind(routePoint(line,cut))<retreat)cut=Math.max(0,cut-4*k);
-  let d='M'+routePoint(line,0);
+  let d='M'+route.tail;
   const steps=Math.ceil(cut/(4*k));
-  for(let i=1;i<=steps;i++)d+=' L'+routePoint(line,cut*i/steps);
-  const p=routePoint(line,cut),gap=pointGap(p,join);
+  if(steps){
+    d+=' L'+routePoint(line,0);
+    for(let i=1;i<=steps;i++)d+=' L'+routePoint(line,cut*i/steps);
+  }
+  const p=cut?routePoint(line,cut):route.tail,gap=pointGap(p,join);
   const tangent=direction(routePoint(line,Math.max(0,cut-k)),routePoint(line,Math.min(length,cut+k)));
   const aim=direction(p,join),launch=direction([0,0],advance(aim,tangent,1));
-  return d+' C'+advance(p,launch,gap*.44)+' '+advance(join,heading,-gap*.36)+' '+join;
+  const first=advance(p,launch,gap*.44),last=advance(join,heading,-gap*.36);
+  // Keep the shared tangent at the join. Bow only the approach, taking the least
+  // bend that exposes the fork around a neighboring tail or an occupied counter.
+  const normal=[-aim[1],aim[0]],room=Math.min(gap*.68,88*k);
+  const withinReach=([x,y])=>x>Math.min(p[0],join[0])-room-32*k&&x<Math.max(p[0],join[0])+room+32*k&&
+    y>Math.min(p[1],join[1])-room-24*k&&y<Math.max(p[1],join[1])+room+24*k;
+  const counters=obstacles.filter(withinReach),neighbors=tails.filter(q=>q!==route.tail&&withinReach(q));
+  const samples=Math.max(8,Math.min(64,Math.ceil(gap/(5*k))));
+  let handle=first,best=Infinity;
+  for(const bend of [0,-.25,.25,-.5,.5,-.75,.75,-1,1]){
+    const candidate=advance(first,normal,bend*room);
+    let score=3*Math.abs(bend);
+    for(let i=1;i<samples&&score<best;i++){
+      const t=i/samples,u=1-t;
+      const a=u*u*u,b=3*t*u*u,c=3*t*t*u,e=t*t*t;
+      const x=a*p[0]+b*candidate[0]+c*last[0]+e*join[0];
+      const y=a*p[1]+b*candidate[1]+c*last[1]+e*join[1];
+      for(const q of counters)score+=2*Math.max(0,Math.min(23-Math.abs(x-q[0])/k,15-Math.abs(y-q[1])/k));
+      for(const q of neighbors)score+=Math.max(0,19-Math.hypot(x-q[0],y-q[1])/k);
+    }
+    if(score<best){best=score;handle=candidate;}
+    if(best===0)break;
+  }
+  return d+' C'+handle+' '+last+' '+join;
 }
-function joinedInk(group,k,{tip,v}){
+function joinedInk(group,k,{tip,v},obstacles,tails){
   // Carry the longest approach through to the head. Shorter branches enter it
   // progressively closer to the front, leaving a visible stem beyond the last fork.
-  const reach=r=>pointGap(routePoint(r.line,0),tip);
+  const reach=r=>pointGap(r.tail,tip);
   const ordered=[...group].sort((a,b)=>reach(b)-reach(a));
   const [lead,...feeders]=ordered;
   const stem=advance(tip,v,-Math.min(28*k,reach(lead)*.28));
-  const spine=node('path',{d:feedCurve(lead,stem,v,k)+' L'+tip}),length=spine.getTotalLength();
+  const spine=node('path',{d:feedCurve(lead,stem,v,k,obstacles,tails)+' L'+tip}),length=spine.getTotalLength();
   const count=group.reduce((sum,r)=>sum+r.order.units[r.type],0);
   const width=Math.min(forceWidth(count,k),length*.32);
   const head=1.55*width;
   const pieces=[{line:spine,length,width:head,elapsed:lead.elapsed,
     d:ribbon(spine,length,Math.min(lead.width,width),.86*width,head)}];
   for(const [i,route] of feeders.entries()){
-    const start=routePoint(route.line,0),dx=tip[0]-start[0],dy=tip[1]-start[1];
+    const dx=tip[0]-route.tail[0],dy=tip[1]-route.tail[1];
     const forward=dx*v[0]+dy*v[1],sideways=Math.abs(dx*v[1]-dy*v[0]);
     // A side approach needs room to turn downstream before touching the main shaft.
     const room=Math.max(head*.70,forward*.72-sideways*.55);
     const run=Math.min(length*.67,reach(route)*.58,room,(29+10*Math.min(4,feeders.length-1-i))*k);
     const at=length-run,join=routePoint(spine,at);
     const heading=direction(routePoint(spine,Math.max(0,at-k)),routePoint(spine,Math.min(length,at+k)));
-    const d=feedCurve(route,join,heading,k);
+    const d=feedCurve(route,join,heading,k,obstacles,tails);
     const line=node('path',{d}),len=line.getTotalLength();
     const startWidth=Math.min(route.width*.85,len*.32);
     const endWidth=Math.min(startWidth*.64,lead.width*.62,width*.60);
@@ -309,12 +340,12 @@ function joinedInk(group,k,{tip,v}){
   }
   return pieces;
 }
-function drawArrows(group,planned,k,port){
+function drawArrows(group,planned,k,port,obstacles,tails){
   const first=group[0],{from,to}=first.order,merged=group.length>1;
   const arrow=node('g',merged?{'data-to':to,'data-branches':group.length}:
     {'data-from':from,'data-to':to,'data-unit':first.type});
   if(!merged&&first.passages.length)arrow.dataset.via=first.passages.join(' ');
-  const pieces=merged?joinedInk(group,k,port):soloInk(first,k,port.line);
+  const pieces=merged?joinedInk(group,k,port,obstacles,tails):soloInk(first,k,port.line);
   const ink=node('g',{opacity:.87}),halo=2.1*k;
   ink.append(node('path',{d:pieces.map(p=>p.d).join(' '),
     fill:planned?'#a6352d':'#892d26',stroke:'#f6e9be','stroke-width':halo,
@@ -1164,7 +1195,7 @@ export async function atlas(onPick,onView,initial,exercise) {
           const lineAt=end=>routeLine(order,type,start,end,surveyed,tokenScale,shifts,gates,period);
           const line=lineAt(surveyed),length=line.getTotalLength(),tip=routePoint(line,length);
           const upstream=routePoint(line,length-Math.min(36*tokenScale,length*.42));
-          const r={order,type,entry,passages,shifts,key,surveyed,lineAt,line,length,tip,upstream,
+          const r={order,type,entry,passages,shifts,key,start,surveyed,lineAt,line,length,tip,upstream,
             direction:direction(upstream,tip),loop:order.from===order.to,elapsed:game.phase==='plan'?now-since:Infinity};
           r.width=routeWidth(r,line,length,tokenScale);
           byTarget.get(order.to).push(r);
@@ -1195,12 +1226,20 @@ export async function atlas(onPick,onView,initial,exercise) {
           r.end=seats.get(key);r.cells=cellGroups.get(key);
         }
         const cells=[...seats.values()],obstacles=[...near,...cells],used=[];
+        for(const r of legs){
+          // A fully departed stack leaves its whole seat free for the fork. Split
+          // stacks still launch at the printed edge of the counter left behind.
+          const occupied=obstacles.some(([x,y])=>Math.abs(y-r.start[1])<12*tokenScale&&
+            Math.abs(x+sheetOffset(x,r.start[0],period)-r.start[0])<20*tokenScale);
+          r.tail=occupied?routePoint(r.line,0):r.start;
+        }
+        const tails=legs.map(r=>r.tail);
         const clusters=nearbyGroups(legs,approachGap,55*tokenScale).sort((a,b)=>a.length-b.length);
         for(const group of clusters){
           const faces=[...new Set(group.flatMap(r=>r.cells))];
           const port=arrowPort(group,faces,obstacles,used,tokenScale);
           used.push(port.tip);
-          const arrow=drawArrows(group,game.phase==='plan',tokenScale,port);
+          const arrow=drawArrows(group,game.phase==='plan',tokenScale,port,obstacles,tails);
           routes.append(arrow);
           for(const shift of new Set(group.flatMap(r=>r.shifts))){
             if(!shift)continue;
