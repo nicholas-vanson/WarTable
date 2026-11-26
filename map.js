@@ -187,7 +187,6 @@ function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detail
   }
   const group=node('g',{'data-from':from,'data-to':to,'data-unit':type});
   if(via)group.dataset.via=via;
-  else if(!places[from].water&&!places[to].water)group.setAttribute('clip-path','url(#route-'+from+'-'+to+')');
   const routeId=[from,via,to,type].filter(Boolean).join('-');
   const ink=node('g',{opacity:.87});
   // Paint the stroke beneath the fill to leave a 1.4 CSS-pixel paper rim at every zoom.
@@ -580,7 +579,7 @@ function garrisonGrid(id,path,formation,count,scale,city,zones){
   return cells.sort((a,b)=>a.rank-b.rank).slice(0,count)
     .sort((a,b)=>a.row-b.row||a.col-b.col).map(cell=>cell.point);
 }
-function buildControlBands(map,shapes,regions,sectors,washes,extent){
+function buildControlBands(map,shapes,regions,sectors,washes){
   const defs=map.querySelector('defs'), layer=map.querySelector('#controlBands');
   for(const {ink,hatch,angle} of Object.values(ownerStyle)){
     const pattern=node('pattern',{id:hatch,patternUnits:'userSpaceOnUse',width:4.2,height:4.2,patternTransform:'rotate('+angle+')'});
@@ -655,17 +654,6 @@ function buildControlBands(map,shapes,regions,sectors,washes,extent){
       destination.append(selectedOutline);
     }
     bands[id]={band,region,neutralFill,selectedOutline};
-  }
-  for(const [from,place] of Object.entries(places)){
-    if(!shapes[from])continue;
-    for(const to of place.movementEdges||place.targets){
-      const clip=node('clipPath',{id:'route-'+from+'-'+to});
-      const shift=sectors?sheetOffset(sectors[from].center[0],sectors[to].center[0],extent.width):0;
-      for(const x of shift?[0,shift]:[0]){
-        clip.append(node('use',{href:'#territory-'+from,x}),node('use',{href:'#territory-'+to,x}));
-      }
-      defs.append(clip);
-    }
   }
   return bands;
 }
@@ -794,7 +782,7 @@ export async function atlas(onPick,onView,initial,exercise) {
   const drawSheets=exercise.world&&prefs.terrain==='auto'?terrainSheets(await (await fetch('./assets/world-terrain.json')).json(),extent):null;
   const detailScale=exercise.projection?.detailScale||1;
   const washes=await (await fetch('./assets/control-washes.json')).json();
-  const bands=buildControlBands(map,shapes,regions,exercise.world?exercise.shapes:null,exercise.world?washes.world:washes.exercise,extent);
+  const bands=buildControlBands(map,shapes,regions,exercise.world?exercise.shapes:null,exercise.world?washes.world:washes.exercise);
   const zones=buildSeaZones(map,chart);
   if(exercise.world)worldSeats(exercise,bands,zones);
   else for(const [id,strength] of Object.entries(exercise.forces)){
