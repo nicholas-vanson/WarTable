@@ -66,10 +66,15 @@ function homeOffsets(seed){
   }
   return offsets;
 }
-function seat(id,group,type,spread,offsets){
+// Use the same spacing at every zoom. Fleets retain their surveyed clearance around sea-zone numbers.
+function formationPoint(id,point){
+  if(places[id].water)return [...point];
   const center=position(id);
+  return point.map((v,i)=>center[i]+(v-center[i])/1.2);
+}
+function seat(id,group,type,offsets){
   const shift=group==='home'&&!formations[id].slots?offsets[id][type]:[0,0];
-  return formations[id][group][type].map((v,i)=>center[i]+spread*(v+shift[i]-center[i]));
+  return formationPoint(id,formations[id][group][type].map((v,i)=>v+shift[i]));
 }
 // Shift by whole sheets to put x on the copy nearest the reference point.
 function sheetOffset(x,reference,width){
@@ -206,17 +211,17 @@ function ribbon(line,length,tailWidth,endWidth,headWidth=0,maxHead=.18){
   if(shoulder)left.push(routePoint(line,length).map(n=>n.toFixed(2)).join(' '));
   return 'M'+left.concat(right.reverse()).join(' L')+' Z';
 }
-function routeWidth(route,line,length,k,detailScale){
-  let width=Math.min(length*.16,14*k*bound(.83+length/(570*detailScale),.94,1.32))*(1+.45*Math.log2(route.order.units[route.type]));
+function routeWidth(route,line,length,k){
+  let width=Math.min(length*.16,14*k*bound(.83+length/(570*k),.94,1.32))*(1+.45*Math.log2(route.order.units[route.type]));
   if(route.loop){
     const clearance=Math.max(4*k,pointGap(routePoint(line,length*.25),routePoint(line,length*.75)));
     width*=clearance/(clearance+.65*width);
   }
   return width;
 }
-function soloInk(route,k,detailScale,line){
+function soloInk(route,k,line){
   const length=line.getTotalLength();
-  const width=routeWidth(route,line,length,k,detailScale);
+  const width=routeWidth(route,line,length,k);
   return [{line,length,width,elapsed:route.elapsed,d:ribbon(line,length,width,.44*width,width)}];
 }
 function arrowPort(group,seats,obstacles,used,k){
@@ -248,7 +253,7 @@ function arrowPort(group,seats,obstacles,used,k){
   return port;
 }
 const revealDuration=(length,detailScale)=>410+90*length/(125*detailScale);
-function joinedInk(group,k,{tip,v},detailScale){
+function joinedInk(group,k,{tip,v}){
   const run=Math.min(43*k,...group.map(r=>pointGap(routePoint(r.line,0),tip)*.44));
   const join=advance(tip,v,-run);
   const width=Math.min(34*k,Math.max(...group.map(r=>r.width))*1.14,run*.82);
@@ -273,21 +278,21 @@ function joinedInk(group,k,{tip,v},detailScale){
   });
   const stem=node('path',{d:'M'+join+' L'+tip});
   const stemWidth=Math.min(width,Math.max(...group.map(r=>r.width*.78)));
-  pieces.push({line:stem,length:run,width,elapsed:Math.max(...pieces.map(p=>p.elapsed-revealDuration(p.length,detailScale))),d:ribbon(stem,run,stemWidth,stemWidth*.64,width*1.2,.48)});
+  pieces.push({line:stem,length:run,width,elapsed:Math.max(...pieces.map(p=>p.elapsed-revealDuration(p.length,k))),d:ribbon(stem,run,stemWidth,stemWidth*.64,width*1.2,.48)});
   return pieces;
 }
-function drawArrows(group,planned,k,scale,detailScale,port){
+function drawArrows(group,planned,k,port){
   const first=group[0],{from,to}=first.order,merged=group.length>1;
   const arrow=node('g',merged?{'data-to':to,'data-branches':group.length}:
     {'data-from':from,'data-to':to,'data-unit':first.type});
   if(!merged&&first.passages.length)arrow.dataset.via=first.passages.join(' ');
-  const pieces=merged?joinedInk(group,k,port,detailScale):soloInk(first,k,detailScale,port.line);
-  const ink=node('g',{opacity:.87}),halo=2.8/scale;
+  const pieces=merged?joinedInk(group,k,port):soloInk(first,k,port.line);
+  const ink=node('g',{opacity:.87}),halo=2.8*k;
   ink.append(node('path',{d:pieces.map(p=>p.d).join(' '),
     fill:planned?'#a6352d':'#892d26',stroke:'#f6e9be','stroke-width':halo,
     'stroke-linejoin':'round','paint-order':'stroke fill'}));
   arrow.append(ink);
-  const duration=p=>revealDuration(p.length,detailScale);
+  const duration=p=>revealDuration(p.length,k);
   if(!reducedMotion()&&pieces.some(p=>p.elapsed<duration(p))){
     const id='order-reveal-'+first.key,mask=node('mask',{id,maskContentUnits:'userSpaceOnUse'});
     ink.setAttribute('mask','url(#'+id+')');arrow.append(mask);
@@ -419,18 +424,18 @@ Object.assign(frontLines,{
   'bs-pl':[[1080,836],[1140,817]],'ep-pl':[[1118,867],[1122,931]],
   'ep-ro':[[1260,1166],[1316,1151]],'be-ro':[[1310,1185],[1330,1237]]
 });
-function frontTransform(to,group,spread,tokenScale){
-  const [start,end]=frontLines[group.from+'-'+to],center=position(to);
+function frontTransform(to,group,tokenScale){
+  const [start,end]=frontLines[group.from+'-'+to].map(p=>formationPoint(to,p));
   const dx=end[0]-start[0],dy=end[1]-start[1],length=Math.hypot(dx,dy);
-  const x=center[0]+spread*((start[0]+end[0])/2-center[0]);
-  const y=center[1]+spread*((start[1]+end[1])/2-center[1]);
-  const attacker=formations[to][group.from].inf;
+  const x=(start[0]+end[0])/2;
+  const y=(start[1]+end[1])/2;
+  const attacker=formationPoint(to,formations[to][group.from].inf);
   const side=Math.sign(dy*(attacker[0]-start[0])-dx*(attacker[1]-start[1]));
-  const along=spread/57,across=side*tokenScale/length;
-  return 'matrix('+[dx*along,dy*along,dy*across,-dx*across,x,y].join(' ')+')';
+  const across=side*tokenScale/length;
+  return 'matrix('+[dx/57,dy/57,dy*across,-dx*across,x,y].join(' ')+')';
 }
-function homeStacks(game,id,exercise,spread,offsets){
-  const [x,y]=position(id),nation=game.owners[id],friendly=nation===exercise.attacker;
+function homeStacks(game,id,exercise,offsets){
+  const nation=game.owners[id],friendly=nation===exercise.attacker;
   const units=game.phase==='plan'?available(game,id):game.units[id];
   const stacks=[];
   const homeRows=exercise.world?[]:types.filter(t=>units[t]).map(t=>[null,t,units[t]]);
@@ -445,13 +450,8 @@ function homeStacks(game,id,exercise,spread,offsets){
     const primary=exercise.world?own&&mobileTypes.includes(type):types.includes(type);
     const free=primary&&own&&game.phase==='plan'?units[type]:n;
     if(!free)continue;
-    let at;
-    if(primary&&formations[id].home[type])at=seat(id,'home',type,spread,offsets);
-    else{
-      const point=formations[id].slots.get(power+'/'+type)||formations[id].home[type]||position(id);
-      const spacing=formations[id].spacing??spread;
-      at=[x+(point[0]-x)*spacing,y+(point[1]-y)*spacing];
-    }
+    const at=primary&&formations[id].home[type]?seat(id,'home',type,offsets):
+      formationPoint(id,formations[id].slots.get(power+'/'+type)||formations[id].home[type]||position(id));
     stacks.push({type,country,primary,free,at});
   }
   return stacks;
@@ -622,7 +622,6 @@ function worldSeats(exercise,bands,zones){
     if(!roster.length)continue;
     const points=garrisonGrid(id,path,formation,roster.length,exercise.projection.detailScale,sector.city,sea?zones:null);
     if(sea){
-      sea.fleet=formation;
       const [cx,cy]=formation.center;
       const distance=([x,y])=>Math.hypot(x-cx,y-cy);
       formation.overview=points.reduce((best,p)=>distance(p)<distance(best)?p:best);
@@ -906,6 +905,8 @@ export async function atlas(onPick,onView,initial,exercise) {
   const showWorldCopies=exercise.world?wrapWorld(map,extent):null;
   const drawSheets=exercise.world&&prefs.terrain==='auto'?terrainSheets(await (await fetch('./assets/world-terrain.json')).json(),extent):null;
   const detailScale=exercise.projection?.detailScale||1;
+  // Counters and route ink share the printed map scale. The SVG camera zooms the whole formation.
+  const tokenScale=detailScale;
   const washes=await (await fetch('./assets/control-washes.json')).json();
   const bands=buildControlBands(map,shapes,regions,exercise.world?exercise.shapes:null,exercise.world?washes.world:washes.exercise);
   const zones=buildSeaZones(map,chart);
@@ -1009,8 +1010,6 @@ export async function atlas(onPick,onView,initial,exercise) {
     if(!exercise.world)for(const {text,size} of landLabels){
       text.style.display=prefs.labels==='auto'&&view.z>=1.05 && size*scale>=9?'':'none';
     }
-    const tokenScale=Math.min(1/scale,1.2*detailScale);
-    const spread=bound(1/(1.2*scale*detailScale),.66,1);
     if(scale!==lastScale){
       for(const {mark,name,x,y,openingCapital} of cityMarks){
         const orient=surveying&&openingCapital&&view.z>=.28&&scale<.35;
@@ -1038,19 +1037,11 @@ export async function atlas(onPick,onView,initial,exercise) {
       map.style.setProperty('--outer',width+'px');
       map.style.setProperty('--inner',width*.48+'px');
       for(const zone of zones.values()){
-        const {mark,x,y,room,ruleRoom,fleet}=zone;
+        const {mark,x,y,room,ruleRoom}=zone;
         const size=Math.min(1/scale,room);
         mark.setAttribute('transform','translate('+x+' '+y+') scale('+size+')');
         mark.firstChild.style.display=size>ruleRoom?'none':'';
         mark.style.display=size*scale<.65?'none':'';
-        if(fleet){
-          // Tighten a fleet as the printed number shrinks, provided the whole
-          // group still fits on this side of any islands or peninsulas.
-          const [cx,cy]=fleet.center,spacing=Math.max(spread,size/room);
-          const fits=cx===x&&cy===y&&Array.from(fleet.slots.values()).every(([u,v])=>
-            zone.area.isPointInFill(new DOMPoint(cx+(u-cx)*spacing,cy+(v-cy)*spacing)));
-          fleet.spacing=fits?spacing:1;
-        }
       }
       lastScale=scale;
     }
@@ -1106,9 +1097,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     }
     const tacticalZoom=view.z;
     const compact=tacticalZoom<.66;
-    // Taper counter size at the widest tactical scales; keep the interior seats stable
-    // while panning, and tighten their spacing at close zoom.
-    const nextRouteKey=[scale,layoutSeed,game.phase,JSON.stringify(game.orders),JSON.stringify(game.battles)].join('|');
+    const nextRouteKey=[layoutSeed,game.phase,JSON.stringify(game.orders),JSON.stringify(game.battles)].join('|');
     if(routeKey!==nextRouteKey){
       const nextStarts=new Map(),now=performance.now(),period=exercise.projection?.width;
       const byTarget=new Map();
@@ -1122,14 +1111,14 @@ export async function atlas(onPick,onView,initial,exercise) {
           if(!count)continue;
           const key=[...stops,type].join('__'),since=routeStarts.get(key)??(routeKey?now:-Infinity);
           nextStarts.set(key,since);
-          const start=seat(order.from,'home',type,spread,offsets),surveyed=seat(order.to,entry,type,spread,offsets);
+          const start=seat(order.from,'home',type,offsets),surveyed=seat(order.to,entry,type,offsets);
           start[0]+=shifts[0];
           const lineAt=end=>routeLine(order,type,start,end,surveyed,tokenScale,shifts,gates,period);
           const line=lineAt(surveyed),length=line.getTotalLength(),tip=routePoint(line,length);
           const upstream=routePoint(line,length-Math.min(36*tokenScale,length*.42));
           const r={order,type,entry,passages,shifts,key,surveyed,lineAt,line,length,tip,upstream,
             direction:direction(upstream,tip),loop:order.from===order.to,elapsed:game.phase==='plan'?now-since:Infinity};
-          r.width=routeWidth(r,line,length,tokenScale,detailScale);
+          r.width=routeWidth(r,line,length,tokenScale);
           byTarget.get(order.to).push(r);
         }
       }
@@ -1137,7 +1126,7 @@ export async function atlas(onPick,onView,initial,exercise) {
       routes.replaceChildren();frontSeats=new Map();
       const blocked=[];
       if(byTarget.size)for(const id of Object.keys(game.units))
-        for(const stack of homeStacks(game,id,exercise,spread,offsets))blocked.push(stack.at);
+        for(const stack of homeStacks(game,id,exercise,offsets))blocked.push(stack.at);
       for(const to of [...byTarget.keys()].sort()){
         const legs=byTarget.get(to).sort((a,b)=>a.key.localeCompare(b.key));
         const entrances=new Map();
@@ -1163,7 +1152,7 @@ export async function atlas(onPick,onView,initial,exercise) {
           const faces=[...new Set(group.flatMap(r=>r.cells))];
           const port=arrowPort(group,faces,obstacles,used,tokenScale);
           used.push(port.tip);
-          const arrow=drawArrows(group,game.phase==='plan',tokenScale,scale,detailScale,port);
+          const arrow=drawArrows(group,game.phase==='plan',tokenScale,port);
           routes.append(arrow);
           for(const shift of new Set(group.flatMap(r=>r.shifts))){
             if(!shift)continue;
@@ -1199,7 +1188,7 @@ export async function atlas(onPick,onView,initial,exercise) {
         }
         const mark=frontMarks.get(key),ink=mark.ink;
         updateFront(mark,group.units);
-        const transform=frontTransform(id,group,spread,tokenScale);
+        const transform=frontTransform(id,group,tokenScale);
         if(ink.getAttribute('transform')!==transform)ink.setAttribute('transform',transform);
       }
       if(compact){
@@ -1208,7 +1197,7 @@ export async function atlas(onPick,onView,initial,exercise) {
         continue;
       }
       const detailed=tacticalZoom>=1.55;
-      for(const {type,country,primary,free,at} of homeStacks(game,id,exercise,spread,offsets)){
+      for(const {type,country,primary,free,at} of homeStacks(game,id,exercise,offsets)){
         const selected=id===focus&&type===selectedType&&(!selectedNation||country===selectedNation);
         const caption=detailed&&selected&&!types.includes(type);
         const stack=drawStack(game,forces,id,type,free,country,'home',at,tokenScale,caption,selected,null);
