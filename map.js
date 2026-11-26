@@ -1,3 +1,4 @@
+import {nearbyGroups,frontGrid,approachGap,meanPoint,pointGap} from './front-layout.js';
 import {orderPassages,entrySpace} from './movement.js';
 import {reducedMotion,readMapPreferences} from './preferences.js';
 import {neutralKey} from './neutral-rules.js';
@@ -80,7 +81,7 @@ function atCounterEdge(point,handle,tokenScale){
   return [point[0]+dx*t,point[1]+dy*t];
 }
 function movementArc(start,end,handles,tokenScale){
-  const tail=atCounterEdge(start,handles[0],tokenScale),tip=atCounterEdge(end,handles[1],tokenScale);
+  const tail=atCounterEdge(start,handles[0],tokenScale),tip=atCounterEdge(end,handles.at(-1),tokenScale);
   return 'M'+tail.join(' ')+' C'+[...handles,tip].map(p=>p.join(' ')).join(' ');
 }
 // Locate crossings on the longest shared run of printed border. Cache only borders
@@ -127,11 +128,8 @@ function passageArc(points,tokenScale){
   return path;
 }
 
-// Trace both edges of one ink silhouette along the measured route.
-function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detailScale,{shifts,gates,period,scale}){
-  const {from,to,units}=order,passages=orderPassages(order),entry=entrySpace(order);
-  const start=seat(from,'home',type,spread,offsets),end=seat(to,entry,type,spread,offsets);
-  start[0]+=shifts[0];
+function routeLine(order,type,start,end,surveyed,tokenScale,shifts,gates,period){
+  const {from,to}=order,passages=orderPassages(order);
   let path;
   if(passages.length&&aircraft.includes(type)){
     // The stops choose the side of the flight arc. Its single control point keeps
@@ -174,62 +172,139 @@ function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detail
     }
     path=passageArc([start,...controls,end],tokenScale);
   }else{
-    path=movementArc(start,end,approaches[from+'-'+to][type],tokenScale);
+    const handles=approaches[from+'-'+to][type].slice();
+    const last=handles.at(-1);
+    handles[handles.length-1]=[last[0]+end[0]-surveyed[0],last[1]+end[1]-surveyed[1]];
+    path=movementArc(start,end,handles,tokenScale);
   }
-  const centerline=node('path',{d:path});
-  const length=centerline.getTotalLength();
-  const baseWidth=Math.min(length*.16,14*tokenScale*bound(.83+length/(570*detailScale),.94,1.32));
-  let width=baseWidth*(1+.45*Math.log2(units[type]));
-  if(from===to){
-    // Leave paper between the two legs when a blitz doubles back through a narrow passage.
-    const outbound=centerline.getPointAtLength(length*.25),inbound=centerline.getPointAtLength(length*.75);
-    const clearance=Math.max(4*tokenScale,Math.hypot(inbound.x-outbound.x,inbound.y-outbound.y));
+  return node('path',{d:path});
+}
+function routePoint(line,length){
+  const p=line.getPointAtLength(length);
+  return [p.x,p.y];
+}
+function direction(a,b){
+  const span=pointGap(a,b)||1;
+  return [(b[0]-a[0])/span,(b[1]-a[1])/span];
+}
+function advance(p,v,n){return [p[0]+v[0]*n,p[1]+v[1]*n];}
+
+// Trace the two edges of a single filled ribbon. Joined branches end at shaft
+// width and overlap the common stem. Only the stem gets shoulders and a tip.
+function ribbon(line,length,tailWidth,endWidth,headWidth=0,maxHead=.18){
+  const shoulder=headWidth*.55;
+  const neck=length-Math.min(length*maxHead,shoulder*1.3);
+  const left=[],right=[],steps=Math.max(5,Math.ceil(neck/4));
+  for(let i=0;i<=steps;i++){
+    const at=neck*i/steps,p=routePoint(line,at);
+    const v=direction(routePoint(line,Math.max(0,at-.65)),routePoint(line,Math.min(length,at+.65)));
+    const edge=r=>(p[0]-v[1]*r).toFixed(2)+' '+(p[1]+v[0]*r).toFixed(2);
+    const radius=(tailWidth+(endWidth-tailWidth)*i/steps)/2;
+    left.push(edge(radius));right.push(edge(-radius));
+    if(i===steps&&shoulder){left.push(edge(shoulder));right.push(edge(-shoulder));}
+  }
+  if(shoulder)left.push(routePoint(line,length).map(n=>n.toFixed(2)).join(' '));
+  return 'M'+left.concat(right.reverse()).join(' L')+' Z';
+}
+function routeWidth(route,line,length,k,detailScale){
+  let width=Math.min(length*.16,14*k*bound(.83+length/(570*detailScale),.94,1.32))*(1+.45*Math.log2(route.order.units[route.type]));
+  if(route.loop){
+    const clearance=Math.max(4*k,pointGap(routePoint(line,length*.25),routePoint(line,length*.75)));
     width*=clearance/(clearance+.65*width);
   }
-  const shoulder=width*.55;
-  const headLength=Math.min(length*.18,shoulder*1.3);
-  const neck=length-headLength;
-  const left=[],right=[];
-  const tip=centerline.getPointAtLength(length);
-  const tipPoint=tip.x.toFixed(2)+' '+tip.y.toFixed(2);
-  const steps=Math.max(5,Math.ceil(neck/4));
-  for(let i=0;i<=steps;i++){
-    const at=neck*i/steps,p=centerline.getPointAtLength(at);
-    const before=centerline.getPointAtLength(Math.max(0,at-.65));
-    const after=centerline.getPointAtLength(Math.min(length,at+.65));
-    const dx=after.x-before.x,dy=after.y-before.y,span=Math.hypot(dx,dy)||1;
-    const edge=offset=>(p.x-dy/span*offset).toFixed(2)+' '+(p.y+dx/span*offset).toFixed(2);
-    const radius=width*(.5-.28*i/steps);
-    left.push(edge(radius));right.push(edge(-radius));
-    if(i===steps){
-      left.push(edge(shoulder));right.push(edge(-shoulder));
+  return width;
+}
+function soloInk(route,k,detailScale,line){
+  const length=line.getTotalLength();
+  const width=routeWidth(route,line,length,k,detailScale);
+  return [{line,length,width,elapsed:route.elapsed,d:ribbon(line,length,width,.44*width,width)}];
+}
+function arrowPort(group,seats,obstacles,used,k){
+  const center=meanPoint(group.map(r=>r.surveyed));
+  const v=direction([0,0],meanPoint(group.map(r=>r.direction)));
+  const upstream=meanPoint(group.map(r=>routePoint(r.line,r.length-Math.min(r.length*.8,100*k))));
+  let best=Infinity,port;
+  const members=new Set(group.map(r=>r.end));
+  for(const face of seats){
+    const inward=direction(upstream,face);
+    const heading=direction([0,0],advance(v,inward,.85));
+    let vIn=heading,line,tip;
+    if(group.length===1){
+      const route=group[0];
+      line=pointGap(face,route.surveyed)<.001?route.line:route.lineAt(face);
+      const length=line.getTotalLength();
+      tip=routePoint(line,length);
+      vIn=direction(routePoint(line,Math.max(0,length-8*k)),tip);
+    }else tip=atCounterEdge(face,advance(face,heading,-100*k),k);
+    let score=pointGap(tip,center)/k+(members.has(face)?0:65);
+    for(const distance of [0,10,23]){
+      const [x,y]=advance(tip,vIn,-distance*k);
+      if(obstacles.some(p=>p!==face&&Math.abs(p[0]-x)<(distance?26:21)*k&&Math.abs(p[1]-y)<(distance?18:13)*k))
+        score+=distance?80:500;
     }
+    for(const p of used)score+=Math.max(0,32-pointGap(tip,p)/k)*4;
+    if(score<best){best=score;port={tip,v:vIn,line};}
   }
-  const group=node('g',{'data-from':from,'data-to':to,'data-unit':type});
-  if(passages.length)group.dataset.via=passages.join(' ');
-  const routeId=[from,...passages,to,type].join('__');
-  const ink=node('g',{opacity:.87});
-  // Paint the stroke beneath the fill to leave a 1.4 CSS-pixel paper rim at every zoom.
-  const haloWidth=2.8/scale;
-  ink.append(node('path',{
-    d:'M'+left.concat(tipPoint,right.reverse()).join(' L')+' Z',
-    fill:planned?'#a6352d':'#892d26',stroke:'#f6e9be','stroke-width':haloWidth,
-    'stroke-linejoin':'round','paint-order':'stroke fill'
-  }));
-  group.append(ink);
-  const duration=410+90*length/(125*detailScale);
-  if(elapsed<duration&&!reducedMotion()){
-    const id='order-reveal-'+routeId;
-    const mask=node('mask',{id,maskContentUnits:'userSpaceOnUse'});
-    centerline.setAttribute('pathLength',1);
-    centerline.setAttribute('fill','none');centerline.setAttribute('stroke','white');
-    centerline.setAttribute('stroke-width',2*shoulder+4*tokenScale+haloWidth);centerline.setAttribute('stroke-dasharray','1 1');
-    mask.append(centerline);group.append(mask);ink.setAttribute('mask','url(#'+id+')');
-    const reveal=centerline.animate([{strokeDashoffset:1},{strokeDashoffset:0}],{duration});
-    reveal.currentTime=elapsed;
-    reveal.onfinish=()=>{ink.removeAttribute('mask');mask.remove();};
+  return port;
+}
+const revealDuration=(length,detailScale)=>410+90*length/(125*detailScale);
+function joinedInk(group,k,{tip,v},detailScale){
+  const run=Math.min(43*k,...group.map(r=>pointGap(routePoint(r.line,0),tip)*.44));
+  const join=advance(tip,v,-run);
+  const width=Math.min(34*k,Math.max(...group.map(r=>r.width))*1.14,run*.82);
+  const pieces=group.map(route=>{
+    const {line,length}=route;
+    // Keep the earlier part of the surveyed route. Choose a turn-in point upstream
+    // of the junction so its final cubic arrives tangent to the common stem.
+    let cut=route.passages.length?length:0;
+    const retreat=Math.min(length*.46,62*k);
+    const behind=p=>(join[0]-p[0])*v[0]+(join[1]-p[1])*v[1];
+    while(cut>0&&behind(routePoint(line,cut))<retreat)cut=Math.max(0,cut-4*k);
+    let d='M'+routePoint(line,0);
+    const steps=Math.ceil(cut/(4*k));
+    for(let i=1;i<=steps;i++)d+=' L'+routePoint(line,cut*i/steps);
+    const p=routePoint(line,cut),gap=pointGap(p,join);
+    const tangent=direction(routePoint(line,Math.max(0,cut-k)),routePoint(line,Math.min(length,cut+k)));
+    const aim=direction(p,join),launch=direction([0,0],advance(aim,tangent,.85));
+    d+=' C'+advance(p,launch,gap*.46)+' '+advance(join,v,-gap*.43)+' '+join+' L'+advance(join,v,k);
+    const branch=node('path',{d}),len=branch.getTotalLength();
+    return {line:branch,length:len,width:Math.max(width,route.width),elapsed:route.elapsed,
+      d:ribbon(branch,len,route.width,Math.min(width,route.width*.78))};
+  });
+  const stem=node('path',{d:'M'+join+' L'+tip});
+  const stemWidth=Math.min(width,Math.max(...group.map(r=>r.width*.78)));
+  pieces.push({line:stem,length:run,width,elapsed:Math.max(...pieces.map(p=>p.elapsed-revealDuration(p.length,detailScale))),d:ribbon(stem,run,stemWidth,stemWidth*.64,width*1.2,.48)});
+  return pieces;
+}
+function drawArrows(group,planned,k,scale,detailScale,port){
+  const first=group[0],{from,to}=first.order,merged=group.length>1;
+  const arrow=node('g',merged?{'data-to':to,'data-branches':group.length}:
+    {'data-from':from,'data-to':to,'data-unit':first.type});
+  if(!merged&&first.passages.length)arrow.dataset.via=first.passages.join(' ');
+  const pieces=merged?joinedInk(group,k,port,detailScale):soloInk(first,k,detailScale,port.line);
+  const ink=node('g',{opacity:.87}),halo=2.8/scale;
+  ink.append(node('path',{d:pieces.map(p=>p.d).join(' '),
+    fill:planned?'#a6352d':'#892d26',stroke:'#f6e9be','stroke-width':halo,
+    'stroke-linejoin':'round','paint-order':'stroke fill'}));
+  arrow.append(ink);
+  const duration=p=>revealDuration(p.length,detailScale);
+  if(!reducedMotion()&&pieces.some(p=>p.elapsed<duration(p))){
+    const id='order-reveal-'+first.key,mask=node('mask',{id,maskContentUnits:'userSpaceOnUse'});
+    ink.setAttribute('mask','url(#'+id+')');arrow.append(mask);
+    const active=[];
+    for(const p of pieces){
+      const path=p.line;
+      path.setAttribute('fill','none');path.setAttribute('stroke','white');
+      path.setAttribute('stroke-width',1.6*p.width+4*k+halo);
+      path.setAttribute('stroke-linecap','round');mask.append(path);
+      if(p.elapsed>=duration(p))continue;
+      path.setAttribute('pathLength',1);path.setAttribute('stroke-dasharray','1 1');
+      const animation=path.animate([{strokeDashoffset:1},{strokeDashoffset:0}],{duration:duration(p),fill:'both'});
+      animation.currentTime=p.elapsed;active.push(animation.finished);
+    }
+    Promise.all(active).then(()=>{ink.removeAttribute('mask');mask.remove();},()=>{});
   }
-  return group;
+  return arrow;
 }
 
 // Battles pool casualties by type. Apportion the surviving counters to their committed
@@ -353,6 +428,33 @@ function frontTransform(to,group,spread,tokenScale){
   const side=Math.sign(dy*(attacker[0]-start[0])-dx*(attacker[1]-start[1]));
   const along=spread/57,across=side*tokenScale/length;
   return 'matrix('+[dx*along,dy*along,dy*across,-dx*across,x,y].join(' ')+')';
+}
+function homeStacks(game,id,exercise,spread,offsets){
+  const [x,y]=position(id),nation=game.owners[id],friendly=nation===exercise.attacker;
+  const units=game.phase==='plan'?available(game,id):game.units[id];
+  const stacks=[];
+  const homeRows=exercise.world?[]:types.filter(t=>units[t]).map(t=>[null,t,units[t]]);
+  if(exercise.world)for(const [power,type,n] of game.pieces[id]){
+    if(!n)continue;
+    const row=homeRows.find(([p,t])=>samePower(p,power)&&t===type);
+    if(row)row[2]+=n;else homeRows.push([power,type,n]);
+  }
+  for(const [power,type,n] of homeRows){
+    const country=power?ownerNames[power]||power:nation;
+    const own=exercise.world?samePower(power,game.power):friendly;
+    const primary=exercise.world?own&&mobileTypes.includes(type):types.includes(type);
+    const free=primary&&own&&game.phase==='plan'?units[type]:n;
+    if(!free)continue;
+    let at;
+    if(primary&&formations[id].home[type])at=seat(id,'home',type,spread,offsets);
+    else{
+      const point=formations[id].slots.get(power+'/'+type)||formations[id].home[type]||position(id);
+      const spacing=formations[id].spacing??spread;
+      at=[x+(point[0]-x)*spacing,y+(point[1]-y)*spacing];
+    }
+    stacks.push({type,country,primary,free,at});
+  }
+  return stacks;
 }
 function drawStack(game,parent,id,type,number,nation,role,at,tokenScale,caption,selected,origin){
   const [x,y]=at;
@@ -848,7 +950,7 @@ export async function atlas(onPick,onView,initial,exercise) {
   reveal.setAttribute('d',pencilLine);
   const fronts=map.querySelector('#fronts'), frontMarks=new Map();
   let selectionKey='',routeKey='',layoutSeed,offsets;
-  let routeStarts=new Map();
+  let routeStarts=new Map(),frontSeats=new Map();
   function showSelection(key,at,tokenScale){
     if(key!==selectionKey){
       selection.replaceChildren();
@@ -1006,25 +1108,66 @@ export async function atlas(onPick,onView,initial,exercise) {
     const compact=tacticalZoom<.66;
     // Taper counter size at the widest tactical scales; keep the interior seats stable
     // while panning, and tighten their spacing at close zoom.
-    const nextRouteKey=[scale,layoutSeed,game.phase,JSON.stringify(game.orders)].join('|');
+    const nextRouteKey=[scale,layoutSeed,game.phase,JSON.stringify(game.orders),JSON.stringify(game.battles)].join('|');
     if(routeKey!==nextRouteKey){
-      const nextStarts=new Map(),now=performance.now();
-      routes.replaceChildren();
+      const nextStarts=new Map(),now=performance.now(),period=exercise.projection?.width;
+      const byTarget=new Map();
       for(const order of game.orders){
-        for(const type of Object.keys(order.units).filter(t=>order.units[t]>0)){
-          const stops=[order.from,...orderPassages(order),order.to];
-          const key=[...stops,type].join('__');
-          const start=routeStarts.get(key)??(routeKey?now:-Infinity);
-          nextStarts.set(key,start);
-          const planned=game.phase==='plan';
-          const period=exercise.projection?.width,shifts=Array(stops.length).fill(0);
-          for(let i=stops.length-2;i>=0;i--)
-            shifts[i]=shifts[i+1]+sheetOffset(position(stops[i])[0],position(stops[i+1])[0],period);
-          const arrow=attackArrow(order,type,spread,tokenScale,offsets,planned,planned?now-start:Infinity,detailScale,{shifts,gates,period,scale});
+        const passages=orderPassages(order),stops=[order.from,...passages,order.to],entry=entrySpace(order);
+        const shifts=Array(stops.length).fill(0);
+        for(let i=stops.length-2;i>=0;i--)
+          shifts[i]=shifts[i+1]+sheetOffset(position(stops[i])[0],position(stops[i+1])[0],period);
+        if(!byTarget.has(order.to))byTarget.set(order.to,[]);
+        for(const [type,count] of Object.entries(order.units)){
+          if(!count)continue;
+          const key=[...stops,type].join('__'),since=routeStarts.get(key)??(routeKey?now:-Infinity);
+          nextStarts.set(key,since);
+          const start=seat(order.from,'home',type,spread,offsets),surveyed=seat(order.to,entry,type,spread,offsets);
+          start[0]+=shifts[0];
+          const lineAt=end=>routeLine(order,type,start,end,surveyed,tokenScale,shifts,gates,period);
+          const line=lineAt(surveyed),length=line.getTotalLength(),tip=routePoint(line,length);
+          const upstream=routePoint(line,length-Math.min(36*tokenScale,length*.42));
+          const r={order,type,entry,passages,shifts,key,surveyed,lineAt,line,length,tip,upstream,
+            direction:direction(upstream,tip),loop:order.from===order.to,elapsed:game.phase==='plan'?now-since:Infinity};
+          r.width=routeWidth(r,line,length,tokenScale,detailScale);
+          byTarget.get(order.to).push(r);
+        }
+      }
+
+      routes.replaceChildren();frontSeats=new Map();
+      const blocked=[];
+      if(byTarget.size)for(const id of Object.keys(game.units))
+        for(const stack of homeStacks(game,id,exercise,spread,offsets))blocked.push(stack.at);
+      for(const to of [...byTarget.keys()].sort()){
+        const legs=byTarget.get(to).sort((a,b)=>a.key.localeCompare(b.key));
+        const entrances=new Map();
+        for(const r of legs){
+          if(!entrances.has(r.entry))entrances.set(r.entry,new Map());
+          const key=r.entry+'/'+r.type;
+          entrances.get(r.entry).set(key,{key,point:r.surveyed});
+        }
+        const area=bands[to]?.region||zones.get(String(parseInt(places[to].name)))?.area;
+        const near=blocked.map(([x,y])=>[x+sheetOffset(x,position(to)[0],period),y]);
+        const {seats,fronts:cellGroups}=frontGrid([...entrances].map(([from,map])=>{
+          const slots=[...map.values()];
+          return {from,slots,center:meanPoint(slots.map(s=>s.point))};
+        }),near,tokenScale,p=>!area||area.isPointInFill(new DOMPoint(...p)),extent);
+        frontSeats.set(to,seats);blocked.push(...seats.values());
+        for(const r of legs){
+          const key=r.entry+'/'+r.type;
+          r.end=seats.get(key);r.cells=cellGroups.get(key);
+        }
+        const cells=[...seats.values()],obstacles=[...near,...cells],used=[];
+        const clusters=nearbyGroups(legs,approachGap,55*tokenScale).sort((a,b)=>a.length-b.length);
+        for(const group of clusters){
+          const faces=[...new Set(group.flatMap(r=>r.cells))];
+          const port=arrowPort(group,faces,obstacles,used,tokenScale);
+          used.push(port.tip);
+          const arrow=drawArrows(group,game.phase==='plan',tokenScale,scale,detailScale,port);
           routes.append(arrow);
-          for(const shift of new Set(shifts)){
+          for(const shift of new Set(group.flatMap(r=>r.shifts))){
             if(!shift)continue;
-            arrow.id='seam-route-'+key;
+            arrow.id='seam-route-'+group[0].key;
             routes.append(node('use',{href:'#'+arrow.id,x:-shift}));
           }
         }
@@ -1045,7 +1188,6 @@ export async function atlas(onPick,onView,initial,exercise) {
     for(const id of Object.keys(game.units)){
       const [x,y]=position(id),nation=game.owners[id],friendly=nation===exercise.attacker;
       if(exercise.world&&(Math.abs(x+sheetOffset(x,view.x,extent.width)-view.x)>vw/2+180||Math.abs(y-view.y)>vh/2+180))continue;
-      const units=game.phase==='plan'?available(game,id):game.units[id];
       const groups=arrivals(game,id).filter(group=>Object.values(group.units).some(n=>n>0));
       for(const group of groups){
         if(exercise.world&&exercise.friends[game.power].includes(places[id].startOwner))continue;
@@ -1066,26 +1208,8 @@ export async function atlas(onPick,onView,initial,exercise) {
         continue;
       }
       const detailed=tacticalZoom>=1.55;
-      const homeRows=exercise.world?[]:types.filter(t=>units[t]).map(t=>[null,t,units[t]]);
-      if(exercise.world)for(const [power,type,n] of game.pieces[id]){
-        if(!n)continue;
-        const row=homeRows.find(([p,t])=>samePower(p,power)&&t===type);
-        if(row)row[2]+=n;else homeRows.push([power,type,n]);
-      }
-      for(const [power,type,n] of homeRows){
-        const country=power?ownerNames[power]||power:nation;
-        const own=exercise.world?samePower(power,game.power):friendly;
-        const primary=exercise.world?own&&mobileTypes.includes(type):types.includes(type);
-        const free=primary&&own&&game.phase==='plan'?units[type]:n;
-        if(!free)continue;
+      for(const {type,country,primary,free,at} of homeStacks(game,id,exercise,spread,offsets)){
         const selected=id===focus&&type===selectedType&&(!selectedNation||country===selectedNation);
-        let at;
-        if(primary&&formations[id].home[type])at=seat(id,'home',type,spread,offsets);
-        else{
-          const point=formations[id].slots.get(power+'/'+type)||formations[id].home[type]||position(id);
-          const spacing=formations[id].spacing??spread;
-          at=[x+(point[0]-x)*spacing,y+(point[1]-y)*spacing];
-        }
         const caption=detailed&&selected&&!types.includes(type);
         const stack=drawStack(game,forces,id,type,free,country,'home',at,tokenScale,caption,selected,null);
         reserveStack(at,tokenScale,caption&&stack.lastChild.textContent);
@@ -1098,7 +1222,7 @@ export async function atlas(onPick,onView,initial,exercise) {
       for(const group of groups){
         for(const type of Object.keys(group.units)){
           if(!group.units[type])continue;
-          const at=seat(id,group.from,type,spread,offsets);
+          const at=frontSeats.get(id).get(group.from+'/'+type);
           drawStack(game,forces,id,type,group.units[type],exercise.attacker,'incoming',at,tokenScale,false,false,group.from);
           reserveStack(at,tokenScale);
         }
