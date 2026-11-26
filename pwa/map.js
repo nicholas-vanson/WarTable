@@ -158,9 +158,15 @@ function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detail
   }
   const centerline=node('path',{d:path});
   const length=centerline.getTotalLength();
-  const baseWidth=Math.min(length*.09,6.8*tokenScale*bound(.83+length/(570*detailScale),.94,1.32));
-  const width=baseWidth*(1+.5*Math.log2(units[type]));
-  const headLength=Math.min(length*.17,4.4*tokenScale+width*.56);
+  const baseWidth=Math.min(length*.16,14*tokenScale*bound(.83+length/(570*detailScale),.94,1.32));
+  let width=baseWidth*(1+.45*Math.log2(units[type]));
+  if(from===to){
+    // Leave paper between the two legs when a blitz doubles back through a narrow passage.
+    const outbound=centerline.getPointAtLength(length*.25),inbound=centerline.getPointAtLength(length*.75);
+    const clearance=Math.max(4*tokenScale,Math.hypot(inbound.x-outbound.x,inbound.y-outbound.y));
+    width*=clearance/(clearance+.65*width);
+  }
+  const headLength=Math.min(length*.23,5*tokenScale+width*.8);
   const neck=length-headLength;
   const left=[],right=[];
   const steps=Math.max(5,Math.ceil(neck/4));
@@ -170,18 +176,18 @@ function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detail
     const after=centerline.getPointAtLength(Math.min(length,at+.65));
     const dx=after.x-before.x,dy=after.y-before.y,span=Math.hypot(dx,dy)||1;
     const edge=offset=>(p.x-dy/span*offset).toFixed(2)+' '+(p.y+dx/span*offset).toFixed(2);
-    const radius=width*(.50-.394*at/(length||1));
+    const radius=width*(.5-.28*i/steps);
     left.push(edge(radius));right.push(edge(-radius));
     if(i===steps){
       const tip=centerline.getPointAtLength(length);
-      left.push(edge(width*.32),tip.x.toFixed(2)+' '+tip.y.toFixed(2),edge(-width*.32));
+      left.push(edge(width*.50),tip.x.toFixed(2)+' '+tip.y.toFixed(2),edge(-width*.50));
     }
   }
   const group=node('g',{'data-from':from,'data-to':to,'data-unit':type});
   if(via)group.dataset.via=via;
   else if(!places[from].water&&!places[to].water)group.setAttribute('clip-path','url(#route-'+from+'-'+to+')');
   const ink=node('path',{d:'M'+left.concat(right.reverse()).join(' L')+' Z',
-    fill:planned?'#b23d30':'#912e25'});
+    fill:planned?'#b52c23':'#912e25',opacity:planned ? .66 : .76});
   group.append(ink);
   const duration=410+90*length/(125*detailScale);
   if(elapsed<duration&&!reducedMotion()){
