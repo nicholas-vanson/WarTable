@@ -127,7 +127,7 @@ function passageArc(points,tokenScale){
 }
 
 // Trace both edges of one ink silhouette along the measured route.
-function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detailScale,{originShift,viaShift,gates,period}){
+function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detailScale,{originShift,viaShift,gates,period,scale}){
   const {from,via,to,units}=order,entry=via||from;
   const start=seat(from,'home',type,spread,offsets),end=seat(to,entry,type,spread,offsets);
   start[0]+=originShift;
@@ -189,9 +189,14 @@ function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detail
   if(via)group.dataset.via=via;
   else if(!places[from].water&&!places[to].water)group.setAttribute('clip-path','url(#route-'+from+'-'+to+')');
   const routeId=[from,via,to,type].filter(Boolean).join('-');
-  const ink=node('g',{fill:planned?'#bd3b31':'#a1362d',opacity:planned ? .66 : .76});
-  const body=node('path',{id:'order-body-'+routeId,d:'M'+left.concat(tipPoint,right.reverse()).join(' L')+' Z'});
-  ink.append(body,node('use',{href:'#'+body.id,fill:'url(#order-hatch)'}));
+  const ink=node('g',{opacity:.87});
+  // Paint the stroke beneath the fill to leave a 1.4 CSS-pixel paper rim at every zoom.
+  const haloWidth=2.8/scale;
+  ink.append(node('path',{
+    d:'M'+left.concat(tipPoint,right.reverse()).join(' L')+' Z',
+    fill:planned?'#a6352d':'#892d26',stroke:'#f6e9be','stroke-width':haloWidth,
+    'stroke-linejoin':'round','paint-order':'stroke fill'
+  }));
   group.append(ink);
   const duration=410+90*length/(125*detailScale);
   if(elapsed<duration&&!reducedMotion()){
@@ -199,7 +204,7 @@ function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detail
     const mask=node('mask',{id,maskContentUnits:'userSpaceOnUse'});
     centerline.setAttribute('pathLength',1);
     centerline.setAttribute('fill','none');centerline.setAttribute('stroke','white');
-    centerline.setAttribute('stroke-width',2*shoulder+4*tokenScale);centerline.setAttribute('stroke-dasharray','1 1');
+    centerline.setAttribute('stroke-width',2*shoulder+4*tokenScale+haloWidth);centerline.setAttribute('stroke-dasharray','1 1');
     mask.append(centerline);group.append(mask);ink.setAttribute('mask','url(#'+id+')');
     const reveal=centerline.animate([{strokeDashoffset:1},{strokeDashoffset:0}],{duration});
     reveal.currentTime=elapsed;
@@ -894,8 +899,6 @@ export async function atlas(onPick,onView,initial,exercise) {
     const tokenScale=Math.min(1/scale,1.2*detailScale);
     const spread=bound(1/(1.2*scale*detailScale),.66,1);
     if(scale!==lastScale){
-      // Keep fine pen marks legible as the camera zooms, anchored to the map while panning.
-      document.getElementById('order-hatch').setAttribute('patternTransform','rotate(-41) scale('+(.82/scale)+')');
       for(const {mark,name,x,y,openingCapital} of cityMarks){
         const orient=surveying&&openingCapital&&view.z>=.28&&scale<.35;
         const symbolScale=orient?1/scale:bound(1/scale,.52,3.5);
@@ -1003,7 +1006,7 @@ export async function atlas(onPick,onView,initial,exercise) {
           const period=exercise.projection?.width,entry=order.via||order.from;
           const entryShift=sheetOffset(position(entry)[0],position(order.to)[0],period);
           const originShift=entryShift+sheetOffset(position(order.from)[0],position(entry)[0],period);
-          const arrow=attackArrow(order,type,spread,tokenScale,offsets,planned,planned?now-start:Infinity,detailScale,{originShift,viaShift:entryShift,gates,period});
+          const arrow=attackArrow(order,type,spread,tokenScale,offsets,planned,planned?now-start:Infinity,detailScale,{originShift,viaShift:entryShift,gates,period,scale});
           routes.append(arrow);
           for(const shift of new Set([entryShift,originShift])){
             if(!shift)continue;
