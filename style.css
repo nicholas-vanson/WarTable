@@ -184,6 +184,7 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
 .planned-target>strong,.battle-choice-title>strong{font:600 16px Georgia,serif}
 .origin-order,.battle-choice,.review-round>summary{width:100%;background:transparent;color:var(--sheet-ink);text-align:left}
 .origin-order{display:flex;align-items:center;gap:6px;min-height:40px;border:0;padding:2px 3px 2px 8px;font-size:12px}
+.origin-order .flight-budget{display:block;margin-top:3px;font-size:12px}
 .origin-order>span:nth-child(2){display:flex;flex-wrap:wrap;gap:3px}
 .battle-choice{display:block;border-inline:0;border-top:0;padding-inline:2px}
 .battle-choice-title,.review-round>summary{display:flex;align-items:center;justify-content:space-between;gap:5px}

@@ -133,7 +133,20 @@ function attackArrow(order,type,spread,tokenScale,offsets,planned,elapsed,detail
   const start=seat(from,'home',type,spread,offsets),end=seat(to,entry,type,spread,offsets);
   start[0]+=shifts[0];
   let path;
-  if(passages.length){
+  if(passages.length&&aircraft.includes(type)){
+    // The stops choose the side of the flight arc. Its single control point keeps
+    // the shaft sweeping toward the destination even when the itinerary doubles back.
+    const dx=end[0]-start[0],dy=end[1]-start[1],span=Math.hypot(dx,dy)||1;
+    const nx=-dy/span,ny=dx/span;
+    let offset=0;
+    for(const [i,id] of passages.entries()){
+      const [x,y]=position(id);
+      offset+=(x+shifts[i+1]-start[0])*nx+(y-start[1])*ny;
+    }
+    const bend=(Math.sign(offset)||1)*bound(2*Math.abs(offset)/passages.length,.18*span,.62*span);
+    const control=[(start[0]+end[0])/2+nx*bend,(start[1]+end[1])/2+ny*bend];
+    path=passageArc([start,control,end],tokenScale);
+  }else if(passages.length){
     const stops=[from,...passages,to],controls=[];
     for(let i=1;i<stops.length-1;i++){
       const via=stops[i],[x,y]=position(via),passage=[x+shifts[i],y],loop=from===to;
