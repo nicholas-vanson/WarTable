@@ -1,3 +1,4 @@
+import {asPassages,orderPassages,entrySpace,samePassages} from './movement.js';
 import {invadeNeutrals,settleMongolianPact,neutralKey} from './neutral-rules.js';
 // The local exercise models adjacent overland attacks with infantry and tanks.
 export const places = {
@@ -84,7 +85,7 @@ export function newGame(exercise='west') {
 function check(ok, message) { if (!ok) throw new Error(message); }
 export function available(s, from, exceptTarget=null,via=null) {
   const free=s.pieces?strengthOf(s.pieces[from].filter(([p,t])=>samePower(p,s.power)&&mobileTypes.includes(t))):{...s.units[from]};
-  for (const order of s.orders.filter(o=>o.from===from && !(o.to===exceptTarget&&(o.via||null)===via))) {
+  for (const order of s.orders.filter(o=>o.from===from && !(o.to===exceptTarget&&samePassages(o,via)))) {
     for(const [k,n] of Object.entries(order.units))if(n)free[k]-=n;
   }
   return free;
@@ -92,20 +93,62 @@ export function available(s, from, exceptTarget=null,via=null) {
 function validUnits(units,limit) {
   return Object.entries(units).every(([k,n])=>mobileTypes.includes(k)&&Number.isSafeInteger(n)&&n>=0&&n<=(limit[k]||0));
 }
+// Use the same movement search for map choices, editing orders and final validation.
+export function movementFor(s,from,type,quantity=1){
+  const movement=exerciseOf(s).movement;
+  if(!movement)return null;
+  const free=available(s,from);
+  const landingCache=new Map();
+  function canLand(to,spent){
+    const key=to+'/'+spent;
+    if(landingCache.has(key))return landingCache.get(key);
+    const sites=movement.landingSites(from,type,to,spent);
+    const flight={from,to,units:{[type]:quantity}};
+    const possible=sites.some(id=>!places[id].water)||
+      !!flightRecoveries(s,[...s.orders,flight],flight,spent);
+    landingCache.set(key,possible);
+    return possible;
+  }
+  const search=movement.searchFor(from,type,{canLand});
+  if(type!=='mech_infantry')return search;
+  const solo=movement.searchFor(from,type,{canBlitz:false});
+  // A tank can escort one mechanized infantry only along the identical blitz route.
+  const escorted=(to,via)=>{
+    const prior=s.orders.find(o=>o.from===from&&o.to===to&&samePassages(o,[via]));
+    return (free.tank||0)+(prior?.units.tank||0)-(prior?.units.mech_infantry||0)>=quantity;
+  };
+  return {...search,
+    legal(to,path=[]){
+      return search.legal(to,path)&&(!path.length||!movement.spaces[path[0]].blitz||escorted(to,path[0]));
+    },
+    passagesTo(to,prefix=[]){return search.passagesTo(to,prefix).filter(v=>!movement.spaces[v].blitz||escorted(to,v));},
+    destinations(multiOnly=false){
+      return search.destinations(multiOnly).filter(to=>!multiOnly&&solo.legal(to)||this.passagesTo(to).length);
+    }};
+}
 export function plan(s,from,to,units,via=null) {
   check(s.phase==='plan','Movement has already been committed.');
-  const selected=Object.keys(units).filter(t=>units[t]>0);
-  if(via){
-    check(s.exercise==='global'&&places[from]?.tankRoutes?.[to]?.includes(via)&&selected.every(t=>t==='tank'),
-      'Choose a legal two-space tank route.');
+  const path=asPassages(via),selected=Object.keys(units).filter(t=>units[t]>0);
+  const existing=s.orders.find(o=>o.from===from&&o.to===to&&samePassages(o,path));
+  check(places[from]&&places[to]&&(selected.length||existing),'Choose a movement order.');
+  check(validUnits(units,available(s,from,to,path)),'This order exceeds the forces available at its origin.');
+  if(s.exercise==='global'){
+    const movement=exerciseOf(s).movement;
+    for(const type of selected){
+      const paired=(units.tank||0)>=(units.mech_infantry||0);
+      if(type==='mech_infantry'&&path.length&&movement.spaces[path[0]]?.blitz)
+        check(paired,'Each mechanized infantry blitzing through enemy land needs a tank on the same route.');
+      check(movement.searchFor(from,type,{canBlitz:type!=='mech_infantry'||paired}).legal(to,path),
+        'This route is outside the legal combat movement of the '+stats[type].name.toLowerCase()+'.');
+    }
   }else{
-    const valid=s.pieces?selected.every(t=>targetsFor(s,from,t).includes(to)):
-      s.owners[from]===exerciseOf(s).attacker&&s.owners[to]===exerciseOf(s).defender&&selected.every(t=>types.includes(t));
-    check(valid&&places[from]?.targets.includes(to),'These units cannot attack that space from this origin.');
+    check(!path.length&&s.owners[from]===exerciseOf(s).attacker&&s.owners[to]===exerciseOf(s).defender&&
+      places[from].targets.includes(to)&&selected.every(t=>types.includes(t)),'These units cannot attack that space from this origin.');
   }
-  check(validUnits(units,available(s,from,to,via)),'This order exceeds the forces available at its origin.');
-  s.orders=s.orders.filter(o=>o.from!==from||o.to!==to||(o.via||null)!==via);
-  if(count(units)) s.orders.push({from,to,...(via?{via}:{}),units:{...units}});
+  const orders=s.orders.filter(o=>o!==existing);
+  if(selected.length)orders.push({from,to,...(path.length===1?{via:path[0]}:path.length?{passages:[...path]}:{}),units:{...units}});
+  if(s.exercise==='global'&&selected.length)check(flightRecoveries(s,orders),'Aircraft need a landing place within their remaining movement.');
+  s.orders=orders;
 }
 function alterStack(s,id,power,type,delta){
   if(!s.pieces||!delta)return;
@@ -139,26 +182,31 @@ export function commit(s) {
       check(deckSpace(s,id,exerciseOf(s).friendlyPowers[s.power])+planesLeaving>=2*Math.max(0,decksLeaving-damaged),
         'Moving this carrier would strand aircraft. Assign its aircraft first or keep the carrier here.');
     }
+    const recoveries=flightRecoveries(s,s.orders);
+    check(recoveries,'Aircraft need a landing place within their remaining movement.');
+    for(const [order,bases] of recoveries)order.landings=bases;
     invadeNeutrals(s);
   }
   const ex=exerciseOf(s);
-  for(const via of new Set(s.orders.map(o=>o.via).filter(Boolean))){
+  for(const via of new Set(s.orders.filter(o=>o.units.tank&&o.via).map(o=>o.via))){
     if(ex.friends[s.power].includes(s.owners[via]))continue;
     s.owners[via]=ex.attacker;
     s.record.push({title:places[via].name,detail:'Captured by '+ex.attacker+' during a tank blitz.'});
   }
   for(const o of s.orders) {
-    const path=[o.from,o.via,o.to].filter(Boolean).map(id=>places[id].name).join(' → ');
+    const path=[o.from,...orderPassages(o),o.to].map(id=>places[id].name).join(' → ');
     s.record.push({title:path,detail:describe(o.units)});
-    if(o.via&&ex.friends[s.power].includes(places[o.to].startOwner)){
-      alterStack(s,o.from,s.power,'tank',-o.units.tank);
-      alterStack(s,o.to,s.power,'tank',o.units.tank);
-      s.units[o.from].tank-=o.units.tank;s.units[o.to].tank+=o.units.tank;
+    if(o.via&&o.units.tank&&ex.friends[s.power].includes(places[o.to].startOwner)){
+      for(const [type,n] of Object.entries(o.units)){
+        if(!n)continue;
+        alterStack(s,o.from,s.power,type,-n);alterStack(s,o.to,s.power,type,n);
+        s.units[o.from][type]-=n;s.units[o.to][type]=(s.units[o.to][type]||0)+n;
+      }
       continue;
     }
     let b=s.battles.find(b=>b.to===o.to);
     if(!b){b={to:o.to,origins:[],attack:empty(),round:0,step:'ready',resolved:false};s.battles.push(b);}
-    if(!b.origins.includes(o.via||o.from))b.origins.push(o.via||o.from);
+    if(!b.origins.includes(entrySpace(o)))b.origins.push(entrySpace(o));
     for(const [k,n] of Object.entries(o.units)){
       if(!n)continue;
       b.attack[k]=(b.attack[k]||0)+n;
@@ -227,17 +275,72 @@ function deckSpace(s,id,side){
   }
   return spaces;
 }
-function returnAircraft(s,b,origin,type,n){
-  const ex=exerciseOf(s);
-  const destination=!places[origin].water?origin:null;
-  const placesToTry=destination?[destination]:[origin,b.to,...ex.neighbors[b.to]];
+// Assign scarce carrier berths jointly so a flexible flight cannot strand another.
+function flightRecoveries(s,orders,preview=null,previewSpent=0){
+  const ex=exerciseOf(s),plans=new Map(),decks=new Map(),flights=[];
+  function capacity(id){
+    if(decks.has(id))return decks.get(id);
+    let room=deckSpace(s,id,ex.friendlyPowers[s.power]);
+    let movingCarriers=0,arrivingCarriers=0;
+    for(const o of orders){
+      if(o.from===id){
+        for(const t of aircraft)room+=o.units[t]||0;
+        movingCarriers+=o.units.carrier||0;
+      }
+      if(o.to===id&&o.units.carrier){
+        const damaged=s.shipDamage?.[o.from]?.[s.power]?.carrier||0;
+        arrivingCarriers+=Math.max(0,o.units.carrier-damaged);
+      }
+    }
+    // Only rely on arriving carriers when recovering in that same sea battle.
+    const damaged=s.shipDamage?.[id]?.[s.power]?.carrier||0;
+    room-=2*Math.max(0,movingCarriers-damaged);
+    const berths=Array.from({length:Math.max(0,room)},()=>({}));
+    if(ex.movement.spaces[id].enemyFleet){
+      berths.length=0;
+      for(let i=0;i<2*arrivingCarriers;i++)berths.push({battle:id});
+    }
+    decks.set(id,berths);return berths;
+  }
+  for(const order of orders){
+    for(const type of aircraft){
+      const n=order.units[type];if(!n)continue;
+      const spent=order===preview?previewSpent:orderPassages(order).length+1;
+      const sites=ex.movement.landingSites(order.from,type,order.to,spent);
+      const land=sites.includes(order.from)&&!places[order.from].water?order.from:sites.find(id=>!places[id].water);
+      const bases=plans.get(order)||{};plans.set(order,bases);
+      if(land){bases[type]=Array(n).fill(land);continue;}
+      const options=sites.flatMap(id=>capacity(id).filter(slot=>!slot.battle||slot.battle===order.to).map(slot=>({id,slot})));
+      if(options.length<n)return null;
+      bases[type]=[];
+      for(let i=0;i<n;i++)flights.push({options,bases:bases[type],i});
+    }
+  }
+  function reserve(flight,visited){
+    for(const {id,slot} of flight.options){
+      if(visited.has(slot))continue;
+      visited.add(slot);
+      if(slot.flight&&!reserve(slot.flight,visited))continue;
+      slot.flight=flight;flight.bases[flight.i]=id;return true;
+    }
+    return false;
+  }
+  return flights.every(f=>reserve(f,new Set()))?plans:null;
+}
+function returnAircraft(s,b,order,type,n){
+  const ex=exerciseOf(s),origin=order.from;
+  const reachable=ex.movement.landingSites(origin,type,b.to,orderPassages(order).length+1);
   let left=n;
-  for(const id of new Set(placesToTry)){
+  const assigned=order.landings?.[type]||[];
+  // Each reserved berth belongs to a particular surviving aircraft.
+  const choices=[...assigned.slice(0,n).map(id=>[id,1]),...[origin,...reachable].map(id=>[id,n])];
+  for(const [id,limit] of choices){
+    if(!reachable.includes(id))continue;
     if(!left)break;
-    let seats=left;
+    let seats=Math.min(left,limit);
     if(places[id].water){
       if(type==='bomber'||defendingRows(s,id).length)continue;
-      seats=Math.min(left,Math.max(0,deckSpace(s,id,ex.friendlyPowers[s.power])));
+      seats=Math.min(seats,Math.max(0,deckSpace(s,id,ex.friendlyPowers[s.power])));
     }else if(id!==origin&&(!ex.friends[s.power].includes(places[id].startOwner)||!ex.friends[s.power].includes(s.owners[id])))continue;
     alterStack(s,id,s.power,type,seats);
     if(seats)s.units[id][type]=(s.units[id][type]||0)+seats;
@@ -251,11 +354,11 @@ function placeSurvivors(s,b,destination){
     const n=b.attack[type];
     if(!n)continue;
     if(aircraft.includes(type)){
-      // An adjacent sortie can retrace its flight. Distribute survivors among their launch sites.
+      // Attribute survivors to sorties before using their remaining movement to land.
       let remaining=n;
       for(const order of origins){
         const returning=Math.min(remaining,order.units[type]||0);
-        if(returning)returnAircraft(s,b,order.from,type,returning);
+        if(returning)returnAircraft(s,b,order,type,returning);
         remaining-=returning;
       }
     }else{
@@ -469,7 +572,7 @@ export function casualties(s,losses){
 export function retreatSites(s,b){
   const surface=Object.entries(b.attack).some(([t,n])=>n&&!aircraft.includes(t));
   return b.origins.filter(id=>!surface||places[id].water===places[b.to].water&&
-    s.orders.some(o=>(o.via||o.from)===id&&o.to===b.to&&Object.entries(o.units).some(([t,n])=>n&&!aircraft.includes(t))));
+    s.orders.some(o=>(entrySpace(o))===id&&o.to===b.to&&Object.entries(o.units).some(([t,n])=>n&&!aircraft.includes(t))));
 }
 export function retreat(s,origin){
   const b=currentBattle(s);

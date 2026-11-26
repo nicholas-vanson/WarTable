@@ -1,7 +1,8 @@
+import {asPassages,orderPassages,samePassages} from './movement.js';
 import {ordersPanelKey,reducedMotion} from './preferences.js';
 import {neutralKey,strictKey,allianceOf,hostileNeutral,activationOptions,activateFriendly} from './neutral-rules.js';
 import {globalKey,loadGlobalBoard,saveGlobalPosition,purchaseGroups,spendingEconomies,purchasePlan,eligibleShipRepairs,changePurchase,changeFacilityOrder,confirmPurchase,openingAddress,seasonForRound,nextPower,nextPlaytestTurn,globalUnits,boardUnitType,isFacility,globalPowers,ownerNames,nationalArmies} from './global-game.js';
-import {places,stats,types,exercises,adjectives,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,mobileTypes,targetsFor,defendingRows,openingFireKind,rollOpening,casualtyLimits,retreatSites,rollAttack,rollDefense,casualties,retreat,theaterVictoryCities} from './rules.js';
+import {places,stats,types,exercises,adjectives,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,mobileTypes,targetsFor,movementFor,defendingRows,openingFireKind,rollOpening,casualtyLimits,retreatSites,rollAttack,rollDefense,casualties,retreat,theaterVictoryCities} from './rules.js';
 import {drawFormationNames} from './formation-names.js';
 import {atlas,styleFor} from './map.js';
 const $=id=>document.getElementById(id);
@@ -58,7 +59,7 @@ function save(){
   }
   catch{$('storage').textContent='Saving unavailable';}
 }
-function selectOrigin(id){delete ui.via;delete ui.routeTo;delete ui.twoSpace;ui.from=id;ui.to=null;ui.stack=null;delete ui.inspect;delete ui.inspectedType;delete ui.inspectedNation;delete ui.inspectedOrigin;message='';}
+function selectOrigin(id){delete ui.via;delete ui.passageSteps;delete ui.routeTo;delete ui.twoSpace;ui.from=id;ui.to=null;ui.stack=null;delete ui.inspect;delete ui.inspectedType;delete ui.inspectedNation;delete ui.inspectedOrigin;message='';}
 function selectStack(id,type){
   if(ui.from===id && ui.stack===type){
     ui=freshUI();
@@ -69,27 +70,50 @@ function selectStack(id,type){
   selectOrigin(id);
   ui.stack=type;ui.quantity=remaining;
 }
+let currentSearch=null;
+function stackSearch(){
+  if(!isGlobal||!ui.stack)return null;
+  const key=[ui.from,ui.stack,ui.quantity].join('/');
+  if(currentSearch?.key!==key||currentSearch.orders!==s.orders){
+    const search=movementFor(s,ui.from,ui.stack,ui.quantity);
+    currentSearch={key,orders:s.orders,search,all:search.destinations(),multi:search.destinations(true)};
+  }
+  return currentSearch;
+}
 function moveChoices(){
   if(!ui.stack)return [];
-  const direct=targetsFor(s,ui.from,ui.stack);
-  if(!isGlobal||ui.stack!=='tank')return direct;
-  const routes=places[ui.from].tankRoutes||{};
-  if(ui.routeTo)return routes[ui.routeTo]||[];
-  if(ui.twoSpace)return Object.keys(routes);
-  return [...new Set([...direct,...Object.keys(routes).filter(id=>id!==ui.from)])];
+  const result=stackSearch();
+  if(!result)return targetsFor(s,ui.from,ui.stack);
+  if(ui.routeTo){
+    const prefix=ui.passageSteps||[];
+    const choices=result.search.passagesTo(ui.routeTo,prefix);
+    if(prefix.length&&result.search.legal(ui.routeTo,prefix))choices.unshift(ui.routeTo);
+    return choices;
+  }
+  return ui.twoSpace?result.multi:result.all.filter(id=>id!==ui.from);
 }
-function addStackOrder(to,via=null){
-  const prior=s.orders.find(o=>o.from===ui.from&&o.to===to&&(o.via||null)===via);
+function addStackOrder(to,path=[]){
+  const prior=s.orders.find(o=>o.from===ui.from&&o.to===to&&samePassages(o,path));
   const units={...prior?.units};
   units[ui.stack]=(units[ui.stack]||0)+ui.quantity;
-  plan(s,ui.from,to,units,via);
+  if(ui.stack==='mech_infantry'&&path.length&&exercise.movement.spaces[path[0]].blitz)
+    units.tank=Math.max(units.tank||0,units.mech_infantry);
+  plan(s,ui.from,to,units,path);
   ui=freshUI();
 }
 function selectTarget(id){
   if(!moveChoices().includes(id))throw new Error('Choose a highlighted space for this move.');
-  if(ui.routeTo){addStackOrder(ui.routeTo,id);return;}
-  if(ui.stack==='tank'&&(ui.twoSpace||!targetsFor(s,ui.from,'tank').includes(id))){
-    ui.routeTo=id;return;
+  const search=stackSearch()?.search;
+  if(ui.routeTo){
+    const prefix=ui.passageSteps||[];
+    if(id===ui.routeTo){addStackOrder(id,prefix);return;}
+    const path=[...prefix,id];
+    if(search.legal(ui.routeTo,path)&&!search.passagesTo(ui.routeTo,path).length)addStackOrder(ui.routeTo,path);
+    else ui.passageSteps=path;
+    return;
+  }
+  if(search&&(ui.twoSpace||!search.legal(id))){
+    ui.routeTo=id;ui.passageSteps=[];return;
   }
   addStackOrder(id);
 }
@@ -205,7 +229,7 @@ function plannedAttacks(){
   const destinations=new Map();
   s.orders.forEach((order,index)=>{
     if(!destinations.has(order.to))destinations.set(order.to,[]);
-    const origin=places[order.from].name+(order.via?' via '+places[order.via].name:'');
+    const origin=[order.from,...orderPassages(order)].map(id=>places[id].name).join(' → ');
     const label='Edit move from '+origin+' into '+places[order.to].name+', '+describe(order.units);
     destinations.get(order.to).push('<button class="origin-order" data-act="edit" data-id="'+index+'" aria-label="'+label+'">'+
       '<span>'+origin+'</span><span>'+unitLine(order.units,attacker)+'</span>'+
@@ -234,27 +258,33 @@ function inspectionPanel(backLabel){
 function planPanel(){
   let html=title('Combat move','Tap a unit stack on the map to plan an attack.');
   if(ui.to){
-    const existing=s.orders.some(o=>o.from===ui.from&&o.to===ui.to&&(o.via||null)===(ui.via||null));
+    const existing=s.orders.some(o=>o.from===ui.from&&o.to===ui.to&&samePassages(o,ui.via));
     const limit=available(s,ui.from,ui.to,ui.via);
-    html=title(ui.via?'Tank route':'Plan attack',[ui.from,ui.via,ui.to].filter(Boolean).map(id=>places[id].name).join(' → '))+block('Assign units')+stepper('assign',ui.units,limit,ui.via?['tank']:mobileTypes.filter(t=>limit[t]>0&&targetsFor(s,ui.from,t).includes(ui.to)))+
+    const path=asPassages(ui.via);
+    const editing={...s,orders:s.orders.filter(o=>o.from!==ui.from||o.to!==ui.to||!samePassages(o,path))};
+    const editable=mobileTypes.filter(t=>limit[t]>0&&(isGlobal?movementFor(editing,ui.from,t).legal(ui.to,path):targetsFor(s,ui.from,t).includes(ui.to)));
+    html=title(path.length?'Edit route':'Plan attack',[ui.from,...path,ui.to].map(id=>places[id].name).join(' → '))+block('Assign units')+stepper('assign',ui.units,limit,editable)+
     '<div class="actions">'+btn('Back','back')+btn(existing?'Update order':'Add order','add','primary',count(ui.units)?'':'disabled')+'</div>';
     if(existing)html+=btn('Cancel this order','remove','danger','style="margin-top:8px"');
   }else if(ui.routeTo){
-    html=title('Choose tank route',places[ui.from].name+' → '+places[ui.routeTo].name)+
-      moveChoices().map(via=>{
-        const friendly=exercise.friends[s.power].includes(places[via].startOwner);
-        const battle=s.pieces[ui.routeTo].some(([,t,n])=>stats[t]&&n)&&!exercise.friends[s.power].includes(places[ui.routeTo].startOwner);
-        const note=(friendly?'Friendly passage':'Capture by blitz')+(battle?' · Retreat via '+places[via].name:'');
-        return opt(via,'Via '+places[via].name,note,'↗','target');
-      }).join('')+btn('Back to destinations','route-back');
+    const path=ui.passageSteps||[];
+    html=title('Choose passage to '+places[ui.routeTo].name,[ui.from,...path].map(id=>places[id].name).join(' → '))+
+      moveChoices().map(id=>{
+        if(id===ui.routeTo)return opt(id,'Finish at '+places[id].name,'Complete this route','↗','target');
+        const paired=ui.stack==='mech_infantry'&&exercise.movement.spaces[id].blitz;
+        const note=paired?'Blitz with one tank per mechanized infantry':'Passage '+(path.length+1);
+        return opt(id,'Via '+places[id].name,note,'↗','target');
+      }).join('')+btn(path.length?'Back one passage':'Back to destinations','route-back');
   }else if(ui.stack){
-    html=title(unitCounter(ui.stack,undefined,attacker)+' '+esc(s.formationNames[ui.from+'/'+attacker]?.[ui.stack]||s.formationNames[ui.from]?.[ui.stack]||stats[ui.stack].name),stats[ui.stack].name+' · '+places[ui.from].name)+block('Units to move')+
+    const range=stackSearch()?.search.range;
+    const reach=range?' · '+range+(range===1?' space':' spaces'):'';
+    html=title(unitCounter(ui.stack,undefined,attacker)+' '+esc(s.formationNames[ui.from+'/'+attacker]?.[ui.stack]||s.formationNames[ui.from]?.[ui.stack]||stats[ui.stack].name),stats[ui.stack].name+' · '+places[ui.from].name+reach)+block('Units to move')+
       stepper('quantity',{[ui.stack]:ui.quantity},available(s,ui.from),[ui.stack],1)+
-      (ui.stack==='tank'&&Object.keys(places[ui.from].tankRoutes||{}).length?btn(ui.twoSpace?'Show all moves':'Choose a two-space route','two-space'):'')+
+      (stackSearch()?.multi.length?btn(ui.twoSpace?'Show all moves':'Choose a multi-space route','two-space'):'')+
       block(moveChoices().length?'Tap destination to plan move':'No eligible enemy spaces')+
       moveChoices().map(id=>{
-        const routed=ui.twoSpace||!targetsFor(s,ui.from,ui.stack).includes(id);
-        return opt(id,places[id].name,(routed?'Two spaces · ':'')+targetUnits(id),'↗','target');
+        const routed=ui.twoSpace||isGlobal&&!stackSearch().search.legal(id);
+        return opt(id,places[id].name,(routed?'Choose passage · ':'')+targetUnits(id),'↗','target');
       }).join('')+
       '<div class="actions">'+btn('Deselect stack','clear')+'</div>';
   }
@@ -584,7 +614,7 @@ function render(){
     }
   }
   updateBattleForces();
-  const nextView=[briefing,inPurchase(),ui.buyGroup,ui.wallet,ui.inspect,s.phase,s.active,currentBattle(s)?.step,ui.from,ui.to,ui.stack,ui.routeTo,ui.twoSpace].join('|');
+  const nextView=[briefing,inPurchase(),ui.buyGroup,ui.wallet,ui.inspect,s.phase,s.active,currentBattle(s)?.step,ui.from,ui.to,ui.stack,ui.routeTo,ui.twoSpace,...(ui.passageSteps||[])].join('|');
   if(panelView!==nextView)document.querySelector('.panel-scroll').scrollTop=0;
   panelView=nextView;
   $('notice').textContent=message;
@@ -595,6 +625,7 @@ function render(){
   else if(inPurchase())bindHold($('confirmOrder'),()=>run(()=>{
     const receipt=confirmPurchase(globalBoard.match);
     globalBoard.match.combatStart=structuredClone(globalBoard.match.board);
+    exercise.refreshBases(globalBoard.match.board);
     for(const [id,place] of Object.entries(exercisePlaces)){
       const damage=globalBoard.match.board[place.name]?.shipDamage;
       if(damage)(s.shipDamage??={})[id]=structuredClone(damage);
@@ -649,13 +680,13 @@ document.addEventListener('click',e=>{
         message=places[ui.inspect].name+' is now controlled by '+attacker+'.';ui.activation=false;break;
       case 'quantity': ui.quantity=Math.max(1,Math.min(available(s,ui.from)[ui.stack],ui.quantity+Number(n)));break;
       case 'target': selectTarget(id);break;
-      case 'route-back': delete ui.routeTo;break;
+      case 'route-back': if(ui.passageSteps?.length)ui.passageSteps.pop();else delete ui.routeTo;break;
       case 'two-space': ui.twoSpace=!ui.twoSpace;break;
       case 'assign': ui.units[k]=(ui.units[k]||0)+Number(n);break;
       case 'casualty': ui.losses[k]=(ui.losses[k]||0)+Number(n);break;
       case 'back': ui=freshUI();break;
       case 'clear': ui=inPurchase()?{...freshUI(),wallet:ui.wallet,buyGroup:ui.buyGroup}:freshUI();break;
-      case 'edit': {const order=s.orders[Number(id)];selectOrigin(order.from);ui.to=order.to;ui.via=order.via||null;ui.units={...order.units};break;}
+      case 'edit': {const order=s.orders[Number(id)];selectOrigin(order.from);ui.to=order.to;ui.via=orderPassages(order);ui.units={...order.units};break;}
       case 'add': plan(s,ui.from,ui.to,ui.units,ui.via);ui=freshUI();break;
       case 'remove': plan(s,ui.from,ui.to,{},ui.via);ui=freshUI();break;
       case 'battle': chooseBattle(s,id);break;
@@ -711,7 +742,7 @@ $('journal').onclick=()=>{
   }).join('');
   showDialog(isGlobal?'Game review':'Exercise review',current+previous);
 };
-$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. '+(isGlobal?'The global map wraps east and west across the Americas. ':'')+'Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The national color fades inward from the hatched border. Neutral hatching slopes up to the right across the whole territory. Single grey lines mark strict neutrals, paired lines mark pro-Allied neutrals, and dashed lines mark pro-Axis neutrals. Grey stippling marks impassable terrain. Units cannot enter or cross these spaces. A committed strict-neutral invasion changes the other eligible strict neutrals immediately. Friendly neutrals can be activated after combat. Tap a territory to mark it in violet and read its status. Tap it again to clear the selection. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><details class="unit-key"><summary>Unit symbols</summary><ul>'+Object.entries(globalUnits).map(([type,[name]])=>'<li>'+unitCounter(boardUnitType(type),undefined,attacker)+' '+name+'</li>').join('')+'</ul></details><h3>Plan an attack</h3><p>Select a stack on the map, adjust the quantity, then tap a highlighted enemy territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this board</h3><p>'+ (isGlobal?'Global 1940 uses the opening forces of all nine powers. Tap any territory or counter to inspect it. Land units can attack adjacent hostile territories. Tanks can also enter a battle through friendly land or blitz through an empty enemy territory. Choose a two-space route to see the intermediate territory before adding the order. Aircraft can join adjacent land or naval battles. Ships can attack adjacent enemy fleets. AAA fires at incoming aircraft during opening fire.':'This local exercise covers adjacent land attacks with infantry and tanks. The forces are arranged for testing.')+'</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+(isGlobal?'<p>Inland China terrain data courtesy of Mapzen, the U.S. Geological Survey and NOAA. Rivers and lakes from Natural Earth.</p>'+btn('Local players','players','secondary')+((inBriefing()||inPurchase())?'':btn('Restart combat','reset','danger')):btn('Restart exercise','reset','danger')));
+$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. '+(isGlobal?'The global map wraps east and west across the Americas. ':'')+'Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The national color fades inward from the hatched border. Neutral hatching slopes up to the right across the whole territory. Single grey lines mark strict neutrals, paired lines mark pro-Allied neutrals, and dashed lines mark pro-Axis neutrals. Grey stippling marks impassable terrain. Units cannot enter or cross these spaces. A committed strict-neutral invasion changes the other eligible strict neutrals immediately. Friendly neutrals can be activated after combat. Tap a territory to mark it in violet and read its status. Tap it again to clear the selection. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><details class="unit-key"><summary>Unit symbols</summary><ul>'+Object.entries(globalUnits).map(([type,[name]])=>'<li>'+unitCounter(boardUnitType(type),undefined,attacker)+' '+name+'</li>').join('')+'</ul></details><h3>Plan an attack</h3><p>Select a stack on the map, adjust the quantity, then tap a highlighted enemy territory to place the order. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this board</h3><p>'+ (isGlobal?'Global 1940 uses the opening forces of all nine powers. Tap any territory or counter to inspect it. Amber marks eligible destinations. Select a distant destination, then follow the dashed teal spaces to choose each passage. Tanks and mechanized infantry move two spaces. Each mechanized infantry needs a tank on the same route to blitz. Ships move two sea zones, fighters and tactical bombers four spaces, and strategic bombers six. An operational friendly naval or air base adds one movement point at departure. Aircraft need movement left to land on friendly territory or an eligible carrier. AAA fires at incoming aircraft during opening fire.':'This local exercise covers adjacent land attacks with infantry and tanks. The forces are arranged for testing.')+'</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+(isGlobal?'<p>Inland China terrain data courtesy of Mapzen, the U.S. Geological Survey and NOAA. Rivers and lakes from Natural Earth.</p>'+btn('Local players','players','secondary')+((inBriefing()||inPurchase())?'':btn('Restart combat','reset','danger')):btn('Restart exercise','reset','danger')));
 // Store the two panel dimensions separately so rotating the phone restores the last fit.
 function setupOrdersPanel(){
   const main=document.querySelector('main'),sheet=$('ordersPanel'),grip=$('resizePanel');
