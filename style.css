@@ -275,7 +275,7 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
 }
 
 
-.power-seat{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}.power-seat select{min-height:36px;background:var(--sheet);color:inherit}
+.power-seat{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}.power-seat input[type=number]{width:5rem;min-height:36px;padding:.25rem .45rem;border:1px solid var(--nation-ink);background:var(--sheet);color:inherit;font:inherit;text-align:right}.power-seat select{min-height:36px;background:var(--sheet);color:inherit}
 
 #regions .selected-territory:not(.wrapped-territory),#seaZones .selected-territory,.joined-selection{
   fill:rgba(123,78,152,.36);

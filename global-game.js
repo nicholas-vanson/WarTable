@@ -1,3 +1,5 @@
+import {globalCities,checkVictoryHandoff} from './victory.js';
+import {hasTech} from './research.js';
 import {homeCapitals,occupyTerritory,settleCapitalPayments} from './occupation.js';
 import {politicalPowers,atWarWith} from './politics.js';
 import {combatMovement} from './movement.js';
@@ -56,7 +58,9 @@ export function nextPlaytestTurn(match){
   const next={...match};
   delete next.turnCapitalPayments;
   if(match.combat.game.frenchAward?.status==='placed')next.frenchLiberationAwarded=true;
-  return {...next,power,round:match.round+Number(power===turnOrder[0]),phase:'briefing',
+  const round=match.round+Number(power===turnOrder[0]);
+  checkVictoryHandoff(next,power,round);
+  return {...next,power,round,phase:next.victory?'victory':'briefing',
     turnReviews:[...(match.turnReviews||[]),review],combat:null,combatStart:null,combatStartPactBroken:!!match.mongolianPactBroken};
 }
 export function openingAddress(match,seat){
@@ -79,6 +83,7 @@ const otherPacificLand=new Set(['French Indo China','New Hebrides','Celebes','Ja
 export const capitals=homeCapitals;
 
 function preparePurchaseSites(match,setup){
+  match.technology??={};
   match.diplomacy??=structuredClone(setup.diplomacy);
   for(const [name,region] of Object.entries(setup.regions)){
     const area=match.board[name];
@@ -94,9 +99,9 @@ function preparePurchaseSites(match,setup){
 }
 export const spendingEconomies=match=>match.power==='British'?['British','UK_Pacific']:[match.power];
 const hasFacility=(area,type)=>area.units.some(([,unit,n])=>unit===type&&n>0);
-export function productionSlots(area,repairs={}){
+export function productionSlots(area,repairs={},improved=false){
   const unit=hasFacility(area,'factory_major')?'factory_major':hasFacility(area,'factory_minor')?'factory_minor':null;
-  return unit?Math.max(0,(unit==='factory_major'?10:3)-(area.facilityDamage?.[unit]||0)+(repairs[unit]||0)):0;
+  return unit?Math.max(0,(unit==='factory_major'?(improved?12:10):(improved?4:3))-(area.facilityDamage?.[unit]||0)+(repairs[unit]||0)):0;
 }
 export function facilitySite(area,unit,wallet){
   if(unit==='harbour')return area.coastal&&!hasFacility(area,unit);
@@ -105,8 +110,12 @@ export function facilitySite(area,unit,wallet){
     hasFacility(area,'factory_major')||hasFacility(area,'factory_minor'))return false;
   return unit==='factory_minor'||area.original===wallet&&area.ipc>=3;
 }
-export function purchaseTotal(draft){
-  return Object.entries(draft).reduce((sum,[unit,n])=>sum+n*globalUnits[unit][1],0);
+const shipyardPrices={battleship:17,carrier:13,cruiser:9,destroyer:7,transport:6,submarine:5};
+export function unitPrice(match,unit){
+  return hasTech(match,match?.power,'shipyards')&&shipyardPrices[unit]||globalUnits[unit][1];
+}
+export function purchaseTotal(draft,match){
+  return Object.entries(draft).reduce((sum,[unit,n])=>sum+n*unitPrice(match,unit),0);
 }
 export const burmaRoadOpen=board=>['India','Burma','Yunnan','Szechwan'].every(name=>['British','UK_Pacific','Chinese','Americans','ANZAC','French','Russians'].includes(board[name]?.owner));
 export function purchasePlan(match,wallet=match.power){
@@ -115,7 +124,7 @@ export function purchasePlan(match,wallet=match.power){
   const allowed=purchaseCapitalAvailable(match,wallet);
   const roadOpen=burmaRoadOpen(match.board);
   const repairs=[],upgrades=[],sites={factory_minor:0,factory_major:0,airfield:0,harbour:0};
-  let capacity=0,coastalCapacity=0,cost=purchaseTotal(orders),combatCount=0,seaCount=0;
+  let capacity=0,coastalCapacity=0,cost=purchaseTotal(orders,match),combatCount=0,seaCount=0;
   for(const [name,area] of Object.entries(match.board)){
     if(area.owner!==wallet)continue;
     const minor=hasFacility(area,'factory_minor'),major=hasFacility(area,'factory_major');
@@ -123,12 +132,13 @@ export function purchasePlan(match,wallet=match.power){
       const damage=area.facilityDamage?.[unit]||0;
       if(damage&&hasFacility(area,unit)){
         const quantity=match.repairDraft?.[name]?.[unit]||0;
-        repairs.push({name,unit,damage,quantity});cost+=quantity;
+        const perIPC=hasTech(match,wallet,'factories')&&unit.startsWith('factory_')?2:1;
+        repairs.push({name,unit,damage,quantity,perIPC});cost+=Math.ceil(quantity/perIPC);
       }
     }
     if(minor||major){
       const unit=major?'factory_major':'factory_minor';
-      const slots=productionSlots(area,match.repairDraft?.[name]);
+      const slots=productionSlots(area,match.repairDraft?.[name],hasTech(match,wallet,'factories'));
       capacity+=slots;if(area.coastal)coastalCapacity+=slots;
       if(minor&&area.original===wallet&&area.ipc>=3&&!match.pendingUpgrades?.[name]){
         const selected=!!match.upgradeDraft?.[name],ready=(area.facilityDamage?.[unit]||0)===(match.repairDraft?.[name]?.[unit]||0);
@@ -143,7 +153,8 @@ export function purchasePlan(match,wallet=match.power){
   }
   const remaining=match.treasury[wallet]-cost;
   const limits={};
-  for(const [unit,[,price]] of Object.entries(globalUnits)){
+  for(const unit of Object.keys(globalUnits)){
+    const price=unitPrice(match,unit);
     let room=wallet==='Chinese'?(unit==='infantry'||unit==='artillery'&&roadOpen?Infinity:0):capacity-combatCount;
     if(wallet!=='Chinese'&&Object.hasOwn(sites,unit)){
       room=sites[unit]-(orders[unit]||0);
@@ -346,7 +357,7 @@ export function prepareGlobalBoard(setup,atlas,match){
       (r.water?enemies.has(power):owner!==attacker||samePower(power,match.power))));
   }
   refreshBases(match.board);
-  const movement=combatMovement(spaces,neighbors,canalOpen,seaStop);
+  const movement=combatMovement(spaces,neighbors,canalOpen,seaStop,()=>hasTech(match,match.power,'range'));
   for(const id of Object.keys(forces)){
     const place=places[id];
     for(const [power,type,n] of pieces[id]){
@@ -360,15 +371,7 @@ export function prepareGlobalBoard(setup,atlas,match){
     place.movementEdges=neighbors[id].filter(to=>spaces[to].allowed&&
       (spaces[to].attackLand||spaces[to].water||spaces[id].blitz&&spaces[to].friendly));
   }
-  const cities=[
-    ['London','United Kingdom',-.12,51.51,'United Kingdom'],['Paris','France',2.35,48.86,'France'],
-    ['Berlin','Germany',13.41,52.52,'Germany'],['Rome','Southern Italy',12.5,41.9,'Italy'],['Moscow','Russia',37.62,55.75,'Soviet Union'],
-    ['Warsaw','Poland',21.01,52.23],['Leningrad','Novgorod',30.32,59.94],['Stalingrad','Volgograd',44.51,48.71],
-    ['Cairo','Egypt',31.24,30.04],['Ottawa','Ontario',-75.7,45.42],['Washington','Eastern United States',-77.04,38.9,'United States'],
-    ['San Francisco','Western United States',-122.42,37.77],['Honolulu','Hawaiian Islands',-157.86,21.3],
-    ['Tokyo','Japan',139.69,35.68,'Japan'],['Shanghai','Kiangsu',121.47,31.23],['Hong Kong','Kwangtung',114.17,22.32],
-    ['Manila','Philippines',120.98,14.6],['Calcutta','India',88.36,22.57,'UK Pacific'],['Sydney','New South Wales',151.21,-33.87,'ANZAC']
-  ].map(([name,region,lon,lat,capitalOf])=>({name,territory:ids[region],lon,lat,point:sectors[region].city,capitalOf}));
+  const cities=globalCities.map(([name,region,lon,lat,capitalOf])=>({name,territory:ids[region],lon,lat,point:sectors[region].city,capitalOf}));
   const home={Germans:'Germany',Russians:'Russia',Japanese:'Japan',Americans:'Eastern United States',Chinese:'Szechwan',
     British:'United Kingdom',Italians:'Southern Italy',ANZAC:'New South Wales',French:'France'}[match.power];
   const [x,y]=sectors[home].center;
@@ -378,7 +381,7 @@ export function prepareGlobalBoard(setup,atlas,match){
     return match.power==='British'&&pacific?'UK_Pacific':match.power;
   }
   const occupy=(game,id)=>occupyTerritory(game,id,places,ids,captureWallet,match.frenchLiberationAwarded);
-  const exercise={occupy,name:'Global 1940',attacker,power:match.power,camera,forces,shapes,cities,world:true,friendlyPowers,friends,enemies:[...enemies],projection,neighbors,neutralEntry,unmovedLand,movement,defensiveBases,holdScrambles,hostileTo,refreshBases,canalOpen,seaStop,openingDamage,openingFacilityDamage};
+  const exercise={technology:match.technology,occupy,name:'Global 1940',attacker,power:match.power,camera,forces,shapes,cities,world:true,friendlyPowers,friends,enemies:[...enemies],projection,neighbors,neutralEntry,unmovedLand,movement,defensiveBases,holdScrambles,hostileTo,refreshBases,canalOpen,seaStop,openingDamage,openingFacilityDamage};
   exercises.global=exercise;
   let openingView;
   if(match.phase==='briefing'&&match.power!=='Germans'){

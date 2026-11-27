@@ -31,7 +31,7 @@ export function usIncomeChoice(match){
 }
 export function declarationTargets(match){
   const p=match.power,game=match.combat?.game;
-  if(!usIncomeChoice(match)&&(match.phase!=='combatMove'||game?.phase!=='plan'||game.orders.length))return [];
+  if(!usIncomeChoice(match)&&(match.phase!=='combatMove'||game?.phase!=='plan'||game.orders.length||game.rocketOrders?.length))return [];
   let targets;
   switch(p){
     case 'British':case 'ANZAC':case 'French':targets=['Japanese'];break;

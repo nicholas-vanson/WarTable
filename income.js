@@ -1,5 +1,7 @@
 // Global 1940 Second Edition, Europe pp. 23–24 and the Global national objectives.
 // Printed convoy symbols from the board's Global 1940 Second Edition scenario.
+import {die} from './rules.js';
+import {hasTech} from './research.js';
 import {declareWar,usIncomeChoice,rememberPoliticalCaptures} from './politics.js';
 import {capitals,purchaseCapitalAvailable,spendingEconomies,purchaseGroups,burmaRoadOpen,nextPlaytestTurn} from './global-game.js';
 const convoyZones=[1,6,10,19,20,26,35,36,37,39,41,42,43,44,54,62,63,70,71,72,80,82,85,89,93,97,98,99,101,105,106,109,119,125];
@@ -163,7 +165,7 @@ function accountStatement(match,wallet){
   return {wallet,capital:capitals[wallet],open,before:match.treasury[wallet],territories,objectives,land,bonus,
     convoys:open&&wallet!=='Chinese'?convoyRaids(match,territories):[],loss:0};
 }
-export function incomeAmount(account){return account.land+account.bonus-account.loss;}
+export function incomeAmount(account){return account.land+account.bonus+(account.bonds||0)-account.loss;}
 function makeStatement(match){
   const accounts=spendingEconomies(match).map(wallet=>accountStatement(match,wallet));
   return {power:match.power,round:match.round,accounts,rolled:accounts.every(a=>!a.convoys.length)};
@@ -220,7 +222,22 @@ export function rollConvoys(match,random=Math.random){
   next.incomeReport.rolled=true;
   return next;
 }
+export function bondsPending(match){
+  return match.phase==='income'&&hasTech(match,match.power,'bonds')&&match.incomeReport?.accounts.some(a=>a.open)&&!match.incomeReport.bondRoll;
+}
+export function splitBonds(match,pacific){
+  const report=match.incomeReport;
+  if(match.phase!=='income'||match.power!=='British'||!report?.bondRoll||!Number.isInteger(pacific)||pacific<0||pacific>report.bondRoll||
+    !report.accounts.every(a=>a.open))throw Error('Choose an eligible split of the rolled War Bonds.');
+  for(const a of report.accounts)a.bonds=a.wallet==='UK_Pacific'?pacific:report.bondRoll-pacific;
+}
+export function rollBonds(match,random=die){
+  if(!bondsPending(match)||usIncomeChoice(match))throw Error('War Bonds cannot be rolled now.');
+  const next=structuredClone(match),r=next.incomeReport;
+  r.bondRoll=random();r.accounts.find(a=>a.open).bonds=r.bondRoll;return next;
+}
 export function collectIncome(match){
+  if(bondsPending(match))throw Error('Roll War Bonds before collecting income.');
   if(usIncomeChoice(match))throw Error('Choose whether to enter the war before collecting income.');
   const report=match.incomeReport;
   if(match.phase!=='income'||match.combat?.game.phase!=='income'||!report?.rolled||report.power!==match.power||report.round!==match.round)

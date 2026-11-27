@@ -1,5 +1,5 @@
 // Global 1940 Second Edition, Europe pp. 10–11 and Global pp. 39–40.
-import {places,exerciseOf} from './rules.js';
+import {places,exerciseOf,combatTech} from './rules.js';
 
 export const neutralOwners={
   Neutral_True:'Strict neutral',Mongolians:'Mongolia',Neutral_Allies:'Pro-Allied neutral',Neutral_Axis:'Pro-Axis neutral',
@@ -29,7 +29,7 @@ export function takeFriendlyControl(s,id,power,nation){
 }
 export function invadeNeutrals(s){
   const {neighbors,friends}=exerciseOf(s);
-  const entered=s.orders.flatMap(o=>o.via&&o.units.tank?[o.via,o.to]:[o.to]);
+  const entered=s.orders.flatMap(o=>o.via&&(o.units.tank||o.units.mech_infantry&&combatTech(s,'mechanized'))?[o.via,o.to]:[o.to]);
   const attacked=[...new Set(entered.filter(id=>!friends[s.power].includes(s.owners[id])))];
   const strict=attacked.filter(id=>strictKey(neutralKey(s.owners[id])));
   const mongo=id=>places[id].original==='Mongolians';
