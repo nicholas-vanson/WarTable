@@ -407,3 +407,9 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
 .war-warning ul{padding-left:18px;margin:8px 0 0;font-size:.88rem}
 #issueWar{background:#833b2e;color:#fff7e8}#issueWar::before{background:#5e291f}
 .war-receipt{border-left:3px solid #914737;padding:.3rem .6rem;color:#643529}
+
+.lan-pane{padding:1.05rem clamp(1rem,3vw,2rem);background:#f1ead7;color:#333a32;border:1px solid #a59b7d}
+.lan-pane h2{font:700 1.45rem Georgia,serif;margin:0 0 .35rem}.lan-pane p,.lan-pane li{line-height:1.45;margin:.35rem 0}.lan-pane ol{padding-left:1.35rem}.lan-pane a{color:inherit}
+.lan-actions,.lan-seats{display:flex;flex-wrap:wrap;gap:.55rem;margin-top:.75rem}.lan-pane .campaign-primary{background:#334b3b;color:#fff8e6;border-color:#334b3b}.lan-pane .campaign-secondary{background:transparent;color:#334b3b;border-color:#85917d}.lan-pane button:disabled{opacity:.55}.lan-actions:empty,#lanNotice:empty{display:none}
+.lan-seats strong{padding:.45rem .7rem;border:1px solid #aaa186}.lan-pane input:not([type=checkbox]){display:block;width:min(100%,29rem);padding:.55rem;margin:.35rem 0;font:inherit}.lan-code-input,#lanCode{font-family:monospace;letter-spacing:.09em;text-transform:uppercase}
+#lanNotice{margin-top:.8rem}.lan-status{font-size:.85rem;margin:.2rem 0 .55rem;padding:.4rem .55rem;background:var(--sheet);border-left:3px solid var(--nation-ink)}

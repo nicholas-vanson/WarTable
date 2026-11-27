@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="application-version" content="0.1.94">
+<meta name="application-version" content="0.1.95">
 <meta name="theme-color" content="#202c27"><meta name="description" content="WarTable · Global 1940 Second Edition and local playtest exercises.">
 <title>WarTable · Global 1940</title>
 <link rel="icon" href="./assets/icon-192.png"><link rel="manifest" href="./manifest.webmanifest">
@@ -42,11 +42,34 @@
           </div>
         </div>
       </section>
-      <section class="future-mode" id="multiPane" role="tabpanel" aria-labelledby="multiTab" tabindex="0" hidden>
-        <h2>Remote play</h2><p>Planned for a future release. Host a match, invite friends, and take turns on your own devices.</p>
+      <section class="lan-pane" id="multiPane" role="tabpanel" aria-labelledby="multiTab" hidden>
+        <div id="lanSetup">
+          <h2>Play on local Wi-Fi</h2><p>Connect both phones and a computer to the same home network. The computer keeps the shared board and rolls the dice.</p>
+          <ol><li>On the computer, download and extract the <a href="https://nicholas-vanson.github.io/WarTable/downloads/WarTable-PWA.zip">WarTable host ZIP</a>. Install <a href="https://nodejs.org/">Node.js 22 or newer</a>.</li><li>Open a terminal in the extracted folder and run <code>node lan-server.mjs</code>. Keep it open.</li><li>On both phones, open the Wi-Fi address printed in the terminal. One player hosts and the other joins.</li></ol>
+          <form id="lanAddressForm"><label for="lanAddress">Computer’s Wi-Fi address</label><input id="lanAddress" type="text" inputmode="url" autocapitalize="none" spellcheck="false" placeholder="192.168.1.20:8080" required>
+            <button class="campaign-primary">Open local host</button></form>
+        </div>
+        <div id="lanChoose" hidden><h2>Local multiplayer</h2><p>Global 1940 · Two players on this Wi-Fi</p>
+          <div class="lan-actions"><button id="lanCreateChoice" class="campaign-primary">Host a room</button><button id="lanJoinChoice" class="campaign-secondary">Join a room</button></div><div id="lanResume" class="lan-actions"></div>
+        </div>
+        <div id="lanHost" hidden><h2>Host a room</h2><form id="hostForm">
+          <label class="setting-row">Your side<select id="hostSide"><option>Axis</option><option>Allies</option></select></label>
+          <label class="setting-row">Research &amp; Development<input type="checkbox" id="hostResearch" checked></label>
+          <p>The Axis controls Germany, Japan and Italy. The Allies control the other six powers.</p>
+          <div class="lan-actions"><button class="campaign-primary">Create room</button><button type="button" data-lan-back class="campaign-secondary">Back</button></div></form>
+        </div>
+        <div id="lanJoin" hidden><h2>Join a room</h2><form id="joinForm">
+          <label for="joinCode">Room code</label><input id="joinCode" class="lan-code-input" maxlength="10" required pattern="[a-fA-F0-9]{10}" autocapitalize="characters" autocomplete="off" spellcheck="false">
+          <div class="lan-actions"><button class="campaign-primary">Join room</button><button type="button" data-lan-back class="campaign-secondary">Back</button></div></form>
+        </div>
+        <div id="lanLobby" hidden><h2>Room <span id="lanCode"></span></h2><p id="lanSide"></p>
+          <div class="lan-seats"><strong id="lanHostSeat"></strong><strong id="lanGuestSeat"></strong></div><p id="lanStage"></p>
+          <div id="lanInviteBlock"><label for="lanShare">Invite link</label><input id="lanShare" readonly><button id="lanCopy" class="campaign-secondary">Copy invite</button></div>
+          <div class="lan-actions"><button id="lanStart" class="campaign-primary" hidden>Start match</button><a id="lanEnter" class="campaign-primary" hidden>Open board</a><button data-lan-back class="campaign-secondary">Room list</button></div>
+        </div><p id="lanNotice" role="status"></p>
       </section>
       <section class="future-mode" id="accountPane" role="tabpanel" aria-labelledby="accountTab" tabindex="0" hidden>
-        <h2>Player accounts</h2><p>Player profiles for online matches are planned. For now, local games save on this device.</p>
+        <h2>Player accounts</h2><p>Wi-Fi games use a private seat saved in this browser. Open Multiplayer on the host’s Wi-Fi address to resume your room.</p>
       </section>
       <nav class="menu-tools" aria-label="Practice and reference">
         <a class="menu-tool" href="#exercises"><span class="tool-icon"><svg aria-hidden="true"><use href="#m-fronts"/></svg></span><span><strong>Combat exercises</strong><small>Practice on a single front</small></span><span class="tool-arrow" aria-hidden="true">↗</span></a>
