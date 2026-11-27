@@ -273,7 +273,7 @@ export function prepareGlobalBoard(setup,atlas,match){
     const region=setup.regions[name],owner=match.board[name].owner;
     return enemies.has(owner)||neutralOwners[owner]&&canEnterNeutral(match.power,enemies,region)&&hostileNeutral(match.power,owner);
   }
-  const spaces={},openingDamage={};
+  const spaces={},openingDamage={},embarked={};
   function canalOpen(from,to,type){
     const gate=[parseInt(places[from].name),parseInt(places[to].name)].sort((a,b)=>a-b).join('-');
     return type==='submarine'&&gate==='91-92'||!gates[gate]?.some(coast=>!allies.has(match.board[coast].owner));
@@ -323,6 +323,7 @@ export function prepareGlobalBoard(setup,atlas,match){
     neighbors[id]=r.links.map(n=>ids[n]);
     neutralEntry[id]=!r.blocked&&canEnterNeutral(match.power,enemies,r);
     pieces[id]=position.units.map(([power,unit,n])=>[power,boardUnitType(unit),n]);
+    if(position.embarked?.length)embarked[id]=structuredClone(position.embarked);
     if(position.shipDamage)shipDamage[id]=structuredClone(position.shipDamage);
     const enemyAtSea=position.units.filter(([p,t,n])=>n&&enemies.has(p)&&ships.includes(t));
     spaces[id]={water:r.water,friendly:allies.has(position.owner),enemy:enemies.has(position.owner),
@@ -351,7 +352,7 @@ export function prepareGlobalBoard(setup,atlas,match){
     place.targets=[...new Set(Object.values(place.unitTargets).flat())];
     // Arrival formations are keyed by the final edge, even if no stack started there.
     place.movementEdges=neighbors[id].filter(to=>spaces[to].allowed&&
-      (spaces[to].attackLand||spaces[to].enemyFleet||spaces[id].blitz&&spaces[to].friendly));
+      (spaces[to].attackLand||spaces[to].enemyFleet||spaces[id].water&&spaces[to].water||spaces[id].blitz&&spaces[to].friendly));
   }
   const cities=[
     ['London','United Kingdom',-.12,51.51,'United Kingdom'],['Paris','France',2.35,48.86,'France'],
@@ -385,7 +386,7 @@ export function prepareGlobalBoard(setup,atlas,match){
     openingView={x:(left+right)/2,y:(top+bottom)/2,z:projection.detailScale*Math.min(650/(right-left),480/(bottom-top)),
       surveyZoom:true,projection:projection.id};
   }
-  return {exercise,openingView,game:{version:1,exercise:'global',phase:'plan',mongolianPactBroken:!!match.mongolianPactBroken,power:match.power,units,owners,pieces,shipDamage,orders:[],battles:[],active:null,record:[]}};
+  return {exercise,openingView,game:{version:1,exercise:'global',phase:'plan',mongolianPactBroken:!!match.mongolianPactBroken,power:match.power,units,owners,pieces,shipDamage,embarked,orders:[],battles:[],active:null,record:[]}};
 }
 export function saveGlobalPosition(match,game){
   settleCapitalPayments(match,game);
@@ -409,6 +410,8 @@ export function saveGlobalPosition(match,game){
         delete area.facilityDamage.factory_minor;delete area.facilityDamage.factory_major;
       }
     }
+    if(game.embarked?.[id]?.length)area.embarked=structuredClone(game.embarked[id]);
+    else if(game.embarked)delete area.embarked;
     if(game.shipDamage?.[id])area.shipDamage=structuredClone(game.shipDamage[id]);
     area.units=stacks.filter(row=>row[2]>0).map(([p,t,n])=>[p,t==='inf'?'infantry':t==='tank'?'armour':t,n]);
   }

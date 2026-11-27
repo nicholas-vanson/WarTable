@@ -1,9 +1,10 @@
+import {departures} from './assault.js';
 import {nearbyGroups,frontGrid,approachGap,meanPoint,pointGap} from './front-layout.js';
 import {orderPassages,entrySpace} from './movement.js';
 import {reducedMotion,readMapPreferences} from './preferences.js';
 import {neutralKey} from './neutral-rules.js';
 import {ownerNames,globalUnits,isFacility} from './global-game.js';
-import {places,types,stats,available,mobileTypes,aircraft,ships,samePower,theaterVictoryCities} from './rules.js';
+import {exercises,places,types,stats,available,mobileTypes,aircraft,ships,samePower,theaterVictoryCities} from './rules.js';
 const ns='http://www.w3.org/2000/svg';
 function node(tag,attrs,text=''){
   const el=document.createElementNS(ns,tag);
@@ -400,9 +401,35 @@ function combineLegs(legs){
   }
   return [...grouped.values()];
 }
+const mappedOrders=new WeakMap();
+function mapOrders(game){
+  if(mappedOrders.has(game.orders))return mappedOrders.get(game.orders);
+  if(!game.orders.some(o=>o.landing)){mappedOrders.set(game.orders,game.orders);return game.orders;}
+  const lines=new Map(),ex=exercises[game.exercise];
+  function add(from,to,passages,units,seaCargo=false){
+    const key=[from,...passages,to,seaCargo].join('/');
+    const line=lines.get(key)||{from,to,passages,units:{},seaCargo};
+    for(const [t,n] of Object.entries(units))line.units[t]=(line.units[t]||0)+n;
+    lines.set(key,line);
+  }
+  for(const order of game.orders){
+    if(!order.landing){add(order.from,order.to,orderPassages(order),order.units);continue;}
+    const {path,cargo,escorts}=order.landing,zone=path.at(-1),loaded={...order.units};
+    for(const {from,type,n} of cargo){
+      loaded[type]-=n;
+      const first=path.findIndex(id=>ex.neighbors[id].includes(from)&&!ex.movement.spaces[id].blockingFleet);
+      add(from,order.to,path.slice(first),{[type]:n});
+    }
+    if(Object.values(loaded).some(n=>n>0))add(order.from,order.to,path.slice(1),loaded,true);
+    for(const leg of [{from:order.from,type:'transport',n:1,path},...escorts]){
+      if(leg.from!==zone)add(leg.from,zone,leg.path.slice(1,-1),{[leg.type]:leg.n});
+    }
+  }
+  const orders=[...lines.values()];mappedOrders.set(game.orders,orders);return orders;
+}
 function arrivals(game,to){
   if(game.phase==='noncombat'||game.phase==='mobilize'||game.phase==='income')return [];
-  const orders=combineLegs(game.orders.filter(o=>o.to===to).map(o=>({...o,from:entrySpace(o)})));
+  const orders=combineLegs(mapOrders(game).filter(o=>o.to===to).map(o=>({...o,from:entrySpace(o)})));
   if(game.phase==='plan')return orders;
   const battle=game.battles.find(b=>b.to===to&&!b.resolved);
   if(!battle)return [];
@@ -543,8 +570,8 @@ function movedInGarrison(game,exercise,id,type,number){
   const opening=exercise.world?exercise.shapes[id].garrison.reduce((n,[power,t,count])=>
     n+(samePower(power,game.power)&&t===type?count:0),0):
     places[id].owner===exercise.attacker?exercise.forces[id][types.indexOf(type)]:0;
-  const departures=game.orders.reduce((n,o)=>n+(o.from===id?(o.units[type]||0):0),game.activationMoves?.[id]?.[type]||0);
-  return Math.max(0,number-Math.max(0,opening-departures));
+  const sent=game.orders.flatMap(departures).reduce((n,o)=>n+(o.from===id?(o.units[type]||0):0),game.activationMoves?.[id]?.[type]||0);
+  return Math.max(0,number-Math.max(0,opening-sent));
 }
 function drawStack(game,parent,id,type,number,nation,role,at,tokenScale,caption,selected,origin,moved){
   const [x,y]=at;
@@ -711,7 +738,7 @@ function worldSeats(exercise,bands,zones){
       }
       const extras=Object.keys(places[from].unitTargets).filter(t=>!types.includes(t)&&places[from].unitTargets[t].includes(to));
       const transitTypes=places[to].water&&places[from].water?[...aircraft,...ships]:
-        places[to].water||places[from].water?aircraft:[...aircraft,'mech_infantry'];
+        places[from].water&&!places[to].water?[...aircraft,'artillery','mech_infantry']:places[to].water?aircraft:[...aircraft,'mech_infantry'];
       for(const t of transitTypes)if(!extras.includes(t))extras.push(t);
       extras.forEach((t,i)=>{seats[t]=offset(114+Math.floor(i/3)*32,side*((i%3)-1)*46);});
       formations[to][from]=seats;
@@ -1210,7 +1237,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     if(routeKey!==nextRouteKey){
       const nextStarts=new Map(),now=performance.now(),period=exercise.projection?.width;
       const byTarget=new Map();
-      let orders=placing?[]:game.orders;
+      let orders=placing?[]:mapOrders(game);
       if(redeploy||placing||game.frenchAward?.status==='placed'){
         // Give newly arrived types a garrison seat, including in previously empty spaces.
         game.redeploySeats={};
@@ -1232,7 +1259,9 @@ export async function atlas(onPick,onView,initial,exercise) {
           order.units[type]=(order.units[type]||0)+n;moves.set(key,order);
         };
         for(const m of game.moves){
-          add(m.path,m.type,m.quantity);
+          if(m.unloaded){
+            for(const [t,n] of Object.entries(m.unloaded))add(m.path,t,n);
+          }else add(m.path,m.type,m.quantity);
           if(m.extraInf)add(m.path,'inf',1);
           if(m.transport)add(m.path.slice(1,-1),'transport',1);
         }
@@ -1252,7 +1281,7 @@ export async function atlas(onPick,onView,initial,exercise) {
           if(!count)continue;
           const key=[...stops,type].join('__'),since=routeStarts.get(key)??(routeKey?now:-Infinity);
           nextStarts.set(key,since);
-          const start=redeploy?baseSeat(order.from,type):seat(order.from,'home',type,offsets);
+          const start=redeploy?baseSeat(order.from,type):seat(order.from,'home',order.seaCargo?'transport':type,offsets);
           const surveyed=redeploy?baseSeat(order.to,type):seat(order.to,entry,type,offsets);
           start[0]+=shifts[0];
           const lineAt=end=>{
@@ -1345,7 +1374,7 @@ export async function atlas(onPick,onView,initial,exercise) {
       if(exercise.world&&(Math.abs(x+sheetOffset(x,view.x,extent.width)-view.x)>vw/2+180||Math.abs(y-view.y)>vh/2+180))continue;
       const groups=arrivals(game,id).filter(group=>Object.values(group.units).some(n=>n>0));
       for(const group of groups){
-        if(exercise.world&&exercise.friends[game.power].includes(places[id].startOwner))continue;
+        if(exercise.world&&(exercise.friends[game.power].includes(places[id].startOwner)||places[id].water&&!exercise.movement.spaces[id].enemyFleet))continue;
         const key=group.from+'-'+id;
         activeFronts.add(key);
         if(!frontMarks.has(key)){

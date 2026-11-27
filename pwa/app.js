@@ -1,3 +1,4 @@
+import {aboard,cargoSources,landingRoutes,escortOptions,queueLanding,landingSeaBattle,landingWait} from './assault.js';
 import {reverseCapitalPayments} from './occupation.js';
 import {countryInSentence,usIncomeChoice,declarationTargets,declarationDetails} from './politics.js';
 import {incomeAmount,rollConvoys,collectIncome,confirmPoliticalChoice,restoreChineseStatement} from './income.js';
@@ -62,7 +63,7 @@ function save(){
   }
   catch{$('storage').textContent='Saving unavailable';}
 }
-function selectOrigin(id){delete ui.via;delete ui.passageSteps;delete ui.routeTo;delete ui.twoSpace;ui.from=id;ui.to=null;ui.stack=null;delete ui.inspect;delete ui.inspectedType;delete ui.inspectedNation;delete ui.inspectedOrigin;message='';}
+function selectOrigin(id){delete ui.editLanding;delete ui.assault;delete ui.landingIndex;delete ui.via;delete ui.passageSteps;delete ui.routeTo;delete ui.twoSpace;ui.from=id;ui.to=null;ui.stack=null;delete ui.inspect;delete ui.inspectedType;delete ui.inspectedNation;delete ui.inspectedOrigin;message='';}
 function selectStack(id,type){
   if(ui.from===id && ui.stack===type){
     ui=freshUI();
@@ -85,6 +86,7 @@ function stackSearch(){
 }
 function moveChoices(){
   if(!ui.stack)return [];
+  if(ui.assault)return ui.assault.to?[]:[...landingChoices().keys()];
   const result=stackSearch();
   if(!result)return targetsFor(s,ui.from,ui.stack);
   if(ui.routeTo){
@@ -105,6 +107,7 @@ function addStackOrder(to,path=[]){
   ui=freshUI();
 }
 function selectTarget(id){
+  if(ui.assault){pickLandingCoast(id);return;}
   if(!moveChoices().includes(id)){
     if(isGlobal){
       const match=globalBoard.match,owner=match.board[places[id].name]?.owner;
@@ -128,7 +131,7 @@ function selectTarget(id){
   addStackOrder(id);
 }
 function pick(id,type,origin,nation){
-  if(s.frenchAward?.status==='pending')return;
+  if(s.frenchAward?.status==='pending'||ui.assault?.to)return;
   if(!id){run(()=>{ui=freshUI();});return;}
   if(inBriefing()||inPurchase()||s.phase==='income'){
     run(()=>{
@@ -256,7 +259,7 @@ function plannedAttacks(){
   const landings=isGlobal?flightRecoveries(s,s.orders):null;
   s.orders.forEach((order,index)=>{
     if(!destinations.has(order.to))destinations.set(order.to,[]);
-    const origin=[order.from,...orderPassages(order)].map(id=>places[id].name).join(' → ');
+    const origin=order.landing?'Amphibious assault · '+places[order.landing.path.at(-1)].name:[order.from,...orderPassages(order)].map(id=>places[id].name).join(' → ');
     const spent=orderPassages(order).length+1;
     const flights=aircraft.filter(t=>order.units[t]>0).map(type=>{
       const range=exercise.movement.allowance(order.from,type);
@@ -312,8 +315,82 @@ function reviewWarTargets(){
   $('dialogBody').querySelector('[data-act="war-cancel"]').focus();
   bindHold($('issueWar'),()=>advanceEconomy('politics',targets));
 }
+let landingCache;
+function landingPosition(){
+  return ui.editLanding==null?s:{...s,orders:s.orders.filter((_,i)=>i!==ui.editLanding)};
+}
+function landingChoices(){
+  if(!landingCache||landingCache.from!==ui.from||landingCache.orders!==s.orders||landingCache.edit!==ui.editLanding)
+    landingCache={from:ui.from,orders:s.orders,edit:ui.editLanding,routes:landingRoutes(landingPosition(),ui.from)};
+  return landingCache.routes;
+}
+function pickLandingCoast(to){
+  const paths=landingChoices().get(to);
+  if(!paths)throw Error('Choose a highlighted coast.');
+  ui.assault.to=to;setLandingPath(0);
+}
+function freeManifests(){
+  const g=landingPosition();return aboard(g,ui.from).filter(h=>!g.orders.some(o=>o.landing?.load===h.id));
+}
+function setLandingPath(index){
+  const draft=ui.assault;
+  draft.path=landingChoices().get(draft.to)[index];draft.cargo=[];draft.escorts=[];draft.engage=false;
+  const loads=freeManifests();
+  draft.load=available(landingPosition(),ui.from).transport>loads.length?null:loads[0]?.id;
+}
+function landingUnits(){
+  const units={...freeManifests().find(h=>h.id===ui.assault.load)?.units};
+  for(const {type,n} of ui.assault.cargo)units[type]=(units[type]||0)+n;
+  return units;
+}
+function landingPanel(){
+  const d=ui.assault,routes=landingChoices();
+  if(!d.to)return title('Amphibious assault','Transport in '+places[ui.from].name+'. Choose a highlighted coast.')+
+    [...routes].map(([id])=>opt(id,places[id].name,targetUnits(id),'↗','land-coast')).join('')+btn('Back to transport','land-back');
+  const zone=d.path.at(-1),options=routes.get(d.to),units=landingUnits(),used=count(units);
+  const fight=d.engage||landingSeaBattle(landingPosition(),zone);
+  const ignoredSub=s.pieces[zone].some(([p,t,n])=>exercise.enemies.includes(p)&&t==='submarine'&&n);
+  let html=title('Land in '+places[d.to].name,'Transport from '+places[ui.from].name+' · Offload in '+places[zone].name)+
+    '<p class="hint">'+(fight?'Resolve the sea battle before unloading.':'Cruisers and battleships can bombard once, up to one ship per landing unit.')+
+    (ignoredSub&&!fight?' An enemy submarine is here. A friendly warship must escort this transport.':'')+'</p>';
+  if(exercise.movement.spaces[zone].enemyFleet&&!landingSeaBattle(landingPosition(),zone))
+    html+=btn(d.engage?'Ignore enemy submarines and transports':'Engage enemy submarines and transports','land-engage');
+  if(options.length>1)html+='<label>Sea route <select data-landing-route>'+options.map((path,i)=>
+    '<option value="'+i+'" '+(path.join('/')===d.path.join('/')?'selected':'')+'>'+path.map(id=>parseInt(places[id].name)).join(' → ')+'</option>').join('')+'</select></label>';
+  const loads=freeManifests();
+  if(loads.length)html+='<label>Transport <select data-landing-load>'+
+    (available(landingPosition(),ui.from).transport>loads.length?'<option value="">Empty transport</option>':'')+
+    loads.map(h=>'<option value="'+esc(h.id)+'" '+(d.load===h.id?'selected':'')+'>'+esc(describe(h.units))+' aboard</option>').join('')+'</select></label>';
+  html+=block('Cargo · '+used+' of 2 spaces')+'<p class="hint">One land unit plus one additional infantry.</p>';
+  const onboard=loads.find(h=>h.id===d.load);
+  if(onboard)html+='<p>Already aboard · '+esc(describe(onboard.units))+'</p>';
+  for(const {from,type,n} of cargoSources(landingPosition(),d.path)){
+    const qty=d.cargo.find(row=>row.type===type&&row.from===from)?.n||0;
+    html+=orderRow({unit:type,name:stats[type].name,caption:places[from].name,quantity:qty,
+      plus:qty<n&&used<2&&(type==='inf'||used===(units.inf||0)),facility:from,operation:'land-cargo'});
+  }
+  const support=escortOptions(landingPosition(),zone);
+  if(support.length){
+    html+='<details '+(d.showEscort?'open':'')+' id="landingEscorts"><summary>Escorts and bombardment'+(d.escorts.length?' · '+d.escorts.reduce((n,r)=>n+r.n,0):'')+'</summary>';
+    for(const {from,type,n} of support){
+      const qty=d.escorts.find(r=>r.from===from&&r.type===type)?.n||0;
+      html+=orderRow({unit:type,name:stats[type].name,caption:places[from].name,quantity:qty,plus:qty<n,facility:from,operation:'land-escort'});
+    }
+    html+='</details>';
+  }
+  $('action').innerHTML=btn((ui.editLanding==null?'Queue landing in ':'Update landing in ')+places[d.to].name,'land-queue','primary',used?'':'disabled');
+  return html+btn('Choose another coast','land-another')+btn('Cancel','clear');
+}
+
 function planPanel(){
-  let html=title('Combat move','Tap a unit stack on the map to plan an attack.');
+  if(ui.assault)return landingPanel();
+  if(ui.landingIndex!=null){
+    const o=s.orders[ui.landingIndex];
+    const escorts=o.landing.escorts.map(r=>r.n+' × '+stats[r.type].name+' from '+places[r.from].name);
+    return title('Amphibious assault',places[o.from].name+' → '+places[o.to].name)+unitLine(o.units,attacker)+'<p>Offload in '+places[o.landing.path.at(-1)].name+'</p>'+
+      (escorts.length?'<p>Escorts · '+esc(escorts.join(', '))+'</p>':'')+btn('Revise landing','land-edit')+btn('Cancel landing','land-remove','danger')+btn('Back to orders','clear');
+  }
+  let html=title('Combat move',isGlobal?'Tap a unit stack to plan an attack. Select a transport for an amphibious assault.':'Tap a unit stack on the map to plan an attack.');
   if(ui.to){
     const existing=s.orders.some(o=>o.from===ui.from&&o.to===ui.to&&samePassages(o,ui.via));
     const limit=available(s,ui.from,ui.to,ui.via);
@@ -336,6 +413,7 @@ function planPanel(){
     const range=stackSearch()?.search.range;
     const reach=range?' · '+range+(aircraft.includes(ui.stack)?' total spaces for combat and landing':range===1?' space':' spaces'):'';
     html=title(unitCounter(ui.stack,undefined,attacker)+' '+esc(s.formationNames[ui.from+'/'+attacker]?.[ui.stack]||s.formationNames[ui.from]?.[ui.stack]||stats[ui.stack].name),stats[ui.stack].name+' · '+places[ui.from].name+reach)+block('Units to move')+
+      (isGlobal&&ui.stack==='transport'?btn('Amphibious assault','land-start','primary',landingChoices().size?'':'disabled'):'')+
       stepper('quantity',{[ui.stack]:ui.quantity},available(s,ui.from),[ui.stack],1)+
       (stackSearch()?.multi.length?btn(ui.twoSpace?'Show all moves':'Choose a multi-space route','two-space'):'')+
       block(moveChoices().length?'Tap destination to plan move':'No eligible enemy spaces')+
@@ -490,6 +568,8 @@ function cityObjective(territory){
 }
 function battleChoice(b){
   if(b.resolved)return '<div class="review-item"><strong>'+places[b.to].name+'</strong><p>'+reviewDetail(b.result,attacker,b.heldBy)+'</p></div>';
+  const waiting=landingWait(s,b);
+  if(waiting.length)return '<div class="review-item"><strong>'+esc(places[b.to].name)+'</strong><p>Landing waits for '+waiting.map(id=>esc(places[id].name)).join(', ')+'.</p></div>';
   return '<button class="battle-choice" data-act="battle" data-id="'+b.to+'">'+
     '<span class="battle-choice-title"><strong>'+places[b.to].name+'</strong><span class="end" aria-hidden="true">›</span></span>'+
     cityObjective(b.to)+'<span class="force-columns">'+forceColumns(b.attack,s.units[b.to],s.owners[b.to],'total',isGlobal?armiesAt(b.to,true):null)+'</span></button>';
@@ -501,7 +581,9 @@ function battlePanel(){
   }
   const dice=b.step==='openingLosses'?b.openingDice:b.step==='regular'?null:b.dice;
   const nations=defendingNations(dice,liveDefenders(b));
-  const info='<h2>'+places[b.to].name+'</h2>'+block(b.step==='openingLosses'?'Opening fire · round '+b.round:b.round?'Battle round '+b.round:places[b.to].water?'Naval battle':'Land battle')+
+  const beach=b.amphibious?'<p class="hint">Amphibious assault · Seaborne troops cannot retreat.'+
+    (b.bombard&&b.round<=1?' Offshore bombardment supports the first round.':'')+'</p>':'';
+  const info='<h2>'+places[b.to].name+'</h2>'+beach+block(b.step==='openingLosses'?'Opening fire · round '+b.round:b.round?'Battle round '+b.round:places[b.to].water?'Naval battle':'Land battle')+
     (b.round?'':cityObjective(b.to))+rollsBox(dice,playback,attacker,nations);
   if(playback){
     $('action').innerHTML='<div class="roll-progress" id="rollStatus" role="status">Rolling for '+hitRange(playback.groups[playback.index][0])+'…</div>';
@@ -521,11 +603,26 @@ function battlePanel(){
     const shipNote=keys.some(k=>['carrier','battleship'].includes(k))?' An undamaged carrier or battleship takes two hits to sink.':'';
     for(const k of keys)limits[k]=Math.min(limits[k],(ui.losses[k]||0)+b.hits-count(ui.losses));
     $('action').innerHTML=btn('Confirm casualties','loss','primary',count(ui.losses)===b.hits?'':'disabled');
-    return info+'<h3>Assign hits</h3><p class="hint">Assign '+b.hits+' '+(b.hits===1?'hit':'hits')+' to your force.'+shipNote+'</p>'+stepper('casualty',ui.losses,limits,keys);
+    let attribution='';
+    for(const [type,beach] of Object.entries(b.beachForce||{})){
+      const hits=ui.losses[type]||0,min=Math.max(0,hits-(b.attack[type]-beach)),max=Math.min(beach,hits);
+      if(max<=min)continue;
+      const current=ui.beachLoss?.[type]??min;
+      attribution+='<label>Seaborne '+esc(stats[type].name.toLowerCase())+' losses <select data-beach-loss="'+type+'">'+
+        Array.from({length:max-min+1},(_,i)=>'<option '+(min+i===current?'selected':'')+'>'+String(min+i)+'</option>').join('')+'</select></label>';
+    }
+    if(ui.losses.transport&&b.boats?.length&&b.attack.transport>1){
+      attribution+=block('Transport cargo')+'<p class="hint">Empty transports are taken first by default. Select cargo to take on a lost transport.</p>'+
+        b.boats.map(h=>btn((ui.lostBoats?.includes(h.id)?'✓ ':'')+esc(describe(h.units))+(h.coast?' → '+esc(places[h.coast].name):''),'lost-boat','secondary',
+          'data-id="'+esc(h.id)+'" '+(!ui.lostBoats?.includes(h.id)&&ui.lostBoats?.length>=ui.losses.transport?'disabled':''))).join('');
+    }
+    return info+'<h3>Assign hits</h3><p class="hint">Assign '+b.hits+' '+(b.hits===1?'hit':'hits')+' to your force.'+shipNote+'</p>'+stepper('casualty',ui.losses,limits,keys)+attribution;
   }
   const opening=b.step==='regular'?'':openingFireKind(s,b);
   $('action').innerHTML=opening?btn('Roll '+opening.toLowerCase(),'opening-fire','primary'):btn((b.step==='decision'?'Continue · roll ':'Roll ')+adjectives[attacker]+' attack','roll','primary');
   if(b.step==='decision'){
+    if(b.beachForce&&count(b.beachForce)&&retreatSites(s,b).length)return info+'<p class="hint">Withdraw the surviving overland troops and aircraft together. The seaborne troops continue fighting.</p>'+retreatSites(s,b).map(id=>btn('Withdraw via '+places[id].name,'retreat','secondary','data-id="'+id+'"')).join('');
+    if(!retreatSites(s,b).length)return info+'<p class="hint">'+(b.amphibious?'The landing force must continue fighting.':'No retreat route is available.')+'</p>';
     return info+'<h3>Continue or retreat?</h3><p class="hint">Choose one territory or sea zone from which your force entered this battle.</p>'+retreatSites(s,b).map(id=>btn('Retreat to '+places[id].name,'retreat','secondary','data-id="'+id+'"')).join('');
   }
   return info;
@@ -587,7 +684,7 @@ function redeployment(){
   return noncombatPreview;
 }
 function selectedNoncombatOrder(){
-  return {from:ui.from,type:ui.stack,quantity:ui.quantity,flight:ui.flight,transport:!!ui.cross,extraInf:!!ui.extraInf};
+  return {from:ui.from,type:ui.stack,quantity:ui.quantity,flight:ui.flight,load:ui.load,transport:!!ui.cross,extraInf:!!ui.extraInf};
 }
 function selectRedeployment(id,type,flight){
   const g=redeployment(),limit=flight==null?g.unused[id]?.[type]:g.flights[flight]?.available;
@@ -605,12 +702,17 @@ function noncombatPanel(){
   if(ui.stack){
     const selection=selectedNoncombatOrder(),flight=g.flights[ui.flight];
     const maximum=flight?flight.available:g.unused[ui.from][ui.stack];
-    const limit=ui.cross?Math.min(maximum,ui.stack==='inf'?2:1):maximum;
+    const limit=ui.load?1:ui.cross?Math.min(maximum,ui.stack==='inf'?2:1):maximum;
     const routes=noncombatRoutes(g,selection);
     const range=flight?flight.range:exercise.movement.allowance(ui.from,ui.stack);
     let html=title((flight?'Land ':'Move ')+stats[ui.stack].name.toLowerCase(),
       places[ui.from].name+' · '+(ui.cross?'Sea crossing':range+' movement point'+(range===1?'':'s')+(flight?' remaining':'')))+
       stepper('nc-quantity',{[ui.stack]:ui.quantity},{[ui.stack]:limit},[ui.stack],1);
+    if(!flight&&ui.stack==='transport'){
+      for(const boat of aboard(g,ui.from).filter(h=>!g.spentCargo.includes(h.id)))
+        html+=btn(ui.load===boat.id?'Carry cargo onward':'Unload '+describe(boat.units),'nc-unload','secondary','data-id="'+esc(boat.id)+'"');
+      if(ui.load)html+='<p class="hint">Choose a friendly coast for the cargo.</p>';
+    }
     if(!flight&&!places[ui.from].water&&!aircraft.includes(ui.stack)){
       const crossing=noncombatRoutes(g,{...selection,quantity:1,transport:true,extraInf:false});
       if(ui.cross||crossing.size)html+=btn(ui.cross?'Use land routes':'Sea crossing','nc-cross');
@@ -642,7 +744,7 @@ function noncombatPanel(){
   html+=carrierLaunchPanel()+block('Queued moves · '+g.moves.length);
   if(g.moves.length){
     for(const [index,m] of g.moves.entries())html+='<div class="review-item"><strong>'+m.path.map(p=>esc(places[p].name)).join(' → ')+'</strong><p>'+
-      unitCounter(m.type,m.quantity,attacker)+' '+stats[m.type].name+(m.extraInf?' + 1 infantry':'')+(m.transport?' · Sea crossing':m.flight!=null?' · Aircraft landing':'')+'</p>'+(index<g.moves.length-1?btn('Remove move','nc-remove','secondary','data-id="'+index+'"'):'')+'</div>';
+      (m.unloaded?'Unloaded '+unitLine(m.unloaded,attacker):unitCounter(m.type,m.quantity,attacker)+' '+stats[m.type].name)+(m.extraInf?' + 1 infantry':'')+(m.transport?' · Sea crossing':m.flight!=null?' · Aircraft landing':'')+'</p>'+(index<g.moves.length-1?btn('Remove move','nc-remove','secondary','data-id="'+index+'"'):'')+'</div>';
     html+=btn('Undo last move','nc-undo');
   }
   const stranded=g.flights.reduce((n,f)=>n+(f.base?0:f.available),0);
@@ -898,7 +1000,7 @@ function render(){
     $('action').innerHTML=isGlobal?btn('Begin noncombat move','begin-noncombat','primary'):btn('Start another exercise','reset');
   }
   updateBattleForces();
-  const nextView=[award,briefing,inPurchase(),ui.buyGroup,ui.wallet,ui.reserve,ui.site,ui.destination,ui.inspect,s.phase,s.active,currentBattle(s)?.step,ui.from,ui.to,ui.stack,ui.flight,ui.cross,ui.routeTo,ui.twoSpace,...(ui.passageSteps||[])].join('|');
+  const nextView=[!!ui.assault,ui.assault?.to,ui.landingIndex,award,briefing,inPurchase(),ui.buyGroup,ui.wallet,ui.reserve,ui.site,ui.destination,ui.inspect,s.phase,s.active,currentBattle(s)?.step,ui.from,ui.to,ui.stack,ui.flight,ui.cross,ui.routeTo,ui.twoSpace,...(ui.passageSteps||[])].join('|');
   if(panelView!==nextView)document.querySelector('.panel-scroll').scrollTop=0;
   panelView=nextView;
   $('notice').textContent=message;
@@ -914,6 +1016,8 @@ function render(){
       choices=ui.destination&&!ui.site?options.filter(o=>o.to===ui.destination).map(o=>o.site):[...new Set(options.map(o=>o.to))];
     }
     draw(reserves().game,ui.destination||ui.inspect,null,null,layoutSeed,null,false,choices);
+  }else if(ui.assault?.to){
+    draw(s,ui.assault.to,null,null,layoutSeed,null,false,null);
   }else draw(nc?redeployment():s,ui.inspect||ui.from,ui.routeTo||ui.to,ui.stack||ui.inspectedType,layoutSeed,ui.stack?null:ui.inspectedNation,briefing||inPurchase(),ui.stack?(nc?[...noncombatRoutes(redeployment(),selectedNoncombatOrder()).keys()]:moveChoices()):null);
   if(award)bindHold($('placeFrenchAward'),()=>run(()=>{placeFrenchAward(s);ui=freshUI();}));
   else if($('collectIncome'))bindHold($('collectIncome'),()=>advanceEconomy('collect'));
@@ -1024,6 +1128,7 @@ document.addEventListener('click',e=>{
         const g=redeployment(),limit=ui.flight==null?g.unused[ui.from][ui.stack]:g.flights[ui.flight].available;
         ui.quantity=Math.max(1,Math.min(limit,ui.cross?(ui.stack==='inf'?2:1):limit,ui.quantity+Number(n)));break;
       }
+      case 'nc-unload':ui.load=ui.load===id?null:id;ui.quantity=1;break;
       case 'nc-cross':ui.cross=!ui.cross;ui.extraInf=false;ui.quantity=1;break;
       case 'nc-infantry':ui.extraInf=!ui.extraInf;break;
       case 'nc-target':queueRedeployment(id);break;
@@ -1034,21 +1139,43 @@ document.addEventListener('click',e=>{
       }
       case 'nc-undo':s.noncombatOrders=s.noncombatOrders.slice(0,-1);ui=freshUI();break;
       case 'quantity': ui.quantity=Math.max(1,Math.min(available(s,ui.from)[ui.stack],ui.quantity+Number(n)));break;
+      case 'land-start':ui.assault={};break;
+      case 'land-engage':ui.assault.engage=!ui.assault.engage;break;
+      case 'land-coast':pickLandingCoast(id);break;
+      case 'land-another':ui.assault={};break;
+      case 'land-back':if(ui.editLanding!=null)ui={...freshUI(),landingIndex:ui.editLanding};else delete ui.assault;break;
+      case 'land-cargo':
+      case 'land-escort':{
+        const d=ui.assault,rows=act==='land-cargo'?d.cargo:d.escorts;
+        d.showEscort=$('landingEscorts')?.open;
+        const row=rows.find(r=>r.from===id&&r.type===k);
+        if(row){row.n+=Number(n);if(!row.n)rows.splice(rows.indexOf(row),1);}
+        else if(Number(n)===1)rows.push({from:id,type:k,n:1});break;
+      }
+      case 'land-queue':{
+        const g=landingPosition();queueLanding(g,ui.from,ui.assault.to,ui.assault);s.orders=g.orders;ui=freshUI();break;
+      }
+      case 'land-edit':{
+        const i=ui.landingIndex,o=s.orders[i];
+        ui={...freshUI(),editLanding:i,stack:'transport',from:o.from,quantity:1,assault:{...structuredClone(o.landing),to:o.to}};break;
+      }
+      case 'land-remove':s.orders=s.orders.filter((_,i)=>i!==ui.landingIndex);ui=freshUI();break;
       case 'target': selectTarget(id);break;
       case 'route-back': if(ui.passageSteps?.length)ui.passageSteps.pop();else delete ui.routeTo;break;
       case 'two-space': ui.twoSpace=!ui.twoSpace;break;
       case 'assign': ui.units[k]=(ui.units[k]||0)+Number(n);break;
-      case 'casualty': ui.losses[k]=(ui.losses[k]||0)+Number(n);break;
+      case 'casualty': ui.losses[k]=(ui.losses[k]||0)+Number(n);delete ui.beachLoss;if(k==='transport')delete ui.lostBoats;break;
+      case 'lost-boat':ui.lostBoats=ui.lostBoats?.includes(id)?ui.lostBoats.filter(x=>x!==id):[...(ui.lostBoats||[]),id];break;
       case 'back': ui=freshUI();break;
       case 'clear': ui=inPurchase()||s.phase==='income'?{...freshUI(),wallet:ui.wallet,buyGroup:ui.buyGroup}:freshUI();break;
-      case 'edit': {const order=s.orders[Number(id)];selectOrigin(order.from);ui.to=order.to;ui.via=orderPassages(order);ui.units={...order.units};break;}
+      case 'edit': {const order=s.orders[Number(id)];if(order.landing){ui={...freshUI(),landingIndex:Number(id)};break;}selectOrigin(order.from);ui.to=order.to;ui.via=orderPassages(order);ui.units={...order.units};break;}
       case 'add': plan(s,ui.from,ui.to,ui.units,ui.via);ui=freshUI();break;
       case 'remove': plan(s,ui.from,ui.to,{},ui.via);ui=freshUI();break;
       case 'battle': chooseBattle(s,id);break;
       case 'opening-fire': ui.losses={};rollOpening(s);break;
       case 'roll': ui.losses={inf:0,tank:0};rollAttack(s);beginRoll('attack');break;
       case 'defend': rollDefense(s);beginRoll('defense');break;
-      case 'loss': casualties(s,ui.losses);ui.losses={inf:0,tank:0};break;
+      case 'loss': casualties(s,ui.losses,{beach:ui.beachLoss,boats:ui.lostBoats});ui.losses={inf:0,tank:0};delete ui.beachLoss;delete ui.lostBoats;break;
       case 'retreat': retreat(s,id);break;
       case 'players': {
         if(!isGlobal)break;
@@ -1078,11 +1205,16 @@ document.addEventListener('click',e=>{
         nameFormations();layoutSeed=newLayoutSeed();ui=freshUI();$('dialog').close();$('map').setAttribute('aria-label',combatMapLabel);$('recenter').click();break;
     }
   });
-  if(e.detail===0&&['buy','facility-order','wallet','french-unit'].includes(act)){
+  if(e.detail===0&&['buy','facility-order','wallet','french-unit','land-cargo','land-escort'].includes(act)){
     const rowButtons=[...$('panel').querySelectorAll('button[data-act]')].filter(button=>
       button.dataset.act===act&&button.dataset.id===id&&button.dataset.k===k&&!button.disabled);
     (rowButtons.find(button=>button.dataset.n===n)||rowButtons[0])?.focus({preventScroll:true});
   }
+});
+$('panel').addEventListener('change',e=>{
+  if(e.target.matches('[data-beach-loss]'))run(()=>{(ui.beachLoss??={})[e.target.dataset.beachLoss]=Number(e.target.value);});
+  if(e.target.matches('[data-landing-route]'))run(()=>setLandingPath(Number(e.target.value)));
+  if(e.target.matches('[data-landing-load]'))run(()=>{ui.assault.load=e.target.value||null;ui.assault.cargo=[];});
 });
 $('exerciseMenu').onclick=()=>{location.hash='';};
 document.querySelector('.theater').textContent=exercise.name;

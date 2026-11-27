@@ -1,3 +1,4 @@
+import {departures,aboard,checkLandingFleets,landingSeaBattle,landingWait} from './assault.js';
 import {asPassages,orderPassages,entrySpace,samePassages} from './movement.js';
 import {invadeNeutrals,settleMongolianPact,neutralKey} from './neutral-rules.js';
 // The local exercise models adjacent overland attacks with infantry and tanks.
@@ -85,8 +86,9 @@ export function newGame(exercise='west') {
 function check(ok, message) { if (!ok) throw new Error(message); }
 export function available(s, from, exceptTarget=null,via=null) {
   const free=s.pieces?strengthOf(s.pieces[from].filter(([p,t])=>samePower(p,s.power)&&mobileTypes.includes(t))):{...s.units[from]};
-  for (const order of s.orders.filter(o=>o.from===from && !(o.to===exceptTarget&&samePassages(o,via)))) {
-    for(const [k,n] of Object.entries(order.units))if(n)free[k]-=n;
+  for(const order of s.orders){
+    if(!order.landing&&order.from===from&&order.to===exceptTarget&&samePassages(order,via))continue;
+    for(const leg of departures(order))if(leg.from===from)for(const [k,n] of Object.entries(leg.units))if(n)free[k]=(free[k]||0)-n;
   }
   return free;
 }
@@ -112,7 +114,7 @@ export function movementFor(s,from,type,quantity=1){
   const solo=movement.searchFor(from,type,{canBlitz:false});
   // A tank can escort one mechanized infantry only along the identical blitz route.
   const escorted=(to,via)=>{
-    const prior=s.orders.find(o=>o.from===from&&o.to===to&&samePassages(o,[via]));
+    const prior=s.orders.find(o=>!o.landing&&o.from===from&&o.to===to&&samePassages(o,[via]));
     return (free.tank||0)+(prior?.units.tank||0)-(prior?.units.mech_infantry||0)>=quantity;
   };
   return {...search,
@@ -127,7 +129,7 @@ export function movementFor(s,from,type,quantity=1){
 export function plan(s,from,to,units,via=null) {
   check(s.phase==='plan','Movement has already been committed.');
   const path=asPassages(via),selected=Object.keys(units).filter(t=>units[t]>0);
-  const existing=s.orders.find(o=>o.from===from&&o.to===to&&samePassages(o,path));
+  const existing=s.orders.find(o=>!o.landing&&o.from===from&&o.to===to&&samePassages(o,path));
   check(places[from]&&places[to]&&(selected.length||existing),'Choose a movement order.');
   check(validUnits(units,available(s,from,to,path)),'This order exceeds the forces available at its origin.');
   if(s.exercise==='global'){
@@ -163,10 +165,87 @@ function alterStack(s,id,power,type,delta){
   if(!row){row=[power,type,0];s.pieces[id].push(row);}
   row[2]+=delta;
 }
-export function commit(s) {
+function battleAt(s,to){
+  let b=s.battles.find(b=>b.to===to);
+  if(!b){b={to,origins:[],attack:empty(),round:0,step:'ready',resolved:false};s.battles.push(b);}
+  return b;
+}
+function boardCargo(s,id,boat){
+  if(!boat||!count(boat.units))return;
+  const group=(s.embarked??={})[id]??=[];
+  group.push({id:boat.id,power:boat.power,units:{...boat.units}});
+  (s.spentCargo??=[]).push(boat.id);
+}
+function landBoat(s,boat){
+  const b=battleAt(s,boat.coast);b.beachForce??={};
+  for(const [type,n] of Object.entries(boat.units)){
+    b.attack[type]=(b.attack[type]||0)+n;b.beachForce[type]=(b.beachForce[type]||0)+n;
+  }
+  s.record.push({title:places[boat.coast].name+' landing',detail:'Offloaded '+describe(boat.units)+'.'});
+}
+// Assign cargo to individual transports. Empty transports depart first on a generic fleet order.
+function takeBoat(s,from,id){
+  const group=s.embarked?.[from];
+  const index=group?.findIndex(h=>h.id===id)??-1;
+  return index<0?null:group.splice(index,1)[0];
+}
+function prepareLandings(s){
+  const naval=[],zones=new Set(),waves=s.orders.filter(o=>o.landing);
+  for(const [i,o] of waves.entries()){
+    const {from,to,units,landing}=o,{cargo,escorts,path}=landing,zone=path.at(-1);
+    const coast=battleAt(s,to);coast.amphibious=true;
+    const battle=landingSeaBattle(s,zone);
+    for(const row of cargo){
+      alterStack(s,row.from,s.power,row.type,-row.n);s.units[row.from][row.type]=Math.max(0,(s.units[row.from][row.type]||0)-row.n);
+    }
+    const carried=takeBoat(s,from,landing.load);
+    let boatId=carried?.id||s.power+'/'+from+'/'+i;
+    while(Object.values(s.embarked||{}).some(group=>group.some(h=>h.id===boatId))||naval.some(order=>order.boat?.id===boatId))boatId+='*';
+    const boat={id:boatId,power:s.power,units:{...units},coast:to};
+    s.record.push({title:'Amphibious assault on '+places[to].name,detail:describe(units)+' aboard a transport from '+places[from].name+' · Offload in '+places[zone].name+'.'});
+    const fleet=[{from,type:'transport',n:1,path,boat},...escorts];
+    if(battle){
+      zones.add(zone);coast.offshore??=[];
+      if(!coast.offshore.includes(zone))coast.offshore.push(zone);
+    }
+    for(const leg of fleet){
+      if(battle){
+        naval.push({from:leg.from,to:zone,passages:leg.path.slice(1,-1),stationary:leg.from===zone,units:{[leg.type]:leg.n},boat:leg.boat});
+      }else{
+        alterStack(s,leg.from,s.power,leg.type,-leg.n);alterStack(s,zone,s.power,leg.type,leg.n);
+        const damage=s.shipDamage?.[leg.from]?.[s.power];
+        if(leg.from!==zone&&capitalsAtSea.includes(leg.type)&&damage?.[leg.type]){
+          const moved=Math.min(leg.n,damage[leg.type]);damage[leg.type]-=moved;
+          const dest=damageAt(s,zone,s.power);dest[leg.type]=(dest[leg.type]||0)+moved;
+        }
+        if(['battleship','cruiser'].includes(leg.type)){
+          coast.bombard??={};coast.bombard[leg.type]=(coast.bombard[leg.type]||0)+leg.n;
+        }
+      }
+    }
+    if(!battle){coast.bombardCapacity=(coast.bombardCapacity||0)+count(units);landBoat(s,boat);}
+  }
+  // All of the attacker's units remaining in a contested landing zone fight there.
+  for(const zone of zones){
+    const inPlace=strengthOf(s.pieces[zone].filter(([p,t])=>samePower(p,s.power)&&mobileTypes.includes(t)));
+    for(const o of [...s.orders.filter(o=>!o.landing),...naval])if(o.from===zone)
+      for(const [t,n] of Object.entries(o.units))inPlace[t]=(inPlace[t]||0)-n;
+    const force=Object.fromEntries(Object.entries(inPlace).filter(([,n])=>n>0));
+    if(count(force))naval.push({from:zone,to:zone,stationary:true,garrison:true,units:force});
+  }
+  return naval;
+}
+export function commit(s){
+  if(s.orders.some(o=>o.landing)){
+    checkLandingFleets(s);
+    const draft=structuredClone(s);commitOrders(draft);Object.assign(s,draft);
+  }else commitOrders(s);
+}
+function commitOrders(s) {
   check(s.phase==='plan' && (s.orders.length||s.exercise==='global'),'Plan at least one attack before committing.');
   if(s.pieces){
     for(const to of new Set(s.orders.map(o=>o.to))){
+      if(places[to].water&&s.orders.some(o=>o.landing?.path.at(-1)===to))continue;
       if(neutralKey(s.owners[to]))check(s.orders.some(o=>o.to===to&&Object.entries(o.units).some(([t,n])=>n&&!aircraft.includes(t))),
         'Include land units to invade a neutral territory.');
       check(s.orders.some(o=>o.to===to&&Object.entries(o.units).some(([t,n])=>n&&stats[t].attack>0)),
@@ -186,12 +265,16 @@ export function commit(s) {
     invadeNeutrals(s);
   }
   const ex=exerciseOf(s);
-  for(const via of new Set(s.orders.filter(o=>o.units.tank&&o.via).map(o=>o.via))){
+  for(const via of new Set(s.orders.filter(o=>!o.landing&&o.units.tank&&o.via).map(o=>o.via))){
     if(ex.friends[s.power].includes(s.owners[via]))continue;
     const control=ex.occupy(s,via);
     s.record.push({title:places[via].name,detail:control+' during a tank blitz.'});
   }
-  for(const o of s.orders) {
+  const naval=prepareLandings(s);
+  if(naval.length)s.navalParticipants=naval;
+  const reservedTransports={};
+  for(const o of naval)if(o.boat)reservedTransports[o.from]=(reservedTransports[o.from]||0)+1;
+  for(const o of [...s.orders.filter(o=>!o.landing),...naval]) {
     const path=[o.from,...orderPassages(o),o.to].map(id=>places[id].name).join(' → ');
     s.record.push({title:path,detail:describe(o.units)});
     if(o.via&&o.units.tank&&ex.friends[s.power].includes(places[o.to].startOwner)){
@@ -202,8 +285,14 @@ export function commit(s) {
       }
       continue;
     }
-    let b=s.battles.find(b=>b.to===o.to);
-    if(!b){b={to:o.to,origins:[],attack:empty(),round:0,step:'ready',resolved:false};s.battles.push(b);}
+    const b=battleAt(s,o.to);
+    if(o.boat){(b.boats??=[]).push(o.boat);reservedTransports[o.from]--;}
+    else if(o.units.transport){
+      const group=aboard(s,o.from),hulls=strengthOf(s.pieces[o.from].filter(([p])=>samePower(p,s.power))).transport||0;
+      const reserved=reservedTransports[o.from]||0;
+      const loaded=Math.max(0,o.units.transport-Math.max(0,hulls-group.length-reserved));
+      for(const boat of group.slice(0,loaded))(b.boats??=[]).push(takeBoat(s,o.from,boat.id));
+    }
     if(!b.origins.includes(entrySpace(o)))b.origins.push(entrySpace(o));
     for(const [k,n] of Object.entries(o.units)){
       if(!n)continue;
@@ -224,7 +313,10 @@ export function commit(s) {
 function resolveUnopposed(s){
   for(const b of s.battles){
     if(s.frenchAward?.status==='pending')break;
-    if(b.resolved||b.step!=='ready')continue;
+    if(b.resolved||b.step!=='ready'||landingWait(s,b).length)continue;
+    if(b.amphibious&&!count(b.attack)){
+      finishBattle(s,b,'Landing canceled. No attackers reached the coast.');continue;
+    }
     if(s.controlChanges?.[b.to]){
       placeSurvivors(s,b,b.to);
       finishBattle(s,b,'Joined friendly forces in '+places[b.to].name+'.');
@@ -239,6 +331,7 @@ export function chooseBattle(s,to) {
   const b=s.battles.find(b=>b.to===to);
   check(s.frenchAward?.status!=='pending','France must finish its liberation placement first.');
   check(s.phase==='combat'&&!s.active&&b&&!b.resolved,'Finish the current battle before choosing another.');
+  check(!landingWait(s,b).length,'Resolve the offshore sea battle before this landing.');
   s.active=to;
 }
 export const currentBattle = s=>s.battles.find(b=>b.to===s.active);
@@ -264,10 +357,17 @@ function rollForce(force,mode,random) {
     });
   });
 }
-function finishBattle(s,b,result,heldBy){
+function finishBattle(s,b,result,heldBy,seaDestination){
   b.resolved=true;b.step='done';b.result=result;s.active=null;
   if(heldBy)b.heldBy=heldBy;
   s.record.push({title:places[b.to].name,detail:result,...(heldBy?{heldBy}:{})});
+  if(places[b.to].water&&b.boats){
+    for(const boat of b.boats){
+      if(seaDestination===b.to&&boat.coast&&b.seaVictory)landBoat(s,boat);
+      else if(seaDestination)boardCargo(s,seaDestination,boat);
+    }
+  }
+  if(places[b.to].water&&s.battles.some(land=>land.offshore?.includes(b.to)))resolveUnopposed(s);
   if(s.battles.every(b=>b.resolved)){s.phase='review';settleMongolianPact(s);}
 }
 export function defenderLosses(force,hits){
@@ -347,9 +447,9 @@ export function flightRecoveries(s,orders,preview=null,previewSpent=0){
 }
 function returnAircraft(s,b,order,type,n){
   const ex=exerciseOf(s),origin=order.from;
-  const reachable=reachableLandingSites(s,origin,type,b.to,orderPassages(order).length+1);
+  const reachable=reachableLandingSites(s,origin,type,b.to,(order.stationary?0:orderPassages(order).length+1));
   let left=n;
-  const range=ex.movement.allowance(origin,type)-orderPassages(order).length-1;
+  const range=ex.movement.allowance(origin,type)-(order.stationary?0:orderPassages(order).length+1);
   function noteFlight(base,count){
     const flights=s.landedFlights??=[];
     const prior=flights.find(f=>f.from===b.to&&f.type===type&&f.base===base&&f.range===range);
@@ -373,7 +473,7 @@ function returnAircraft(s,b,order,type,n){
   if(left)noteFlight(null,left);
 }
 function placeSurvivors(s,b,destination){
-  const origins=s.orders.filter(o=>o.to===b.to);
+  const origins=[...s.orders,...(s.navalParticipants||[])].filter(o=>!o.landing&&o.to===b.to);
   for(const type of [...ships,...mobileTypes.filter(t=>!ships.includes(t)&&!aircraft.includes(t)),...aircraft]){
     const n=b.attack[type];
     if(!n)continue;
@@ -405,7 +505,8 @@ function captureBattle(s,b,attacker){
   s.units[b.to]=empty();placeSurvivors(s,b,b.to);
   const result=occupies?control+' with '+describe(b.attack)+'.':
     sea?'Sea battle won by '+attacker+'.':'Defenders eliminated by air. Territory control is unchanged.';
-  finishBattle(s,b,result);
+  if(sea)b.seaVictory=true;
+  finishBattle(s,b,result,undefined,sea?b.to:undefined);
 }
 export const frenchReinforcements=Object.keys(stats).filter(t=>!ships.includes(t)&&stats[t].cost<=12);
 export function frenchReinforcementCost(draft){
@@ -505,7 +606,7 @@ function settleStrandedDefenders(s,b){
     if(left)s.record.push({title:places[zone].name,detail:left+' defending '+stats[type].name+' lost without a landing space.'});
   }
 }
-function applyRound(s,b,losses,opening){
+function applyRound(s,b,losses,opening,choice){
   const dice=opening?b.openingDice:b.dice,defenders=s.units[b.to];
   const attacks=assignHits(dice.attack,victimSlots(s,b,false),b.attack.destroyer>0);
   const attackSlots=victimSlots(s,b,true);
@@ -517,6 +618,17 @@ function applyRound(s,b,losses,opening){
     selected.filter(x=>x.type==='transport').length<=all.filter(x=>x.type==='transport').length,
     'Assign each hit to an eligible unit. Transports are taken last.');
   const nationalLosses={},lost=empty(),ownLost=empty();
+  const beachLoss={};
+  for(const [type,onBeach] of Object.entries(b.beachForce||{})){
+    const hits=losses[type]||0,min=Math.max(0,hits-(b.attack[type]-onBeach)),max=Math.min(onBeach,hits);
+    const n=choice.beach?.[type]??min;
+    check(Number.isInteger(n)&&n>=min&&n<=max,'Choose which landing troops take these hits.');
+    beachLoss[type]=n;
+  }
+  const chosenBoats=[...(choice.boats||[])];
+  check(chosenBoats.length<=(losses.transport||0)&&new Set(chosenBoats).size===chosenBoats.length&&
+    chosenBoats.every(id=>b.boats?.some(h=>h.id===id)),'Choose a transport involved in this battle.');
+  const cargoValue=h=>Object.entries(h.units).reduce((v,[t,n])=>v+stats[t].cost*n,0);
   function take(slot,attacking){
     const {type,power,damage}=slot;
     const force=attacking?b.attack:defenders;
@@ -524,6 +636,17 @@ function applyRound(s,b,losses,opening){
       const ledger=attacking?(b.damage??={}):damageAt(s,b.to,power);
       if(damage){ledger[type]=(ledger[type]||0)+1;return;}
       ledger[type]=Math.max(0,(ledger[type]||0)-1);
+    }
+    if(attacking&&beachLoss[type]>0){b.beachForce[type]--;beachLoss[type]--;}
+    if(type==='transport'){
+      const loaded=attacking?(b.boats||[]):(s.embarked?.[b.to]||[]).filter(h=>samePower(h.power,power));
+      const hulls=attacking?force.transport:s.pieces[b.to].filter(([p,t])=>samePower(p,power)&&t==='transport').reduce((a,r)=>a+r[2],0);
+      const chosen=attacking?chosenBoats.shift():null;
+      if(loaded.length&&(chosen||hulls<=loaded.length)){
+        const id=chosen||loaded.reduce((a,h)=>cargoValue(h)<cargoValue(a)?h:a).id;
+        const boat=attacking?loaded.splice(loaded.findIndex(h=>h.id===id),1)[0]:takeBoat(s,b.to,id);
+        s.record.push({title:places[b.to].name+' · Transport sunk',detail:'Cargo lost: '+describe(boat.units)+'.'});
+      }
     }
     force[type]--;
     const total=attacking?ownLost:lost;total[type]=(total[type]||0)+1;
@@ -537,10 +660,14 @@ function applyRound(s,b,losses,opening){
   const sea=places[b.to].water;
   if(sea){
     // Defenseless transports are removed as soon as only transports remain on their side.
-    if(defenders.transport&&count(defenders)===defenders.transport&&canDamage(b.attack,defenders,'attack')){
-      for(const [power,type,n] of defendingRows(s,b.to))for(let i=0;i<n;i++)take({type,power},false);
-    }else if(b.attack.transport&&count(b.attack)===b.attack.transport&&canDamage(defenders,b.attack,'defense')){
-      for(const slot of victimSlots(s,b,true))take(slot,true);
+    const defendersArmed={...defenders,transport:0},attackersArmed={...b.attack,transport:0};
+    const fighting=canDamage(b.attack,defendersArmed,'attack')||canDamage(defenders,b.attack,'defense');
+    if(defenders.transport&&!fighting&&canDamage(b.attack,{transport:defenders.transport},'attack')){
+      for(const [power,type,n] of defendingRows(s,b.to))if(type==='transport')for(let i=0;i<n;i++)take({type,power},false);
+    }
+    if(b.attack.transport&&!canDamage(b.attack,defenders,'attack')&&!canDamage(defenders,attackersArmed,'defense')&&
+      canDamage(defenders,{transport:b.attack.transport},'defense')&&!retreatSites(s,b).length){
+      for(const slot of victimSlots(s,b,true))if(slot.type==='transport')take(slot,true);
     }
   }
   const defender=s.owners[b.to],attacker=exerciseOf(s).attacker;
@@ -554,11 +681,11 @@ function applyRound(s,b,losses,opening){
     finishBattle(s,b,count(defenders)?(places[b.to].water?'Defending fleet':defender)+' held with '+describe(defenders)+'.':
       places[b.to].water?'Both fleets lost.':'Both forces lost. '+defender+' retains control.',survivors.length?survivors:undefined);
   }else if(sea&&!canDamage(b.attack,defenders,'attack')&&!canDamage(defenders,b.attack,'defense')){
-    const site=retreatSites(s,b)[0];
+    const site=retreatSites(s,b)[0]||b.to;
     placeSurvivors(s,b,site);
     settleStrandedDefenders(s,b);
-    finishBattle(s,b,'Neither side can hit the other. The attacking force withdrew.');
-  }else b.step=opening?'regular':'decision';
+    finishBattle(s,b,'Neither side can hit the other. The attacking force withdrew.',undefined,site);
+  }else b.step=opening&&!(sea&&count(b.attack)===b.attack.transport)?'regular':'decision';
 }
 export function openingFireKind(s,b){
   const defenders=s.units[b.to];
@@ -599,6 +726,17 @@ export function rollAttack(s,random=die){
     check(!openingFireKind(s,b),'Resolve opening fire first.');b.round++;b.firedSubs=null;
   }
   b.dice={attack:rollForce({...b.attack,...(b.firedSubs?.attack?{submarine:0}:{})},'attack',random)};
+  if(b.round===1&&b.bombard){
+    let left=b.bombardCapacity;
+    const guns=[];
+    for(const type of ['battleship','cruiser']){
+      const n=Math.min(left,b.bombard[type]||0);left-=n;
+      for(let i=0;i<n;i++)guns.push({...rollUnit(type,stats[type].attack,random),bombard:true});
+    }
+    b.dice.attack.push(...guns);
+    s.record.push({title:places[b.to].name+' · Offshore bombardment',
+      detail:guns.length+' bombardment dice · '+guns.filter(d=>d.hit).length+' hits. Defenders return fire this round.'});
+  }
   if(s.pieces)b.dice.defendingPowers=[...new Set(defendingRows(s,b.to).map(([power])=>power))];
   b.step='defense';
 }
@@ -612,21 +750,35 @@ export function rollDefense(s,random=die){
   b.hits=assignHits(b.dice.defense,victimSlots(s,b,true),s.units[b.to].destroyer>0).length;
   b.step='losses';
 }
-export function casualties(s,losses){
+export function casualties(s,losses,choice={}){
   const b=currentBattle(s);
   check(b&&['losses','openingLosses'].includes(b.step)&&validUnits(losses,casualtyLimits(s,b))&&count(losses)===b.hits,
     'Assign exactly one eligible hit point per hit.');
-  applyRound(s,b,losses,b.step==='openingLosses');
+  applyRound(s,b,losses,b.step==='openingLosses',choice);
 }
 export function retreatSites(s,b){
+  const orders=[...s.orders,...(s.navalParticipants||[])].filter(o=>!o.landing&&o.to===b.to);
+  if(b.beachForce&&count(b.beachForce)){
+    const overland=Object.entries(b.attack).some(([t,n])=>!aircraft.includes(t)&&n>(b.beachForce[t]||0));
+    if(!overland&&!aircraft.some(t=>b.attack[t]))return [];
+    return [...new Set(orders.filter(o=>!overland||Object.entries(o.units).some(([t,n])=>n&&!aircraft.includes(t))).map(entrySpace))];
+  }
   const surface=Object.entries(b.attack).some(([t,n])=>n&&!aircraft.includes(t));
-  return b.origins.filter(id=>!surface||places[id].water===places[b.to].water&&
-    s.orders.some(o=>(entrySpace(o))===id&&o.to===b.to&&Object.entries(o.units).some(([t,n])=>n&&!aircraft.includes(t))));
+  const sites=b.origins.filter(id=>id!==b.to&&(!places[b.to].water||!defendingRows(s,id).some(([,t,n])=>n&&ships.includes(t)&&t!=='submarine'&&t!=='transport'))&&(!surface||places[id].water===places[b.to].water&&
+    orders.some(o=>entrySpace(o)===id&&Object.entries(o.units).some(([t,n])=>n&&!aircraft.includes(t)))));
+  return sites;
 }
 export function retreat(s,origin){
   const b=currentBattle(s);
   check(b?.step==='decision'&&retreatSites(s,b).includes(origin),'Choose an eligible entry space for the retreat.');
+  if(b.beachForce&&count(b.beachForce)){
+    const staying={...b.beachForce};
+    for(const [t,n] of Object.entries(staying))b.attack[t]-=n;
+    placeSurvivors(s,b,origin);
+    s.record.push({title:places[b.to].name,detail:'Withdrew '+describe(b.attack)+'. Seaborne troops remain in combat.'});
+    b.attack=staying;return;
+  }
   placeSurvivors(s,b,origin);
   if(places[b.to].water)settleStrandedDefenders(s,b);
-  finishBattle(s,b,'Retreated to '+places[origin].name+' with '+describe(b.attack)+'.');
+  finishBattle(s,b,'Retreated to '+places[origin].name+' with '+describe(b.attack)+'.',undefined,origin);
 }
