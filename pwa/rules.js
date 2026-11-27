@@ -1,3 +1,4 @@
+import {checkRaidOrders,prepareRaids,pendingRaids,raidTargets} from './raids.js';
 import {scramblePlan,scrambleSupportZones,launchScrambles,scrambleRows,leaveScrambleBattle} from './scramble.js';
 import {departures,aboard,checkLandingFleets,landingSeaBattle,landingWait} from './assault.js';
 import {asPassages,orderPassages,entrySpace,samePassages} from './movement.js';
@@ -86,10 +87,10 @@ export function newGame(exercise='west') {
   return {version:1,exercise,phase:'plan',units,owners,orders:[],battles:[],active:null,record:[]};
 }
 function check(ok, message) { if (!ok) throw new Error(message); }
-export function available(s, from, exceptTarget=null,via=null) {
+export function available(s, from, exceptTarget=null,via=null,raid=null,raidType=null) {
   const free=s.pieces?strengthOf(s.pieces[from].filter(([p,t])=>samePower(p,s.power)&&mobileTypes.includes(t))):{...s.units[from]};
   for(const order of s.orders){
-    if(!order.landing&&order.from===from&&order.to===exceptTarget&&samePassages(order,via))continue;
+    if(!order.landing&&(order.raid||null)===raid&&(!raid||order.units[raidType])&&order.from===from&&order.to===exceptTarget&&samePassages(order,via))continue;
     for(const leg of departures(order))if(leg.from===from)for(const [k,n] of Object.entries(leg.units))if(n)free[k]=(free[k]||0)-n;
   }
   return free;
@@ -128,12 +129,13 @@ export function movementFor(s,from,type,quantity=1){
       return search.destinations(multiOnly).filter(to=>!multiOnly&&solo.legal(to)||this.passagesTo(to).length);
     }};
 }
-export function plan(s,from,to,units,via=null) {
+export function plan(s,from,to,units,via=null,raid=null) {
   check(s.phase==='plan','Movement has already been committed.');
   const path=asPassages(via),selected=Object.keys(units).filter(t=>units[t]>0);
-  const existing=s.orders.find(o=>!o.landing&&o.from===from&&o.to===to&&samePassages(o,path));
+  const existing=s.orders.find(o=>!o.landing&&(o.raid||null)===raid&&(!raid||o.units[selected[0]])&&o.from===from&&o.to===to&&samePassages(o,path));
   check(places[from]&&places[to]&&(selected.length||existing),'Choose a movement order.');
-  check(validUnits(units,available(s,from,to,path)),'This order exceeds the forces available at its origin.');
+  check(validUnits(units,available(s,from,to,path,raid,selected[0])),'This order exceeds the forces available at its origin.');
+  if(raid&&selected.length)check(selected.length===1&&raidTargets(s,to,selected[0]).includes(raid),'Choose a legal bombing or escort mission.');
   if(s.exercise==='global'){
     const movement=exerciseOf(s).movement;
     for(const type of selected){
@@ -148,11 +150,11 @@ export function plan(s,from,to,units,via=null) {
       places[from].targets.includes(to)&&selected.every(t=>types.includes(t)),'These units cannot attack that space from this origin.');
   }
   const orders=s.orders.filter(o=>o!==existing);
-  if(selected.length)orders.push({from,to,...(path.length===1?{via:path[0]}:path.length?{passages:[...path]}:{}),units:{...units}});
+  if(selected.length)orders.push({from,to,...(raid?{raid}:{}),...(path.length===1?{via:path[0]}:path.length?{passages:[...path]}:{}),units:{...units}});
   if(s.exercise==='global'&&selected.length)check(flightRecoveries(s,orders),'Aircraft need a landing place within their remaining movement.');
   s.orders=orders;
 }
-function alterStack(s,id,power,type,delta){
+export function alterStack(s,id,power,type,delta){
   if(!s.pieces||!delta)return;
   if(delta<0){
     let needed=-delta;
@@ -238,8 +240,8 @@ function prepareLandings(s){
   return naval;
 }
 export function commit(s){
-  if(s.orders.some(o=>o.landing)){
-    checkLandingFleets(s);
+  if(s.orders.some(o=>o.landing||o.raid)){
+    checkLandingFleets(s);checkRaidOrders(s);
     const draft=structuredClone(s);commitOrders(draft);Object.assign(s,draft);
   }else commitOrders(s);
 }
@@ -277,10 +279,11 @@ function commitOrders(s) {
     s.record.push({title:places[via].name,detail:control+' during a tank blitz.'});
   }
   const naval=prepareLandings(s);
+  if(s.orders.some(o=>o.raid))prepareRaids(s);
   if(naval.length)s.navalParticipants=naval;
   const reservedTransports={};
   for(const o of naval)if(o.boat)reservedTransports[o.from]=(reservedTransports[o.from]||0)+1;
-  for(const o of [...s.orders.filter(o=>!o.landing),...naval]) {
+  for(const o of [...s.orders.filter(o=>!o.landing&&!o.raid),...naval]) {
     const path=[o.from,...orderPassages(o),o.to].map(id=>places[id].name).join(' → ');
     s.record.push({title:path,detail:describe(o.units)});
     if(o.via&&o.units.tank&&ex.friends[s.power].includes(places[o.to].startOwner)){
@@ -312,11 +315,16 @@ function commitOrders(s) {
       }
     }
   }
-  s.phase=s.battles.length?'combat':'review';
+  s.phase='combat';
+  if(!pendingRaids(s).length)resumeCombat(s);
+}
+export function resumeCombat(s){
+  s.phase=s.battles.some(b=>!b.resolved)?'combat':'review';
   if(s.phase==='review')settleMongolianPact(s);
   resolveUnopposed(s);
 }
 function resolveUnopposed(s){
+  if(pendingRaids(s).length)return;
   for(const b of s.battles){
     if(s.frenchAward?.status==='pending')break;
     if(b.resolved||b.step!=='ready'||landingWait(s,b).length)continue;
@@ -341,11 +349,12 @@ export function chooseBattle(s,to) {
   const b=s.battles.find(b=>b.to===to);
   check(s.frenchAward?.status!=='pending','France must finish its liberation placement first.');
   check(s.phase==='combat'&&!s.active&&b&&!b.resolved,'Finish the current battle before choosing another.');
+  check(!pendingRaids(s).length,'Resolve all bombing raids before other battles.');
   check(!landingWait(s,b).length,'Resolve the offshore sea battle before this landing.');
   s.active=to;
 }
 export const currentBattle = s=>s.battles.find(b=>b.to===s.active);
-function die(){
+export function die(){
   const bytes=new Uint8Array(1);
   do { crypto.getRandomValues(bytes); } while(bytes[0]>=252);
   return bytes[0]%6+1;
@@ -457,7 +466,7 @@ export function flightRecoveries(s,orders,preview=null,previewSpent=0){
   }
   return flights.every(f=>reserve(f,new Set()))?plans:null;
 }
-function returnAircraft(s,b,order,type,n){
+export function returnAircraft(s,b,order,type,n){
   const ex=exerciseOf(s),origin=order.from;
   const reachable=reachableLandingSites(s,origin,type,b.to,(order.stationary?0:orderPassages(order).length+1));
   let left=n;
@@ -485,7 +494,7 @@ function returnAircraft(s,b,order,type,n){
   if(left)noteFlight(null,left);
 }
 function placeSurvivors(s,b,destination){
-  const origins=[...s.orders,...(s.navalParticipants||[])].filter(o=>!o.landing&&o.to===b.to);
+  const origins=[...s.orders,...(s.navalParticipants||[])].filter(o=>!o.landing&&!o.raid&&o.to===b.to);
   for(const type of [...ships,...mobileTypes.filter(t=>!ships.includes(t)&&!aircraft.includes(t)),...aircraft]){
     const n=b.attack[type];
     if(!n)continue;
@@ -771,7 +780,7 @@ export function casualties(s,losses,choice={}){
   applyRound(s,b,losses,b.step==='openingLosses',choice);
 }
 export function retreatSites(s,b){
-  const orders=[...s.orders,...(s.navalParticipants||[])].filter(o=>!o.landing&&o.to===b.to);
+  const orders=[...s.orders,...(s.navalParticipants||[])].filter(o=>!o.landing&&!o.raid&&o.to===b.to);
   if(b.beachForce&&count(b.beachForce)){
     const overland=Object.entries(b.attack).some(([t,n])=>!aircraft.includes(t)&&n>(b.beachForce[t]||0));
     if(!overland&&!aircraft.some(t=>b.attack[t]))return [];

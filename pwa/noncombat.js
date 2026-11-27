@@ -1,3 +1,4 @@
+import {recoverRaidAttackers,pendingRaids} from './raids.js';
 import {recoverScrambles} from './scramble.js';
 import {departures,aboard} from './assault.js';
 // Drafts replay from the resolved battle position. Arrivals never replenish the
@@ -7,9 +8,9 @@ import {neutralKey,takeFriendlyControl,hostileNeutral} from './neutral-rules.js'
 
 export function beginNoncombat(game){
   if(game.frenchAward?.status==='pending')throw Error('France must finish its liberation placement first.');
-  if(game.exercise!=='global'||game.phase!=='review'||game.battles.some(b=>!b.resolved))
+  if(game.exercise!=='global'||game.phase!=='review'||pendingRaids(game).length||game.battles.some(b=>!b.resolved))
     throw Error('Resolve every battle before starting noncombat movement.');
-  recoverScrambles(game);
+  recoverScrambles(game);recoverRaidAttackers(game);
   game.phase='noncombat';game.noncombatOrders=[];
 }
 function sumStackType(rows,type,test){
