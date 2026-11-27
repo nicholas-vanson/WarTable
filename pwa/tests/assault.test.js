@@ -16,6 +16,7 @@ function make(edit=()=>{}){
   const m=startGlobalPlaytest(setup,seats),b=m.board;
   b['112 Sea Zone'].units=[['Germans','transport',2],['Germans','cruiser',2]];
   b['110 Sea Zone'].units=[];b['Normandy Bordeaux'].units=[];
+  b['United Kingdom'].facilityDamage={airfield:3}; // Isolate the naval and landing forces under test.
   edit(b);return {m,s:prepareGlobalBoard(setup,atlas,m).game};
 }
 const cargo=[{from:'wg',type:'artillery',n:1},{from:'wg',type:'inf',n:1}];

@@ -103,7 +103,8 @@ export function queueLanding(s,from,to,draft){
   s.orders=[...s.orders,{from,to,passages:path.slice(1),units,landing}];
 }
 export function landingSeaBattle(s,zone){
-  return exerciseOf(s).movement.spaces[zone].blockingFleet||s.orders.some(o=>o.landing?
+  const space=exerciseOf(s).movement.spaces[zone];
+  return s.scrambles?.some(f=>f.zone===zone)||space.blockingFleet||space.enemyFleet&&s.orders.some(o=>o.landing?
     o.landing.engage&&o.landing.path.at(-1)===zone:o.to===zone);
 }
 export function checkLandingFleets(s){

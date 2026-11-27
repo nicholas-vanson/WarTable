@@ -1,3 +1,4 @@
+import {scramblePlan,scrambleSupportZones,launchScrambles,scrambleRows,leaveScrambleBattle} from './scramble.js';
 import {departures,aboard,checkLandingFleets,landingSeaBattle,landingWait} from './assault.js';
 import {asPassages,orderPassages,entrySpace,samePassages} from './movement.js';
 import {invadeNeutrals,settleMongolianPact,neutralKey} from './neutral-rules.js';
@@ -64,8 +65,9 @@ export function targetsFor(s,from,type){
   return place?.unitTargets?.[type]??(place?.unitTargets?[]:place?.targets||[]);
 }
 export function defendingRows(s,id){
-  return (s.pieces?.[id]||[]).filter(([p,t,n])=>n>0&&stats[t]&&
+  const rows=(s.pieces?.[id]||[]).filter(([p,t,n])=>n>0&&stats[t]&&
     (!places[id].water||exerciseOf(s).enemies.includes(p)));
+  return s.scrambles&&places[id].water?rows.concat(scrambleRows(s,id)):rows;
 }
 export function strengthOf(rows){
   const force={inf:0,tank:0};
@@ -109,7 +111,7 @@ export function movementFor(s,from,type,quantity=1){
     landingCache.set(key,possible);
     return possible;
   }
-  const search=movement.searchFor(from,type,{canLand});
+  const search=movement.searchFor(from,type,{canLand,supportZones:scrambleSupportZones(s)});
   if(type!=='mech_infantry')return search;
   const solo=movement.searchFor(from,type,{canBlitz:false});
   // A tank can escort one mechanized infantry only along the identical blitz route.
@@ -138,7 +140,7 @@ export function plan(s,from,to,units,via=null) {
       const paired=(units.tank||0)>=(units.mech_infantry||0);
       if(type==='mech_infantry'&&path.length&&movement.spaces[path[0]]?.blitz)
         check(paired,'Each mechanized infantry blitzing through enemy land needs a tank on the same route.');
-      check(movement.searchFor(from,type,{canBlitz:type!=='mech_infantry'||paired}).legal(to,path),
+      check(movement.searchFor(from,type,{canBlitz:type!=='mech_infantry'||paired,supportZones:scrambleSupportZones(s)}).legal(to,path),
         'This route is outside the legal combat movement of the '+stats[type].name.toLowerCase()+'.');
     }
   }else{
@@ -244,7 +246,10 @@ export function commit(s){
 function commitOrders(s) {
   check(s.phase==='plan' && (s.orders.length||s.exercise==='global'),'Plan at least one attack before committing.');
   if(s.pieces){
+    const support=scrambleSupportZones(s);
     for(const to of new Set(s.orders.map(o=>o.to))){
+      if(places[to].water&&!exerciseOf(s).movement.spaces[to].enemyFleet&&!support.has(to))
+        throw Error('This offshore support order needs an amphibious assault. Restore the landing or remove the support order.');
       if(places[to].water&&s.orders.some(o=>o.landing?.path.at(-1)===to))continue;
       if(neutralKey(s.owners[to]))check(s.orders.some(o=>o.to===to&&Object.entries(o.units).some(([t,n])=>n&&!aircraft.includes(t))),
         'Include land units to invade a neutral territory.');
@@ -262,6 +267,7 @@ function commitOrders(s) {
     const recoveries=flightRecoveries(s,s.orders);
     check(recoveries,'Aircraft need a landing place within their remaining movement.');
     for(const [order,bases] of recoveries)order.landings=bases;
+    launchScrambles(s,scramblePlan(s));
     invadeNeutrals(s);
   }
   const ex=exerciseOf(s);
@@ -314,6 +320,10 @@ function resolveUnopposed(s){
   for(const b of s.battles){
     if(s.frenchAward?.status==='pending')break;
     if(b.resolved||b.step!=='ready'||landingWait(s,b).length)continue;
+    if(s.pieces&&places[b.to].water&&!exerciseOf(s).movement.spaces[b.to].enemyFleet&&
+      s.orders.some(o=>o.landing?.path.at(-1)===b.to)&&!defendingRows(s,b.to).length){
+      placeSurvivors(s,b,b.to);finishBattle(s,b,'Supported the landing without a sea battle.',undefined,b.to);continue;
+    }
     if(b.amphibious&&!count(b.attack)){
       finishBattle(s,b,'Landing canceled. No attackers reached the coast.');continue;
     }
@@ -359,6 +369,7 @@ function rollForce(force,mode,random) {
 }
 function finishBattle(s,b,result,heldBy,seaDestination){
   b.resolved=true;b.step='done';b.result=result;s.active=null;
+  if(s.scrambles&&places[b.to].water)leaveScrambleBattle(s,b);
   if(heldBy)b.heldBy=heldBy;
   s.record.push({title:places[b.to].name,detail:result,...(heldBy?{heldBy}:{})});
   if(places[b.to].water&&b.boats){
@@ -396,6 +407,7 @@ function reachableLandingSites(s,from,type,to,spent){
 // Assign scarce carrier berths jointly so a flexible flight cannot strand another.
 export function flightRecoveries(s,orders,preview=null,previewSpent=0){
   const ex=exerciseOf(s),plans=new Map(),decks=new Map(),flights=[];
+  const scrambled=new Set((s.scrambles||scramblePlan(s,orders)).map(f=>f.zone));
   function capacity(id){
     if(decks.has(id))return decks.get(id);
     let room=deckSpace(s,id,ex.friendlyPowers[s.power]);
@@ -414,7 +426,7 @@ export function flightRecoveries(s,orders,preview=null,previewSpent=0){
     const damaged=s.shipDamage?.[id]?.[s.power]?.carrier||0;
     room-=2*Math.max(0,movingCarriers-damaged);
     const berths=Array.from({length:Math.max(0,room)},()=>({}));
-    if(ex.movement.spaces[id].enemyFleet){
+    if(ex.movement.spaces[id].enemyFleet||scrambled.has(id)){
       berths.length=Math.min(berths.length,reservedBerths(s,id));
       for(let i=0;i<2*arrivingCarriers;i++)berths.push({battle:id});
     }
@@ -651,7 +663,9 @@ function applyRound(s,b,losses,opening,choice){
     force[type]--;
     const total=attacking?ownLost:lost;total[type]=(total[type]||0)+1;
     if(!attacking&&s.pieces){
-      const row=s.pieces[b.to].find(([p,t,n])=>p===power&&t===type&&n>0);row[2]--;
+      const row=s.pieces[b.to].find(([p,t,n])=>p===power&&t===type&&n>0);
+      if(row)row[2]--;
+      else s.scrambles.find(f=>f.zone===b.to&&!f.returning&&f.power===power&&f.type===type&&f.remaining>0).remaining--;
       const army=nationalLosses[power]??={};army[type]=(army[type]||0)+1;
     }
   }

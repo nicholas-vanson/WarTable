@@ -1,3 +1,4 @@
+import {scramblePlan,scrambleRows} from './scramble.js';
 import {aboard,cargoSources,landingRoutes,escortOptions,queueLanding,landingSeaBattle,landingWait} from './assault.js';
 import {reverseCapitalPayments} from './occupation.js';
 import {countryInSentence,usIncomeChoice,declarationTargets,declarationDetails} from './politics.js';
@@ -235,7 +236,8 @@ function stepper(kind,values,limits,keys=types,min=0){
 }
 function armiesAt(id,combatOnly=false){
   const stacks=(s.phase==='noncombat'?redeployment():s.phase==='mobilize'?reserves().game:s).pieces?.[id]||[];
-  return nationalArmies(combatOnly?defendingRows(s,id):stacks);
+  if(combatOnly)return nationalArmies(defendingRows(s,id));
+  return nationalArmies(s.scrambles&&places[id].water?stacks.concat(scrambleRows(s,id)):stacks);
 }
 function targetUnits(id){
   if(!s.pieces)return unitLine(s.units[id],s.owners[id]);
@@ -253,6 +255,16 @@ function boardGarrison(id){
   }
   if(facilities.size)forces.push(block('Facilities')+[...facilities].map(type=>unitCounter(type)).join(' '));
   return forces.join('')||'<p class="hint">No units present.</p>';
+}
+function scrambleNotice(flights,forecast=false){
+  const zones=new Map();
+  for(const f of flights){
+    if(!f.remaining||f.returning)continue;
+    if(!zones.has(f.zone))zones.set(f.zone,[]);
+    zones.get(f.zone).push(esc(ownerNames[f.power]||f.power)+' · '+unitCounter(f.type,f.remaining,ownerNames[f.power])+' '+esc(stats[f.type].name.toLowerCase())+' from '+esc(places[f.from].name));
+  }
+  return [...zones].map(([zone,lines])=>'<div class="review-item"><strong>'+(forecast?'Expected scramble':'Scrambled defenders')+
+    ' · '+esc(places[zone].name)+'</strong><p>'+lines.join('<br>')+'</p></div>').join('');
 }
 function plannedAttacks(){
   const destinations=new Map();
@@ -276,7 +288,7 @@ function plannedAttacks(){
   for(const [to,rows] of destinations){
     html+='<section class="planned-target"><strong>'+places[to].name+'</strong>'+rows.join('')+'</section>';
   }
-  return html;
+  return html+(isGlobal?scrambleNotice(scramblePlan(s),true):'');
 }
 function inspectionPanel(backLabel){
   const id=ui.inspect,place=places[id];
@@ -348,11 +360,13 @@ function landingPanel(){
   if(!d.to)return title('Amphibious assault','Transport in '+places[ui.from].name+'. Choose a highlighted coast.')+
     [...routes].map(([id])=>opt(id,places[id].name,targetUnits(id),'↗','land-coast')).join('')+btn('Back to transport','land-back');
   const zone=d.path.at(-1),options=routes.get(d.to),units=landingUnits(),used=count(units);
-  const fight=d.engage||landingSeaBattle(landingPosition(),zone);
+  const position=landingPosition();
+  const expected=scramblePlan(position,[...position.orders,{to:d.to,landing:{path:d.path}}]).filter(f=>f.zone===zone);
+  const fight=d.engage||landingSeaBattle(position,zone);
   const ignoredSub=s.pieces[zone].some(([p,t,n])=>exercise.enemies.includes(p)&&t==='submarine'&&n);
   let html=title('Land in '+places[d.to].name,'Transport from '+places[ui.from].name+' · Offload in '+places[zone].name)+
-    '<p class="hint">'+(fight?'Resolve the sea battle before unloading.':'Cruisers and battleships can bombard once, up to one ship per landing unit.')+
-    (ignoredSub&&!fight?' An enemy submarine is here. A friendly warship must escort this transport.':'')+'</p>';
+    '<p class="hint">'+(fight?'Resolve the sea battle before unloading.':expected.length?'Defending aircraft are expected offshore. Resolve that battle before unloading. Ships that fight there cannot bombard.':'Cruisers and battleships can bombard once, up to one ship per landing unit.')+
+    (ignoredSub&&!fight?' An enemy submarine is here. A friendly warship must escort this transport.':'')+'</p>'+scrambleNotice(expected,true);
   if(exercise.movement.spaces[zone].enemyFleet&&!landingSeaBattle(landingPosition(),zone))
     html+=btn(d.engage?'Ignore enemy submarines and transports':'Engage enemy submarines and transports','land-engage');
   if(options.length>1)html+='<label>Sea route <select data-landing-route>'+options.map((path,i)=>
@@ -572,7 +586,7 @@ function battleChoice(b){
   if(waiting.length)return '<div class="review-item"><strong>'+esc(places[b.to].name)+'</strong><p>Landing waits for '+waiting.map(id=>esc(places[id].name)).join(', ')+'.</p></div>';
   return '<button class="battle-choice" data-act="battle" data-id="'+b.to+'">'+
     '<span class="battle-choice-title"><strong>'+places[b.to].name+'</strong><span class="end" aria-hidden="true">›</span></span>'+
-    cityObjective(b.to)+'<span class="force-columns">'+forceColumns(b.attack,s.units[b.to],s.owners[b.to],'total',isGlobal?armiesAt(b.to,true):null)+'</span></button>';
+    cityObjective(b.to)+scrambleNotice((s.scrambles||[]).filter(f=>f.zone===b.to))+'<span class="force-columns">'+forceColumns(b.attack,s.units[b.to],s.owners[b.to],'total',isGlobal?armiesAt(b.to,true):null)+'</span></button>';
 }
 function battlePanel(){
   const b=currentBattle(s);
@@ -583,7 +597,7 @@ function battlePanel(){
   const nations=defendingNations(dice,liveDefenders(b));
   const beach=b.amphibious?'<p class="hint">Amphibious assault · Seaborne troops cannot retreat.'+
     (b.bombard&&b.round<=1?' Offshore bombardment supports the first round.':'')+'</p>':'';
-  const info='<h2>'+places[b.to].name+'</h2>'+beach+block(b.step==='openingLosses'?'Opening fire · round '+b.round:b.round?'Battle round '+b.round:places[b.to].water?'Naval battle':'Land battle')+
+  const info='<h2>'+places[b.to].name+'</h2>'+beach+scrambleNotice((s.scrambles||[]).filter(f=>f.zone===b.to))+block(b.step==='openingLosses'?'Opening fire · round '+b.round:b.round?'Battle round '+b.round:places[b.to].water?'Naval battle':'Land battle')+
     (b.round?'':cityObjective(b.to))+rollsBox(dice,playback,attacker,nations);
   if(playback){
     $('action').innerHTML='<div class="roll-progress" id="rollStatus" role="status">Rolling for '+hitRange(playback.groups[playback.index][0])+'…</div>';
@@ -641,7 +655,7 @@ function savedRoundLosses(entry){
 }
 function timeline(record=s.record,attacking=attacker){
   return record.map(e=>{
-    const heading=esc(e.title);
+    const heading=esc(e.scramblePower?(ownerNames[e.scramblePower]||e.scramblePower)+' · '+e.title:e.title);
     if(e.frenchUnits)return '<div class="review-item"><strong>'+heading+'</strong><p>'+esc(e.detail)+'</p>'+
       (Object.keys(e.frenchUnits).length?unitLine(e.frenchUnits,'France'):'')+'</div>';
     if(e.income)return '<div class="review-item"><strong>Income collected</strong>'+e.income.accounts.map(a=>
@@ -733,6 +747,8 @@ function noncombatPanel(){
         'nc-stack','secondary','data-id="'+id+'" data-k="'+t+'"')).join('')||'<p class="hint">No unused units here.</p>')+btn('Back to moves','clear');
   }
   let html=title('Noncombat move','Tap an unused stack, choose how many units to move, then select a highlighted destination.');
+  const recovered=s.record.filter(e=>e.scrambleRecovery);
+  if(recovered.length)html+='<details class="review-item"><summary>Defending aircraft landings</summary>'+timeline(recovered)+'</details>';
   if(g.flights.some(f=>f.available)){
     html+=block('Aircraft landings');
     for(const [i,f] of g.flights.entries()){
@@ -1177,6 +1193,24 @@ document.addEventListener('click',e=>{
       case 'defend': rollDefense(s);beginRoll('defense');break;
       case 'loss': casualties(s,ui.losses,{beach:ui.beachLoss,boats:ui.lostBoats});ui.losses={inf:0,tank:0};delete ui.beachLoss;delete ui.lostBoats;break;
       case 'retreat': retreat(s,id);break;
+      case 'air-orders': {
+        if(!isGlobal)break;
+        const locked=s.phase!=='plan'||s.orders.length>0;
+        const options=Object.entries(globalPowers).filter(([p])=>p!=='Chinese').map(([p,name])=>
+          '<label class="power-seat">'+esc(name)+'<select data-air-order="'+p+'" '+(locked?'disabled':'')+'>'+
+          '<option value="scramble">Scramble</option><option value="hold" '+(exercise.holdScrambles[p]?'selected':'')+'>Stay at base</option></select></label>').join('');
+        showDialog('Air defense orders','<p>Each operative coastal or island air base can send up to three fighters or tactical bombers. Bases cover amphibious assaults first, then the highest defending IPC value. Ties go to the lowest sea-zone number.</p>'+
+          options+(locked?'<p>Change orders before the next combat moves are planned.</p>':btn('Save air defense orders','save-air-orders','primary')));break;
+      }
+      case 'save-air-orders':
+        if(isGlobal&&s.phase==='plan'&&!s.orders.length){
+          for(const input of $('dialogBody').querySelectorAll('[data-air-order]')){
+            if(input.value==='hold')exercise.holdScrambles[input.dataset.airOrder]=true;
+            else delete exercise.holdScrambles[input.dataset.airOrder];
+          }
+          currentSearch=null;$('dialog').close();
+        }
+        break;
       case 'players': {
         if(!isGlobal)break;
         const locked=s.orders.length>0||s.phase!=='plan';
@@ -1223,7 +1257,7 @@ $('map').setAttribute('aria-label',inBriefing()?'Opening board. Pan or pinch the
 $('controlKey').innerHTML=(isGlobal?[attacker]:[attacker,defender]).map(n=>'<i data-nation="'+n+'"></i>'+n).join(' ');
 $('closeDialog').onclick=()=>$('dialog').close();
 $('journal').onclick=()=>{
-  const current=['review','noncombat','mobilize','income'].includes(s.phase)?timeline()||'<p>No combat was recorded.</p>':timeline(s.record.filter(e=>e.declaration||e.capital||e.frenchUnits))+'<p>The current combat review opens after all battles are resolved.</p>';
+  const current=['review','noncombat','mobilize','income'].includes(s.phase)?timeline()||'<p>No combat was recorded.</p>':timeline(s.record.filter(e=>e.declaration||e.capital||e.frenchUnits||e.scramblePower))+'<p>The current combat review opens after all battles are resolved.</p>';
   const previous=(globalBoard?.match.turnReviews||[]).slice().reverse().map(turn=>{
     const nation=globalPowers[turn.power];
     return '<details class="review-item review-round"><summary>'+seasonForRound(turn.round)+' · '+nation+'</summary>'+
@@ -1231,7 +1265,7 @@ $('journal').onclick=()=>{
   }).join('');
   showDialog(isGlobal?'Game review':'Exercise review',current+previous);
 };
-$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. '+(isGlobal?'The global map wraps east and west across the Americas. ':'')+'Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The national color fades inward from the hatched border. Neutral hatching slopes up to the right across the whole territory. Single grey lines mark strict neutrals, paired lines mark pro-Allied neutrals, and dashed lines mark pro-Axis neutrals. Grey stippling marks impassable terrain. Units cannot enter or cross these spaces. A committed strict-neutral invasion changes the other eligible strict neutrals immediately. Friendly neutrals can be activated after combat. Tap a territory to mark it in violet and read its status. Tap it again to clear the selection. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><details class="unit-key"><summary>Unit symbols</summary><ul>'+Object.entries(globalUnits).map(([type,[name]])=>'<li>'+unitCounter(boardUnitType(type),undefined,attacker)+' '+name+'</li>').join('')+'</ul></details><h3>Plan an attack</h3><p>Land arrows are brick red, air arrows are blue, and sea arrows are ochre. Nearby routes in the same category can share an arrowhead.</p><p>Select a stack on the map, adjust the quantity, then tap a highlighted enemy territory to place the order. Assigned stacks at the front have a muted national color and a dark corner. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this board</h3><p>'+ (isGlobal?'After combat review, choose Begin noncombat move to redeploy unused units, make sea crossings or change aircraft landings. A transport can carry one land unit and one additional infantry between friendly coasts in a single move. You can remove queued moves or undo the last move. Hold to commit your moves and begin mobilization. Select a purchase, a highlighted site and the quantity to place. Ships use an adjacent coastal factory. You can reserve a purchased carrier’s launch during combat or noncombat movement when aircraft need its deck to land. Hold to place your reserves and review income. Open any income line to see its sources. Hold to credit your treasury and hand over the board. Global 1940 uses the opening forces of all nine powers. Tap any territory or counter to inspect it. Amber marks eligible destinations. Select a distant destination, then follow the dashed teal spaces to choose each passage. Tanks and mechanized infantry move two spaces. Each mechanized infantry needs a tank on the same route to blitz. Ships move two sea zones, fighters and tactical bombers four spaces, and strategic bombers six. An operational friendly naval or air base adds one movement point at departure. Aircraft need enough movement to land in territory that was friendly at the start of the turn, or on an eligible carrier. The order shows the outbound cost and planned landing site. AAA fires at incoming aircraft during opening fire.':'This local exercise covers adjacent land attacks with infantry and tanks. The forces are arranged for testing.')+'</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+(isGlobal?'<p>Inland China terrain data courtesy of Mapzen, the U.S. Geological Survey and NOAA. Rivers and lakes from Natural Earth.</p>'+btn('Local players','players','secondary')+((inBriefing()||inPurchase()||s.phase==='income')?'':btn('Restart combat','reset','danger')):btn('Restart exercise','reset','danger')));
+$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. '+(isGlobal?'The global map wraps east and west across the Americas. ':'')+'Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The national color fades inward from the hatched border. Neutral hatching slopes up to the right across the whole territory. Single grey lines mark strict neutrals, paired lines mark pro-Allied neutrals, and dashed lines mark pro-Axis neutrals. Grey stippling marks impassable terrain. Units cannot enter or cross these spaces. A committed strict-neutral invasion changes the other eligible strict neutrals immediately. Friendly neutrals can be activated after combat. Tap a territory to mark it in violet and read its status. Tap it again to clear the selection. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><details class="unit-key"><summary>Unit symbols</summary><ul>'+Object.entries(globalUnits).map(([type,[name]])=>'<li>'+unitCounter(boardUnitType(type),undefined,attacker)+' '+name+'</li>').join('')+'</ul></details><h3>Plan an attack</h3><p>Land arrows are brick red, air arrows are blue, and sea arrows are ochre. Nearby routes in the same category can share an arrowhead.</p><p>Select a stack on the map, adjust the quantity, then tap a highlighted enemy territory to place the order. Assigned stacks at the front have a muted national color and a dark corner. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this board</h3><p>'+ (isGlobal?'After combat review, choose Begin noncombat move to redeploy unused units, make sea crossings or change aircraft landings. A transport can carry one land unit and one additional infantry between friendly coasts in a single move. You can remove queued moves or undo the last move. Hold to commit your moves and begin mobilization. Select a purchase, a highlighted site and the quantity to place. Ships use an adjacent coastal factory. You can reserve a purchased carrier’s launch during combat or noncombat movement when aircraft need its deck to land. Hold to place your reserves and review income. Open any income line to see its sources. Hold to credit your treasury and hand over the board. Global 1940 uses the opening forces of all nine powers. Tap any territory or counter to inspect it. Amber marks eligible destinations. Select a distant destination, then follow the dashed teal spaces to choose each passage. Tanks and mechanized infantry move two spaces. Each mechanized infantry needs a tank on the same route to blitz. Ships move two sea zones, fighters and tactical bombers four spaces, and strategic bombers six. An operational friendly naval or air base adds one movement point at departure. Aircraft need enough movement to land in territory that was friendly at the start of the turn, or on an eligible carrier. The order shows the outbound cost and planned landing site. AAA fires at incoming aircraft during opening fire.':'This local exercise covers adjacent land attacks with infantry and tanks. The forces are arranged for testing.')+'</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+(isGlobal?'<p>Inland China terrain data courtesy of Mapzen, the U.S. Geological Survey and NOAA. Rivers and lakes from Natural Earth.</p>'+btn('Air defense orders','air-orders','secondary')+btn('Local players','players','secondary')+((inBriefing()||inPurchase()||s.phase==='income')?'':btn('Restart combat','reset','danger')):btn('Restart exercise','reset','danger')));
 // Store the two panel dimensions separately so rotating the phone restores the last fit.
 function setupOrdersPanel(){
   const main=document.querySelector('main'),sheet=$('ordersPanel'),grip=$('resizePanel');

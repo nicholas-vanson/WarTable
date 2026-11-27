@@ -1,3 +1,4 @@
+import {scrambleRows} from './scramble.js';
 import {departures} from './assault.js';
 import {nearbyGroups,frontGrid,approachGap,meanPoint,pointGap} from './front-layout.js';
 import {orderPassages,entrySpace} from './movement.js';
@@ -543,7 +544,7 @@ function homeStacks(game,id,exercise,offsets){
   const units=game.phase==='plan'?available(game,id):game.units[id];
   const stacks=[];
   const homeRows=exercise.world?[]:types.filter(t=>units[t]).map(t=>[null,t,units[t]]);
-  if(exercise.world)for(const [power,type,n] of game.pieces[id]){
+  if(exercise.world)for(const [power,type,n] of (game.scrambles&&places[id].water?game.pieces[id].concat(scrambleRows(game,id)):game.pieces[id])){
     if(!n)continue;
     const row=homeRows.find(([p,t])=>samePower(p,power)&&t===type);
     if(row)row[2]+=n;else homeRows.push([power,type,n]);
@@ -1238,11 +1239,12 @@ export async function atlas(onPick,onView,initial,exercise) {
       const nextStarts=new Map(),now=performance.now(),period=exercise.projection?.width;
       const byTarget=new Map();
       let orders=placing?[]:mapOrders(game);
-      if(redeploy||placing||game.frenchAward?.status==='placed'){
+      if(redeploy||placing||game.scrambles?.length||game.frenchAward?.status==='placed'){
         // Give newly arrived types a garrison seat, including in previously empty spaces.
         game.redeploySeats={};
         for(const [id,rows] of Object.entries(game.pieces)){
-          const keys=[...new Set(rows.filter(row=>row[2]>0).map(([p,t])=>p+'/'+t))];
+          const present=game.scrambles&&places[id].water?rows.concat(scrambleRows(game,id)):rows;
+          const keys=[...new Set(present.filter(row=>row[2]>0).map(([p,t])=>p+'/'+t))];
           const formation=formations[id];
           if(keys.every(key=>formation.slots.has(key)))continue;
           const sea=places[id].water?zones.get(String(parseInt(places[id].name))):null;

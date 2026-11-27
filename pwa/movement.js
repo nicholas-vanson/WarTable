@@ -42,7 +42,7 @@ export function combatMovement(spaces,neighbors,canalOpen,seaStop=()=>true){
     }
     return sites;
   }
-  function searchFor(from,type,{canBlitz=true,canLand=()=>true}={}){
+  function searchFor(from,type,{canBlitz=true,canLand=()=>true,supportZones}={}){
     const air=aircraft.includes(type),ship=ships.includes(type),armored=type==='tank'||type==='mech_infantry';
     const range=allowance(from,type);
     function edge(a,b){
@@ -58,7 +58,7 @@ export function combatMovement(spaces,neighbors,canalOpen,seaStop=()=>true){
     function finish(last,to,spent){
       const p=spaces[to];
       if(ship&&!seaStop(to,type))return false;
-      if(p.water?!p.enemyFleet:!p.attackLand){
+      if(p.water?!p.enemyFleet&&!supportZones?.has(to):!p.attackLand){
         return armored&&last!==from&&spaces[last].blitz&&p.friendly;
       }
       return !air||canLand(to,spent);
