@@ -1,3 +1,5 @@
+import {lanRequest,lanSeats,lanToken} from './lan.js';
+import {lanDecision,lanSide} from './lan-game.js';
 import {breakthroughs,hasTech,canResearch,researchWallets,buyResearch,discover,finishResearch} from './research.js';
 import {researchRoutes,dropRoom,queueDrop,queueRocket,rocketsPending,fireRocket} from './research-moves.js';
 import {victoryStatus} from './victory.js';
@@ -17,11 +19,17 @@ import {combatTech,frenchReinforcements,frenchReinforcementCost,changeFrenchDraf
 import {drawFormationNames} from './formation-names.js';
 import {atlas,styleFor} from './map.js';
 const $=id=>document.getElementById(id);
-const isGlobal=location.hash==='#global';
+const roomCode=location.hash.match(/^#room\/([A-F0-9]{10})$/)?.[1];
+const roomSeat=roomCode&&lanSeats()[roomCode];
+if(roomCode&&!roomSeat){location.replace('#join/'+roomCode);throw Error('Join this room to open the board.');}
+let roomState=roomCode?await lanRequest('rooms/'+roomCode,roomSeat.token):null;
+if(roomCode&&!roomState.match){location.replace('#lobby/'+roomCode);throw Error('Waiting for both players.');}
+let roomBusy=false,roomPolling=false,roomOnline=true;
+const isGlobal=!!roomCode||location.hash==='#global';
 const exerciseId=isGlobal?'global':location.hash.slice('#exercise/'.length);
-const globalBoard=isGlobal?await loadGlobalBoard():null;
+const globalBoard=isGlobal?await loadGlobalBoard(roomState?.match):null;
 if(globalBoard)restoreChineseStatement(globalBoard.match);
-let lastGlobalSave=isGlobal?localStorage.getItem(globalKey):null;
+let lastGlobalSave=isGlobal&&!roomCode?localStorage.getItem(globalKey):null;
 const key=isGlobal?globalKey:exerciseId==='west'?'wartable.western-front.v1':'wartable.exercise.'+exerciseId+'.v1';
 const exercise=exercises[exerciseId],{attacker,defender}=exercise;
 const exercisePlaces=Object.fromEntries(Object.keys(exercise.forces).map(id=>[id,places[id]]));
@@ -37,6 +45,8 @@ const inResearch=()=>globalBoard?.match.phase==='research';
 const finished=()=>globalBoard?.match.phase==='victory';
 const inPurchase=()=>globalBoard?.match.phase==='purchase';
 const inBriefing=()=>globalBoard?.match.phase==='briefing';
+const roomViewKey=roomCode?'wartable.lan.view.'+roomCode+'.'+globalBoard.match.round+'.'+s.power:'';
+if(roomCode)try{view=JSON.parse(sessionStorage.getItem(roomViewKey))||null;}catch{}
 view??=globalBoard?.openingView??null;
 function nameFormations(){
   if(s.formationNames)return;
@@ -55,6 +65,7 @@ function nameFormations(){
 nameFormations();
 function save(){
   try{
+    if(roomCode){if(view)sessionStorage.setItem(roomViewKey,JSON.stringify(view));return;}
     const snapshot={game:s,ui,view,layoutSeed};
     if(isGlobal){
       if(localStorage.getItem(key)!==lastGlobalSave){location.reload();return;}
@@ -116,6 +127,7 @@ function addStackOrder(to,path=[]){
   units[ui.stack]=(units[ui.stack]||0)+ui.quantity;
   if(ui.stack==='mech_infantry'&&!combatTech(s,'mechanized')&&path.length&&exercise.movement.spaces[path[0]].blitz)
     units.tank=Math.max(units.tank||0,units.mech_infantry);
+  if(roomSend('plan',{from:ui.from,to,units,path}))return;
   plan(s,ui.from,to,units,path);
   ui=freshUI();
 }
@@ -123,6 +135,7 @@ function queueRaidSortie(target){
   const draft={...s,orders:s.orders.filter((_,i)=>i!==ui.raidIndex)};
   const prior=draft.orders.find(o=>o.raid===target&&o.units[ui.stack]&&o.from===ui.from&&o.to===ui.raidTo&&samePassages(o,ui.via));
   const n=ui.quantity+(prior?.units[ui.stack]||0);
+  if(roomSend('plan',{from:ui.from,to:ui.raidTo,units:{[ui.stack]:n},path:ui.via,raid:target,replace:ui.raidIndex}))return;
   plan(draft,ui.from,ui.raidTo,{[ui.stack]:n},ui.via,target);
   s.orders=draft.orders;ui=freshUI();
 }
@@ -151,7 +164,7 @@ function selectTarget(id){
   addStackOrder(id);
 }
 function pick(id,type,origin,nation){
-  if(inResearch())return;
+  if(inResearch()||!roomCanAct())return;
   if(s.frenchAward?.status==='pending'||ui.assault?.to||ui.raidTo||ui.raidResult)return;
   if(!id){run(()=>{ui=freshUI();});return;}
   if(finished()||inBriefing()||inPurchase()||s.phase==='income'){
@@ -199,9 +212,9 @@ function pick(id,type,origin,nation){
 
   });
   else if(s.phase==='combat'&&pendingRaids(s).length){
-    if(!s.raidDefensePending&&!s.activeRaid&&pendingRaids(s).some(r=>r.to===id))run(()=>chooseRaid(s,id));
+    if(!s.raidDefensePending&&!s.activeRaid&&pendingRaids(s).some(r=>r.to===id))run(()=>roomSend('raid-battle',{to:id})||chooseRaid(s,id));
   }
-  else if(s.phase==='combat'&&!s.active&&s.battles.some(b=>b.to===id&&!b.resolved))run(()=>chooseBattle(s,id));
+  else if(s.phase==='combat'&&!s.active&&s.battles.some(b=>b.to===id&&!b.resolved))run(()=>roomSend('battle',{to:id})||chooseBattle(s,id));
 }
 function run(fn){
   message='';
@@ -825,6 +838,7 @@ function selectRedeployment(id,type,flight){
 }
 function queueRedeployment(to){
   const order={...selectedNoncombatOrder(),to},draft=[...s.noncombatOrders,order];
+  if(roomSend('redeploy',{orders:draft}))return;
   const preview=noncombatPosition(s,draft);
   s.noncombatOrders=draft;noncombatPreview=preview;displayedDraft=draft;
   ui=freshUI();
@@ -1197,6 +1211,103 @@ function orderSummary(){
 }
 
 let panelView,panelNation,showingAward=false;
+function roomCanAct(){
+  return !roomCode||(!roomBusy&&roomOnline&&lanDecision(globalBoard.match).side===roomState.side);
+}
+function applyRoom(packet,own=false,after){
+  if(!packet||packet.revision<=roomState.revision)return;
+  const previous=globalBoard.match,m=packet.match;
+  const newBoard=m.power!==previous.power||m.round!==previous.round||m.phase==='victory'||
+    previous.phase==='purchase'&&m.phase!=='purchase'||JSON.stringify(previous.diplomacy)!==JSON.stringify(m.diplomacy)||
+    JSON.stringify(previous.technology)!==JSON.stringify(m.technology);
+  roomState=packet;
+  if(newBoard){location.reload();return;}
+  endPlayback();
+  for(const power of Object.keys(globalPowers)){
+    if(m.holdScrambles?.[power])exercise.holdScrambles[power]=true;else delete exercise.holdScrambles[power];
+  }
+  const names=s.formationNames;
+  globalBoard.match=m;s=m.combat?.game||globalBoard.game;s.formationNames=names;
+  currentSearch=null;landingCache=null;noncombatPreview=null;placementPreview=null;
+  if(!own)ui=freshUI();
+  if(after)after();
+  render();
+}
+async function refreshRoom(){
+  if(roomBusy||roomPolling||document.hidden)return;
+  const revision=roomState.revision;roomPolling=true;
+  try{
+    const p=await lanRequest('rooms/'+roomCode+'?since='+revision,roomSeat.token);
+    if(roomBusy||roomState.revision!==revision)return;
+    const recovered=!roomOnline;roomOnline=true;
+    if(p)applyRoom(p);else if(recovered)render();
+  }catch{if(!roomBusy&&roomOnline){roomOnline=false;render();}}
+  finally{roomPolling=false;}
+}
+function roomSend(action,args={},after=()=>{ui=freshUI();}){
+  if(!roomCode)return false;
+  if(action==='air-orders'?(roomBusy||!roomOnline):!roomCanAct())return true;
+  roomBusy=true;message='';render();
+  const request={revision:roomState.revision,id:lanToken(),action,args};
+  (async()=>{
+    try{
+      let p;
+      try{p=await lanRequest('rooms/'+roomCode+'/action',roomSeat.token,request);}
+      catch(err){if(err.status)throw err;p=await lanRequest('rooms/'+roomCode+'/action',roomSeat.token,request);}
+      roomBusy=false;roomOnline=true;applyRoom(p,true,after);
+    }catch(err){
+      roomBusy=false;roomOnline=!!err.status;message=err.status?err.message:'Connection lost. Checking the saved board…';
+      render();await refreshRoom();
+    }
+  })();
+  return true;
+}
+function roomButton(act,b){
+  const {id,k,n}=b.dataset,qty=Number(n),index=Number(id),m=globalBoard.match;
+  const keep=()=>{},clear=()=>{ui=freshUI();};
+  switch(act){
+    case 'begin-turn':case 'skip-research':case 'research-finish':case 'begin-noncombat':case 'confirm-interceptors':
+    case 'roll':case 'defend':case 'opening-fire':return roomSend(act);
+    case 'buy':return roomSend(act,{unit:k,delta:qty,wallet:ui.wallet||s.power},keep);
+    case 'facility-order':return roomSend(act,{unit:k,site:id,delta:qty,wallet:ui.wallet||s.power},keep);
+    case 'french-unit':return roomSend(act,{unit:k,delta:qty},keep);
+    case 'queue-support':{
+      const c=supportChoice(id);return id==='rockets'?roomSend('rocket',{from:c.from,to:c.to,target:c.value}):roomSend('drop',{from:c.from,to:c.to,n:Number(c.value)});
+    }
+    case 'remove-drop':case 'raid-remove':case 'land-remove':
+      return roomSend('remove-order',{index:ui.dropIndex??ui.raidIndex??ui.landingIndex});
+    case 'remove-rocket':return roomSend(act,{from:id});
+    case 'fire-rocket':return roomSend(act,{from:id},()=>{clear();message=s.record.findLast(e=>e.rocket).detail;});
+    case 'reserve-launch':case 'release-launch':{
+      const old=s.carrierLaunches||[];
+      const orders=act==='reserve-launch'?[...old,{wallet:b.dataset.wallet,unit:'carrier',site:k,to:id,quantity:1}]:old.filter((_,i)=>i!==index);
+      return roomSend('launches',{orders},()=>{ui.showLaunches=true;});
+    }
+    case 'queue-placement':case 'remove-placement':{
+      const orders=act==='queue-placement'?[...s.placements,{unit:ui.reserve,wallet:ui.wallet||s.power,site:ui.site,to:ui.destination,quantity:ui.quantity}]:s.placements.filter((_,i)=>i!==index);
+      return roomSend('placements',{orders},()=>{ui={...freshUI(),wallet:ui.wallet};});
+    }
+    case 'nc-undo':case 'nc-remove':
+      return roomSend('redeploy',{orders:act==='nc-undo'?s.noncombatOrders.slice(0,-1):s.noncombatOrders.filter((_,i)=>i!==index)});
+    case 'raid-battle':case 'battle':case 'retreat':return roomSend(act,{to:id});
+    case 'raid-step':{
+      const to=s.activeRaid;
+      return roomSend(act,{step:id,losses:ui.raidLosses||[]},()=>{clear();if(s.raids.find(r=>r.to===to)?.step==='done')ui.raidResult=to;});
+    }
+    case 'land-queue':return roomSend('landing',{from:ui.from,to:ui.assault.to,draft:ui.assault,replace:ui.editLanding});
+    case 'add':case 'remove':return roomSend('plan',{from:ui.from,to:ui.to,path:ui.via,units:act==='remove'?{}:ui.units});
+    case 'loss':return roomSend('loss',{losses:ui.losses,choice:{beach:ui.beachLoss,boats:ui.lostBoats}});
+    case 'players':showDialog('Room seats','<p>Axis · Player '+m.controllers.Germans+'</p><p>Allies · Player '+m.controllers.British+'</p>');return true;
+    case 'save-air-orders':{
+      const fields=$('dialogBody').querySelectorAll('[data-air-order]:enabled');
+      const holds=Object.fromEntries([...fields].map(el=>[el.dataset.airOrder,el.value==='hold']));
+      return roomSend('air-orders',{holds},()=>{$('dialog').close();});
+    }
+    case 'save-players':case 'reset':case 'confirm-reset':return true;
+    default:return false;
+  }
+}
+
 function render(){
   stopHold();$('action').innerHTML='';
   const briefing=inBriefing(),award=s.frenchAward?.status==='pending';
@@ -1257,12 +1368,23 @@ function render(){
   }else if(ui.assault?.to||ui.raidTo||s.activeRaid||ui.raidResult){
     draw(s,ui.raidResult||ui.raidTo||s.activeRaid||ui.assault?.to,null,null,layoutSeed,null,false,null);
   }else draw(nc?redeployment():s,ui.inspect||ui.from,ui.routeTo||ui.to,ui.stack||ui.inspectedType,layoutSeed,ui.stack?null:ui.inspectedNation,briefing||inPurchase()||inResearch()||finished(),ui.stack?(nc?[...noncombatRoutes(redeployment(),selectedNoncombatOrder()).keys()]:moveChoices()):null);
-  if(award)bindHold($('placeFrenchAward'),()=>run(()=>{placeFrenchAward(s);ui=freshUI();}));
+  if(roomCode){
+    const d=lanDecision(globalBoard.match),can=roomCanAct();
+    $('storage').textContent='Wi-Fi · '+roomState.side;
+    const status=document.createElement('p');status.className='lan-status';status.setAttribute('role','status');
+    status.textContent=!roomOnline?'Host disconnected · Reconnecting…':roomBusy?'Saving to host…':d.side?(can?'Your decision':'Waiting for '+d.side)+' · '+d.label:'Final board';
+    $('panel').prepend(status);
+    if(!can){
+      for(const el of document.querySelectorAll('#panel button:not([data-act="objective-status"]),#panel select,#panel input,#action button:not([data-act="final-review"])'))el.disabled=true;
+      return;
+    }
+  }
+  if(award)bindHold($('placeFrenchAward'),()=>roomSend('french-place')||run(()=>{placeFrenchAward(s);ui=freshUI();}));
   else if($('fundResearch'))bindHold($('fundResearch'),()=>{const b=researchBudget(globalBoard.match);advanceEconomy('research-buy',[b.dice,b.pacific]);});
   else if($('collectIncome'))bindHold($('collectIncome'),()=>advanceEconomy('collect'));
   else if($('finishMobilization'))bindHold($('finishMobilization'),()=>advanceEconomy('mobilize'));
-  else if($('finishNoncombat'))bindHold($('finishNoncombat'),()=>run(()=>{s=beginMobilization(s);ui=freshUI();}));
-  else if(inPurchase())bindHold($('confirmOrder'),()=>run(()=>{
+  else if($('finishNoncombat'))bindHold($('finishNoncombat'),()=>roomSend('finish-noncombat')||run(()=>{s=beginMobilization(s);ui=freshUI();}));
+  else if(inPurchase())bindHold($('confirmOrder'),()=>roomSend('pay')||run(()=>{
     const receipt=confirmPurchase(globalBoard.match);
     globalBoard.match.combatStart=structuredClone(globalBoard.match.board);
     exercise.refreshBases(globalBoard.match.board);
@@ -1273,7 +1395,7 @@ function render(){
     s.record.push(receipt);ui=freshUI();
     $('map').setAttribute('aria-label',combatMapLabel);
   }));
-  else bindHold($('hold'),()=>run(()=>{commit(s);ui=freshUI();}));
+  else bindHold($('hold'),()=>roomSend('commit')||run(()=>{commit(s);ui=freshUI();}));
 }
 function showDialog(heading,html){
   $('dialogTitle').textContent=heading;
@@ -1290,6 +1412,11 @@ $('dialog').addEventListener('close',()=>{
 });
 // Persist the phase transition and its financial effects in one local-storage write.
 async function advanceEconomy(action,targets=[]){
+  if(roomCode){
+    const cmd={roll:'roll-convoys',bonds:'roll-bonds'}[action]||action;
+    const args=action==='research-buy'?{dice:targets[0],pacific:targets[1]}:action==='discover'?{chart:targets[0]}:{targets};
+    roomSend(cmd,args,()=>{ui=freshUI();if($('dialog').open)$('dialog').close();});return;
+  }
   const persist=()=>{
     if(localStorage.getItem(key)!==lastGlobalSave){location.reload();return;}
     const match=globalBoard.match;
@@ -1326,6 +1453,9 @@ document.addEventListener('click',e=>{
   if(finished()&&act!=='clear')return;
   if(act==='discover'){advanceEconomy('discover',[Number(id)]);return;}
   if(act==='roll-bonds'){advanceEconomy('bonds');return;}
+  if(roomCode){
+    if((!roomCanAct()&&!['players','air-orders','save-air-orders','clear','war-cancel'].includes(act))||roomButton(act,b))return;
+  }
   if(act==='war-open'){chooseWarTargets();return;}
   if(act==='war-cancel'){stopHold();$('dialog').close();return;}
   if(act==='war-review'){reviewWarTargets();return;}
@@ -1458,9 +1588,9 @@ document.addEventListener('click',e=>{
       case 'retreat': retreat(s,id);break;
       case 'air-orders': {
         if(!isGlobal)break;
-        const locked=s.phase!=='plan'||(s.orders.length>0||s.rocketOrders?.length>0);
+        const locked=finished()||s.phase!=='plan'||(s.orders.length>0||s.rocketOrders?.length>0);
         const options=Object.entries(globalPowers).filter(([p])=>p!=='Chinese').map(([p,name])=>
-          '<label class="power-seat">'+esc(name)+'<select data-air-order="'+p+'" '+(locked?'disabled':'')+'>'+
+          '<label class="power-seat">'+esc(name)+'<select data-air-order="'+p+'" '+(locked||roomCode&&lanSide(p)!==roomState.side?'disabled':'')+'>'+
           '<option value="scramble">Scramble</option><option value="hold" '+(exercise.holdScrambles[p]?'selected':'')+'>Stay at base</option></select></label>').join('');
         showDialog('Air defense orders','<p>Each operative coastal or island air base can send up to three fighters or tactical bombers. Bases cover amphibious assaults first, then the highest defending IPC value. Ties go to the lowest sea-zone number.</p>'+
           options+(locked?'<p>Change orders before the next combat moves are planned.</p>':btn('Save air defense orders','save-air-orders','primary')));break;
@@ -1515,6 +1645,7 @@ $('panel').addEventListener('change',e=>{
     if(field==='researchDice')ui.researchDice=Math.max(1,Math.min(b.max,Math.trunc(n)||1));
     else ui.pacific=Math.max(b.minPacific,Math.min(b.maxPacific,Math.trunc(n)||0));
   });
+  if(roomCode&&field==='bondSplit'){roomSend('split-bonds',{pacific:Number(e.target.value)},()=>{});return;}
   if(field==='bondSplit')run(()=>splitBonds(globalBoard.match,Number(e.target.value)));
   if(e.target.matches('[data-support]'))run(()=>{
     const kind=e.target.dataset.support,key=e.target.dataset.field,options=(ui.support??={})[kind]??={};
@@ -1522,6 +1653,8 @@ $('panel').addEventListener('change',e=>{
     if(key==='from')delete options.to;
     if(key!=='value')delete options.value;
   });
+  if(roomCode&&e.target.matches('[data-interceptor]')){roomSend('interceptor',{to:e.target.dataset.place,power:e.target.dataset.interceptor,n:Number(e.target.value)},()=>{});return;}
+  if(roomCode&&e.target.matches('[data-bomb-target]')){roomSend('bomb-target',{index:Number(e.target.dataset.bombTarget),target:e.target.value},()=>{});return;}
   if(e.target.matches('[data-interceptor]'))run(()=>setInterceptorCount(s,e.target.dataset.place,e.target.dataset.interceptor,Number(e.target.value)));
   if(e.target.matches('[data-bomb-target]'))run(()=>setRaidTarget(s,Number(e.target.dataset.bombTarget),e.target.value));
   if(e.target.matches('[data-raid-loss]'))run(()=>{
@@ -1532,7 +1665,7 @@ $('panel').addEventListener('change',e=>{
   if(e.target.matches('[data-landing-route]'))run(()=>setLandingPath(Number(e.target.value)));
   if(e.target.matches('[data-landing-load]'))run(()=>{ui.assault.load=e.target.value||null;ui.assault.cargo=[];});
 });
-$('exerciseMenu').onclick=()=>{location.hash='';};
+$('exerciseMenu').onclick=()=>{location.hash=roomCode?'lobby/'+roomCode:'';};
 document.querySelector('.theater').textContent=exercise.name;
 const combatMapLabel='Pan or pinch the map. Select a unit from '+attacker+' and an eligible destination.';
 $('map').setAttribute('aria-label',inBriefing()?'Opening board. Pan or pinch the map and select a territory or force to inspect.':inPurchase()?'Purchase and repair. Select a territory or force to inspect.':combatMapLabel);
@@ -1547,7 +1680,7 @@ $('journal').onclick=()=>{
   }).join('');
   showDialog(isGlobal?'Game review':'Exercise review',current+previous);
 };
-$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. '+(isGlobal?'The global map wraps east and west across the Americas. ':'')+'Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The national color fades inward from the hatched border. Neutral hatching slopes up to the right across the whole territory. Single grey lines mark strict neutrals, paired lines mark pro-Allied neutrals, and dashed lines mark pro-Axis neutrals. Grey stippling marks impassable terrain. Units cannot enter or cross these spaces. A committed strict-neutral invasion changes the other eligible strict neutrals immediately. Friendly neutrals can be activated after combat. Tap a territory to mark it in violet and read its status. Tap it again to clear the selection. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><details class="unit-key"><summary>Unit symbols</summary><ul>'+Object.entries(globalUnits).map(([type,[name]])=>'<li>'+unitCounter(boardUnitType(type),undefined,attacker)+' '+name+'</li>').join('')+'</ul></details><h3>Plan an attack</h3><p>Land arrows are brick red, air arrows are blue, and sea arrows are ochre. Nearby routes in the same category can share an arrowhead.</p><p>Select a stack on the map, adjust the quantity, then tap a highlighted enemy territory to place the order. Assigned stacks at the front have a muted national color and a dark corner. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this board</h3><p>'+ (isGlobal?'After combat review, choose Begin noncombat move to redeploy unused units, make sea crossings or change aircraft landings. A transport can carry one land unit and one additional infantry between friendly coasts in a single move. You can remove queued moves or undo the last move. Hold to commit your moves and begin mobilization. Select a purchase, a highlighted site and the quantity to place. Ships use an adjacent coastal factory. You can reserve a purchased carrier’s launch during combat or noncombat movement when aircraft need its deck to land. Hold to place your reserves and review income. Open any income line to see its sources. Hold to credit your treasury and hand over the board. Global 1940 uses the opening forces of all nine powers. Tap any territory or counter to inspect it. Amber marks eligible destinations. Select a distant destination, then follow the dashed teal spaces to choose each passage. Tanks and mechanized infantry move two spaces. Mechanized infantry needs a tank on the same route to blitz until it gains Improved Mechanized Infantry. Ships move two sea zones, fighters and tactical bombers four spaces, and strategic bombers six. An operational friendly naval or air base adds one movement point at departure. Aircraft need enough movement to land in territory that was friendly at the start of the turn, or on an eligible carrier. The order shows the outbound cost and planned landing site. AAA fires at incoming aircraft during opening fire.':'This local exercise covers adjacent land attacks with infantry and tanks. The forces are arranged for testing.')+'</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+(isGlobal?'<p>Inland China terrain data courtesy of Mapzen, the U.S. Geological Survey and NOAA. Rivers and lakes from Natural Earth.</p>'+btn('Victory and technology','objective-status')+(finished()?'':btn('Air defense orders','air-orders','secondary')+btn('Local players','players','secondary'))+((finished()||inResearch()||inBriefing()||inPurchase()||s.phase==='income')?'':btn('Restart combat','reset','danger')):btn('Restart exercise','reset','danger')));
+$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. '+(isGlobal?'The global map wraps east and west across the Americas. ':'')+'Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The national color fades inward from the hatched border. Neutral hatching slopes up to the right across the whole territory. Single grey lines mark strict neutrals, paired lines mark pro-Allied neutrals, and dashed lines mark pro-Axis neutrals. Grey stippling marks impassable terrain. Units cannot enter or cross these spaces. A committed strict-neutral invasion changes the other eligible strict neutrals immediately. Friendly neutrals can be activated after combat. Tap a territory to mark it in violet and read its status. Tap it again to clear the selection. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><details class="unit-key"><summary>Unit symbols</summary><ul>'+Object.entries(globalUnits).map(([type,[name]])=>'<li>'+unitCounter(boardUnitType(type),undefined,attacker)+' '+name+'</li>').join('')+'</ul></details><h3>Plan an attack</h3><p>Land arrows are brick red, air arrows are blue, and sea arrows are ochre. Nearby routes in the same category can share an arrowhead.</p><p>Select a stack on the map, adjust the quantity, then tap a highlighted enemy territory to place the order. Assigned stacks at the front have a muted national color and a dark corner. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this board</h3><p>'+ (isGlobal?'After combat review, choose Begin noncombat move to redeploy unused units, make sea crossings or change aircraft landings. A transport can carry one land unit and one additional infantry between friendly coasts in a single move. You can remove queued moves or undo the last move. Hold to commit your moves and begin mobilization. Select a purchase, a highlighted site and the quantity to place. Ships use an adjacent coastal factory. You can reserve a purchased carrier’s launch during combat or noncombat movement when aircraft need its deck to land. Hold to place your reserves and review income. Open any income line to see its sources. Hold to credit your treasury and hand over the board. Global 1940 uses the opening forces of all nine powers. Tap any territory or counter to inspect it. Amber marks eligible destinations. Select a distant destination, then follow the dashed teal spaces to choose each passage. Tanks and mechanized infantry move two spaces. Mechanized infantry needs a tank on the same route to blitz until it gains Improved Mechanized Infantry. Ships move two sea zones, fighters and tactical bombers four spaces, and strategic bombers six. An operational friendly naval or air base adds one movement point at departure. Aircraft need enough movement to land in territory that was friendly at the start of the turn, or on an eligible carrier. The order shows the outbound cost and planned landing site. AAA fires at incoming aircraft during opening fire.':'This local exercise covers adjacent land attacks with infantry and tanks. The forces are arranged for testing.')+'</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+(isGlobal?'<p>Inland China terrain data courtesy of Mapzen, the U.S. Geological Survey and NOAA. Rivers and lakes from Natural Earth.</p>'+btn('Victory and technology','objective-status')+(finished()?'':btn('Air defense orders','air-orders','secondary')+btn(roomCode?'Room seats':'Local players','players','secondary'))+((roomCode||finished()||inResearch()||inBriefing()||inPurchase()||s.phase==='income')?'':btn('Restart combat','reset','danger')):btn('Restart exercise','reset','danger')));
 // Store the two panel dimensions separately so rotating the phone restores the last fit.
 function setupOrdersPanel(){
   const main=document.querySelector('main'),sheet=$('ordersPanel'),grip=$('resizePanel');
@@ -1625,4 +1758,5 @@ function setupOrdersPanel(){
 }
 setupOrdersPanel();
 render();
+if(roomCode){setInterval(refreshRoom,1200);document.addEventListener('visibilitychange',refreshRoom);window.addEventListener('online',refreshRoom);}
 try{draw=await atlas(pick,v=>{view=v;save();},view,exercise);render();save();}catch{message='The map could not load. Reopen the playtest while online to finish the download.';render();}

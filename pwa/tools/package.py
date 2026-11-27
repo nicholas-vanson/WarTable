@@ -12,7 +12,7 @@ root = Path(__file__).resolve().parents[1]
 out = Path(sys.argv[1]).resolve()
 site = out / "site"
 site.mkdir(parents=True, exist_ok=True)
-modules = ["preferences", "research", "victory", "research-moves", "neutral-rules", "movement", "assault", "scramble", "raids", "rules", "noncombat", "formation-names", "front-layout", "map", "politics", "occupation", "global-game", "income", "mobilize", "app", "menu"]
+modules = ["preferences", "research", "victory", "research-moves", "neutral-rules", "movement", "assault", "scramble", "raids", "rules", "noncombat", "formation-names", "front-layout", "map", "politics", "occupation", "global-game", "income", "mobilize", "lan-game", "lan", "app", "menu"]
 for name in ["LICENSE.txt", "index.html", "style.css", "sw.js", "manifest.webmanifest", *(m + ".js" for m in modules)]:
     shutil.copyfile(root / name, site / name)
 shutil.copytree(root / "assets", site / "assets", dirs_exist_ok=True)
@@ -55,3 +55,8 @@ with zipfile.ZipFile(out / "WarTable-PWA.zip", "w", zipfile.ZIP_DEFLATED) as arc
     for path in sorted(site.rglob("*")):
         if path.is_file():
             archive.write(path, path.relative_to(site))
+
+    # Node runs the same ES module rules as the browser. Host files belong in
+    # the local ZIP, outside the deployed static site's public file set.
+    for name in ["lan-server.mjs", "package.json", "WIFI-PLAY.txt"]:
+        archive.write(root / name, name)

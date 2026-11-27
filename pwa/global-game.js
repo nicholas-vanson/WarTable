@@ -429,11 +429,14 @@ export function saveGlobalPosition(match,game){
 export async function loadGlobalSetup(){
   return await (await fetch('./assets/global-setup.json')).json();
 }
-export async function loadGlobalBoard(){
+export async function loadGlobalBoard(provided){
   const setup=await loadGlobalSetup();
   const sectors=await (await fetch('./assets/world-sectors.json')).json();
-  const saved=localStorage.getItem(globalKey);
-  const match=saved?JSON.parse(saved):startGlobalPlaytest(setup,Object.fromEntries(Object.keys(globalPowers).map(k=>[k,1])));
+  const saved=provided?null:localStorage.getItem(globalKey);
+  const match=provided||(saved?JSON.parse(saved):startGlobalPlaytest(setup,Object.fromEntries(Object.keys(globalPowers).map(k=>[k,1]))));
+  return restoreGlobalBoard(setup,sectors,match);
+}
+export function restoreGlobalBoard(setup,sectors,match){
   if(match.version!==1||!match.board?.Germany)throw Error('The saved global match could not be opened.');
   match.combatStart??=structuredClone(match.board);
   match.combatStartPactBroken??=!!match.mongolianPactBroken;

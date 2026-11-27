@@ -16,6 +16,10 @@ The downloadable archive contains the complete static site. The single-file HTML
 4. Hold to commit all attacks. Choose a battle, roll the German attack, then roll French return fire. Dice roll by unit type. Each group settles and shows its hits before the next group rolls. Attack hits are red and defense hits are charcoal. Manually assign German losses. Defenders take the cheapest legal casualties. Between eligible rounds choose to continue or retreat.
 5. After the last battle, review the committed actions. Open the field guide to restart.
 
+## Two phones on Wi-Fi
+
+Extract the [host ZIP](https://nicholas-vanson.github.io/WarTable/downloads/WarTable-PWA.zip) on a computer with Node.js 22 or later. From the extracted folder (or from `pwa/` in this source tree), run `node lan-server.mjs`. Open the printed Wi-Fi URL in both phone browsers. In **Multiplayer**, the first player chooses **Host a room** and a side. The second opens the invitation or enters the room code. The host can then **Start match**. Both browsers can return through the room list and **Resume**. See [Wi-Fi setup](WIFI-PLAY.txt) for network and saved-room details.
+
 ## Run and distribute
 
 No install or build is required for development:

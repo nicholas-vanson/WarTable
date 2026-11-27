@@ -1,0 +1,32 @@
+WarTable · Two phones on Wi-Fi
+
+1. Connect the two phones and a computer to the same home network. The computer
+   can also use Ethernet on the same router. Choose a network where devices
+   can reach one another. Some guest networks isolate devices.
+2. On the computer, install Node.js 22 or newer from https://nodejs.org/.
+   Extract the entire WarTable-PWA.zip to a folder. Open a terminal in that
+   folder and run:
+       node lan-server.mjs
+3. Open the printed Wi-Fi URL in both phone browsers. Choose the address of
+   the computer's Wi-Fi or Ethernet adapter if several addresses are printed.
+   If the computer asks about firewall access, allow it on the private network.
+4. On phone 1 choose Multiplayer > Host a room. Pick Axis or Allies and
+   Create room. Share the invitation link or read the room code to phone 2.
+5. On phone 2 open the invitation and tap Join room, or use Multiplayer >
+   Join a room on the same host address and enter the code.
+6. Phone 1 taps Start match. Phone 2 taps Open board. Germany moves first.
+   During combat, watch for the defending player's decisions on the other phone.
+
+Keep the computer awake and the terminal running. Either phone can close its
+browser. Reopen the same computer address with the same browser and select
+Multiplayer > Resume. Private browsing or clearing browser storage loses the
+seat on that phone. Each device can pan and zoom independently.
+
+The computer saves matches in .wartable/rooms under its user home directory.
+You can stop the host with Ctrl+C and restart it with the same command.
+Use the same network address and port to keep the phones' saved seats.
+
+If port 8080 is busy, try: node lan-server.mjs 8081
+The phone address starts with http:// and contains the computer's LAN IP.
+Use this playtest on a trusted local network. No router port forwarding or
+cloud account is needed.
