@@ -2,7 +2,8 @@ import {openIncome} from './income.js';
 // Phase 5 uses the factories held at turn opening, after purchase-phase repairs.
 // Keep the paid reserves and committed board intact while a player revises the draft.
 import {places,samePower,exerciseOf,deckSpace,flightRecoveries} from './rules.js';
-import {spendingEconomies,globalUnits,boardUnitType,purchaseGroups,isFacility,facilitySite,productionSlots,saveGlobalPosition} from './global-game.js';
+import {hasTech} from './research.js';
+import {unitPrice,spendingEconomies,globalUnits,boardUnitType,purchaseGroups,isFacility,facilitySite,productionSlots,saveGlobalPosition} from './global-game.js';
 import {completeNoncombat,noncombatPosition} from './noncombat.js';
 
 export function beginMobilization(game){
@@ -122,7 +123,8 @@ export function mobilizationPlan(match,s,placements=s.placements){
     slots:{},remaining:{},required:0,assigned:0,upgrades:[],ownDeckUsed:{}};
   for(const id of plan.land){
     const name=places[id].name,area=match.board[name],opening=match.combatStart[name];
-    plan.slots[id]=Math.min(productionSlots(area),productionSlots(opening));
+    const improved=hasTech(match,match.power,'factories');
+    plan.slots[id]=Math.min(productionSlots(area,{},improved),productionSlots(opening,{},improved));
   }
   for(const wallet of spendingEconomies(match)){
     plan.remaining[wallet]={...match.mobilization?.[wallet]};
@@ -160,7 +162,7 @@ export function finishMobilization(match,s){
   }
   for(const [wallet,pool] of Object.entries(plan.remaining)){
     for(const [unit,n] of Object.entries(pool))if(n){
-      const refund=n*globalUnits[unit][1];
+      const refund=n*unitPrice(match,unit);
       next.treasury[wallet]+=refund;
       record.push({title:globalUnits[unit][0],detail:n+' unplaced · '+refund+' IPCs reimbursed.'});
     }

@@ -1,16 +1,19 @@
+import {breakthroughs,hasTech,canResearch,researchWallets,buyResearch,discover,finishResearch} from './research.js';
+import {researchRoutes,dropRoom,queueDrop,queueRocket,rocketsPending,fireRocket} from './research-moves.js';
+import {victoryStatus} from './victory.js';
 import {raidTargets,facilityHits,damageLimit,raidFacilityNames,pendingRaids,currentRaid,chooseRaid,setInterceptorCount,confirmInterceptors,setRaidTarget,raidLossGroups,advanceRaid} from './raids.js';
 import {scramblePlan,scrambleRows} from './scramble.js';
 import {aboard,cargoSources,landingRoutes,escortOptions,queueLanding,landingSeaBattle,landingWait} from './assault.js';
 import {reverseCapitalPayments} from './occupation.js';
 import {countryInSentence,usIncomeChoice,declarationTargets,declarationDetails} from './politics.js';
-import {incomeAmount,rollConvoys,collectIncome,confirmPoliticalChoice,restoreChineseStatement} from './income.js';
+import {rollBonds,bondsPending,splitBonds,incomeAmount,rollConvoys,collectIncome,confirmPoliticalChoice,restoreChineseStatement} from './income.js';
 import {beginMobilization,mobilizationPlan,placementOptions,finishMobilization,launchPlan,reviseLaunches} from './mobilize.js';
 import {beginNoncombat,noncombatPosition,noncombatRoutes} from './noncombat.js';
 import {asPassages,orderPassages,samePassages} from './movement.js';
 import {ordersPanelKey,reducedMotion} from './preferences.js';
 import {neutralKey,strictKey,allianceOf,hostileNeutral} from './neutral-rules.js';
-import {globalKey,loadGlobalBoard,saveGlobalPosition,purchaseGroups,spendingEconomies,purchasePlan,eligibleShipRepairs,changePurchase,changeFacilityOrder,confirmPurchase,openingAddress,seasonForRound,nextPower,globalUnits,boardUnitType,isFacility,globalPowers,ownerNames,nationalArmies} from './global-game.js';
-import {frenchReinforcements,frenchReinforcementCost,changeFrenchDraft,placeFrenchAward,places,stats,types,exercises,adjectives,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,mobileTypes,aircraft,targetsFor,movementFor,flightRecoveries,defendingRows,openingFireKind,rollOpening,casualtyLimits,retreatSites,rollAttack,rollDefense,casualties,retreat,theaterVictoryCities} from './rules.js';
+import {unitPrice,globalKey,loadGlobalBoard,saveGlobalPosition,purchaseGroups,spendingEconomies,purchasePlan,eligibleShipRepairs,changePurchase,changeFacilityOrder,confirmPurchase,openingAddress,seasonForRound,nextPower,globalUnits,boardUnitType,isFacility,globalPowers,ownerNames,nationalArmies} from './global-game.js';
+import {combatTech,frenchReinforcements,frenchReinforcementCost,changeFrenchDraft,placeFrenchAward,places,stats,types,exercises,adjectives,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,mobileTypes,aircraft,targetsFor,movementFor,flightRecoveries,defendingRows,openingFireKind,rollOpening,casualtyLimits,retreatSites,rollAttack,rollDefense,casualties,retreat,theaterVictoryCities} from './rules.js';
 import {drawFormationNames} from './formation-names.js';
 import {atlas,styleFor} from './map.js';
 const $=id=>document.getElementById(id);
@@ -30,6 +33,8 @@ try{
   const saved=isGlobal?globalBoard.match.combat:JSON.parse(localStorage.getItem(key)||'null');
   if(saved?.game?.version===1&&(saved.game.exercise||'west')===exerciseId){s=saved.game;ui={...freshUI(),...saved.ui};view=saved.view;layoutSeed=saved.layoutSeed??0;}
 }catch{message='The saved exercise could not be read. A new exercise is open.';}
+const inResearch=()=>globalBoard?.match.phase==='research';
+const finished=()=>globalBoard?.match.phase==='victory';
 const inPurchase=()=>globalBoard?.match.phase==='purchase';
 const inBriefing=()=>globalBoard?.match.phase==='briefing';
 view??=globalBoard?.openingView??null;
@@ -54,7 +59,7 @@ function save(){
     if(isGlobal){
       if(localStorage.getItem(key)!==lastGlobalSave){location.reload();return;}
       const match=globalBoard.match;
-      if(!inBriefing()&&!inPurchase()&&s.phase!=='income'){
+      if(!finished()&&!inResearch()&&!inBriefing()&&!inPurchase()&&s.phase!=='income'){
         saveGlobalPosition(match,s);
         match.phase=s.phase==='plan'?'combatMove':s.phase==='combat'?'conductCombat':s.phase==='noncombat'?'noncombatMove':s.phase==='mobilize'?'mobilize':'combatReview';
       }
@@ -106,10 +111,10 @@ function addStackOrder(to,path=[]){
     if(ui.stack==='fighter')queueRaidSortie('escort');
     return;
   }
-  const prior=s.orders.find(o=>!o.raid&&!o.landing&&o.from===ui.from&&o.to===to&&samePassages(o,path));
+  const prior=s.orders.find(o=>!o.drop&&!o.raid&&!o.landing&&o.from===ui.from&&o.to===to&&samePassages(o,path));
   const units={...prior?.units};
   units[ui.stack]=(units[ui.stack]||0)+ui.quantity;
-  if(ui.stack==='mech_infantry'&&path.length&&exercise.movement.spaces[path[0]].blitz)
+  if(ui.stack==='mech_infantry'&&!combatTech(s,'mechanized')&&path.length&&exercise.movement.spaces[path[0]].blitz)
     units.tank=Math.max(units.tank||0,units.mech_infantry);
   plan(s,ui.from,to,units,path);
   ui=freshUI();
@@ -146,9 +151,10 @@ function selectTarget(id){
   addStackOrder(id);
 }
 function pick(id,type,origin,nation){
+  if(inResearch())return;
   if(s.frenchAward?.status==='pending'||ui.assault?.to||ui.raidTo||ui.raidResult)return;
   if(!id){run(()=>{ui=freshUI();});return;}
-  if(inBriefing()||inPurchase()||s.phase==='income'){
+  if(finished()||inBriefing()||inPurchase()||s.phase==='income'){
     run(()=>{
       const deselect=ui.inspect===id&&type===ui.inspectedType&&nation===ui.inspectedNation;
       ui={...freshUI(),wallet:ui.wallet,buyGroup:ui.buyGroup};
@@ -244,7 +250,7 @@ function reviewDetail(detail,attacking=attacker,heldBy){
 }
 const diePips=[[],[5],[1,9],[1,5,9],[1,3,7,9],[1,3,5,7,9],[1,3,4,6,7,9]];
 function dieFace(d,face,stage,nation){
-  const label=nation+' '+stats[d.type].name+(stage==='rolling'?' rolling':' rolled '+face+(stage==='marked'?', '+(d.hit?'hit':'miss'):''));
+  const label=nation+' '+stats[d.type].name+(d.rolls&&stage==='marked'?' ('+d.rolls.join(' and ')+', kept '+face+')':'')+(stage==='rolling'?' rolling':' rolled '+face+(stage==='marked'?', '+(d.hit?'hit':'miss'):''));
   const pips=diePips[face].map(pos=>'<i style="grid-area:'+Math.ceil(pos/3)+' / '+((pos-1)%3+1)+'"></i>').join('');
   return '<span role="img" aria-label="'+esc(label)+'" title="'+esc(label)+'" '+combatColors(nation)+' class="die '+(stage==='marked'&&d.hit?'hit':'miss')+'">'+pips+'</span>';
 }
@@ -289,7 +295,7 @@ function plannedAttacks(){
   const landings=isGlobal?flightRecoveries(s,s.orders):null;
   s.orders.forEach((order,index)=>{
     if(!destinations.has(order.to))destinations.set(order.to,[]);
-    const mission=order.raid?(order.raid==='escort'?'Escort':'Raid · '+raidFacilityNames[order.raid])+' · ':'';
+    const mission=order.drop?'Paratroopers · ':order.raid?(order.raid==='escort'?'Escort':'Raid · '+raidFacilityNames[order.raid])+' · ':'';
     const origin=order.landing?'Amphibious assault · '+places[order.landing.path.at(-1)].name:mission+[order.from,...orderPassages(order)].map(id=>places[id].name).join(' → ');
     const spent=orderPassages(order).length+1;
     const flights=aircraft.filter(t=>order.units[t]>0).map(type=>{
@@ -431,6 +437,10 @@ function raidDraftPanel(){
   return html+btn('Back to orders','clear');
 }
 function planPanel(){
+  if(ui.dropIndex!=null){
+    const o=s.orders[ui.dropIndex];
+    return title('Paratroopers',places[o.from].name+' → '+places[o.to].name)+unitLine(o.units,attacker)+btn('Cancel drop','remove-drop','danger')+btn('Back to orders','clear');
+  }
   if(ui.raidTo)return raidDraftPanel();
   if(ui.assault)return landingPanel();
   if(ui.landingIndex!=null){
@@ -441,10 +451,10 @@ function planPanel(){
   }
   let html=title('Combat move',isGlobal?'Tap a unit stack to plan an attack. Select a transport for an amphibious assault.':'Tap a unit stack on the map to plan an attack.');
   if(ui.to){
-    const existing=s.orders.some(o=>!o.raid&&!o.landing&&o.from===ui.from&&o.to===ui.to&&samePassages(o,ui.via));
+    const existing=s.orders.some(o=>!o.drop&&!o.raid&&!o.landing&&o.from===ui.from&&o.to===ui.to&&samePassages(o,ui.via));
     const limit=available(s,ui.from,ui.to,ui.via);
     const path=asPassages(ui.via);
-    const editing={...s,orders:s.orders.filter(o=>o.raid||o.landing||o.from!==ui.from||o.to!==ui.to||!samePassages(o,path))};
+    const editing={...s,orders:s.orders.filter(o=>o.drop||o.raid||o.landing||o.from!==ui.from||o.to!==ui.to||!samePassages(o,path))};
     const editable=mobileTypes.filter(t=>limit[t]>0&&(isGlobal?movementFor(editing,ui.from,t).legal(ui.to,path):targetsFor(s,ui.from,t).includes(ui.to)));
     html=title(path.length?'Edit route':'Plan attack',[ui.from,...path,ui.to].map(id=>places[id].name).join(' → '))+block('Assign units')+stepper('assign',ui.units,limit,editable)+
     '<div class="actions">'+btn('Back','back')+btn(existing?'Update order':'Add order','add','primary',count(ui.units)?'':'disabled')+'</div>';
@@ -454,7 +464,7 @@ function planPanel(){
     html=title('Choose passage to '+places[ui.routeTo].name,[ui.from,...path].map(id=>places[id].name).join(' → '))+
       moveChoices().map(id=>{
         if(id===ui.routeTo)return opt(id,'Finish at '+places[id].name,'Complete this route','↗','target');
-        const paired=ui.stack==='mech_infantry'&&exercise.movement.spaces[id].blitz;
+        const paired=ui.stack==='mech_infantry'&&!combatTech(s,'mechanized')&&exercise.movement.spaces[id].blitz;
         const note=paired?'Blitz with one tank per mechanized infantry':'Passage '+(path.length+1);
         return opt(id,'Via '+places[id].name,note,'↗','target');
       }).join('')+btn(path.length?'Back one passage':'Back to destinations','route-back');
@@ -484,8 +494,8 @@ function planPanel(){
     }
   }
   if(isGlobal&&!ui.to&&!ui.routeTo)html+=warEntry(globalBoard.match);
-  if(isGlobal&&!ui.to&&!ui.stack&&!ui.inspect)html+=carrierLaunchPanel();
-  if(!ui.to&&!ui.stack)$('action').innerHTML='<button class="primary hold-to-confirm" id="hold" '+(s.orders.length||isGlobal?'':'disabled')+'>'+(isGlobal&&!s.orders.length?'Hold to finish combat moves':'Hold to commit attacks')+'</button>';
+  if(isGlobal&&!ui.to&&!ui.stack&&!ui.inspect)html+=supportPanel()+carrierLaunchPanel();
+  if(!ui.to&&!ui.stack)$('action').innerHTML='<button class="primary hold-to-confirm" id="hold" '+(s.orders.length||isGlobal?'':'disabled')+'>'+(isGlobal&&!s.orders.length&&!s.rocketOrders?.length?'Hold to finish combat moves':'Hold to commit attacks')+'</button>';
   return html;
 }
 // Older rounds carry powers on individual dice. Exercises use the territorial defender.
@@ -627,11 +637,11 @@ function battleChoice(b){
 }
 function raidResultPanel(){
   const r=s.raids.find(raid=>raid.to===ui.raidResult);
-  let html=title('Raid result · '+places[r.to].name,r.outcomes?.length?'Facility damage is recorded. Each point costs 1 IPC to repair.':'All bombers were lost before they could damage a facility.');
+  let html=title('Raid result · '+places[r.to].name,r.outcomes?.length?'Facility damage is recorded. Check repair costs in Purchase & Repair.':'All bombers were lost before they could damage a facility.');
   for(const o of r.outcomes||[]){
     const rolls=r.damageDice.filter(d=>d.target===o.target);
     html+='<section class="review-item"><strong>'+unitCounter(o.target)+' '+raidFacilityNames[o.target]+'</strong><p>'+
-      rolls.map(d=>stats[d.type].name+' rolled '+d.face+(d.type==='bomber'?' + 2':'')).join('<br>')+
+      rolls.map(d=>stats[d.type].name+' rolled '+(d.rolls?d.rolls.join(' and ')+' · kept ':'')+d.face+(d.type==='bomber'?' + 2':'')).join('<br>')+
       '</p><p>Added '+o.added+' damage · '+o.before+' → <b>'+o.total+' of '+damageLimit[o.target]+'</b></p></section>';
   }
   const lost=r.planes.filter(p=>p.lost).length,defendersLost=r.interceptors.reduce((n,f)=>n+f.assigned-f.remaining,0);
@@ -657,16 +667,16 @@ function raidPanel(){
       raid.interceptors.reduce((n,f)=>n+f.remaining,0)+' interceptors','↗','raid-battle')).join('');
   const number=r.interceptors.reduce((n,f)=>n+f.remaining,0);
   const name=p=>stats[p.type].name+' from '+places[s.orders[p.order].from].name;
-  let html=title('Bombing raid · '+places[r.to].name,r.step==='attack'||r.step==='defense'?'One air battle. Each bomber, escort and interceptor hits on a 1.':
-    r.step==='targets'?'Assign each surviving bomber to a facility. Each facility rolls once per bomber targeting it and hits on a 1.':
-    r.step==='damage'?'Each surviving strategic bomber rolls one die plus 2. Each tactical bomber rolls one die.':'Choose the attacking aircraft lost.');
+  let html=title('Bombing raid · '+places[r.to].name,r.step==='attack'||r.step==='defense'?'One air battle. Aircraft hit on a 1. Jet fighters hit on 1–2.':
+    r.step==='targets'?'Assign each surviving bomber to a facility. Each facility rolls once per bomber targeting it and hits on a 1, or 1–2 with Radar.':
+    r.step==='damage'?'Strategic bombers add 2 to their die. Heavy Bombers keep their higher die. Tactical bombers roll one die.':'Choose the attacking aircraft lost.');
   const labels={attack:'Roll raid attack',defense:'Roll interception',targets:'Roll facility fire',damage:'Roll facility damage',airLoss:'Confirm interception losses',aaLoss:'Confirm facility fire losses'};
   let ready=true;
   if(['attack','defense'].includes(r.step)){
     html+=block('Attacking aircraft')+r.planes.map(p=>'<p>'+unitCounter(p.type,1,attacker)+' '+esc(name(p))+'</p>').join('')+block('Defending fighters · '+number);
     html+=r.interceptors.filter(f=>f.remaining).map(f=>unitCounter('fighter',f.remaining,ownerNames[f.power])+' '+esc(ownerNames[f.power])).join(' · ');
   }
-  const dieList=dice=>dice.map(d=>dieFace({type:d.type||'fighter',hit:d.face===1},d.face,'marked',d.power?ownerNames[d.power]:attacker)).join(' ');
+  const dieList=dice=>dice.map(d=>dieFace({...d,type:d.type||'fighter',hit:d.face<=(d.threshold||1)},d.face,'marked',d.power?ownerNames[d.power]:attacker)).join(' ');
   if(r.attackDice&&['defense','airLoss'].includes(r.step))html+=block('Attacking rolls')+dieList(r.attackDice);
   if(r.step==='airLoss')html+=block('Interceptor rolls')+dieList(r.defenseDice);
   if(r.step==='targets'){
@@ -678,7 +688,7 @@ function raidPanel(){
   }
   if(r.aaDice&&['aaLoss','damage'].includes(r.step)){
     for(const target of new Set(r.aaDice.map(d=>d.target)))html+=block(raidFacilityNames[target]+' fire')+
-      r.aaDice.filter(d=>d.target===target).map(d=>dieFace({type:'aaGun',hit:d.face===1},d.face,'marked',s.owners[r.to])).join(' ');
+      r.aaDice.filter(d=>d.target===target).map(d=>dieFace({type:'aaGun',hit:d.face<=(d.threshold||1)},d.face,'marked',s.owners[r.to])).join(' ');
   }
   for(const group of raidLossGroups(r)){
     const selected=ui.raidLosses||[],inGroup=i=>!r.planes[i].lost&&(!group.target||r.planes[i].target===group.target);
@@ -694,6 +704,8 @@ function raidPanel(){
   return html;
 }
 function battlePanel(){
+  if(rocketsPending(s)&&!s.raidDefensePending&&!s.activeRaid)return title('Rocket attacks','Choose an air base to roll facility damage.')+
+    s.rocketOrders.filter(o=>o.face==null).map(o=>opt(o.from,places[o.from].name+' → '+places[o.to].name,raidFacilityNames[o.target],'↗','fire-rocket')).join('');
   if(pendingRaids(s).length)return raidPanel();
   const b=currentBattle(s);
   if(!b){
@@ -726,7 +738,7 @@ function battlePanel(){
     let attribution='';
     for(const [type,beach] of Object.entries(b.beachForce||{})){
       const hits=ui.losses[type]||0,min=Math.max(0,hits-(b.attack[type]-beach)),max=Math.min(beach,hits);
-      if(max<=min)continue;
+      if(max<=min||b.step==='openingLosses'&&type==='inf'&&b.openingDice.defense.some(d=>d.type==='aaGun'))continue;
       const current=ui.beachLoss?.[type]??min;
       attribution+='<label>Seaborne '+esc(stats[type].name.toLowerCase())+' losses <select data-beach-loss="'+type+'">'+
         Array.from({length:max-min+1},(_,i)=>'<option '+(min+i===current?'selected':'')+'>'+String(min+i)+'</option>').join('')+'</select></label>';
@@ -939,10 +951,105 @@ function incomeLedger(account,rolled){
   return '<section class="income-ledger">'+summary+locked+
     ledgerSection('Territory income',sign(account.land),(account.open?'':'<p class="hint">Printed values of territories still held</p>')+(landRows||'<p class="hint">No IPC-producing territories held.</p>'))+
     ledgerSection('National objectives',sign(account.bonus),(bonusRows||'<p class="hint">No bonus income this turn.</p>')+inactive)+
+    (account.bonds!=null?ledgerLine('War Bonds','+'+account.bonds+' IPCs'):'')+
     ledgerSection('Convoy losses',pending?'Pending':account.loss?'−'+account.loss:'0',convoyRows?'<p class="hint">Rolls of 1–3 cause damage. Each coast can lose only its own IPC value.</p>'+convoyRows:
       '<p class="hint">'+(account.wallet==='Chinese'?'China is exempt from convoy disruption.':account.open?'No eligible convoy raids this turn.':'Convoys are suspended while the capital is occupied.')+'</p>')+
     '<div class="income-balance"><span>Treasury</span><b>'+account.before+(pending?' IPCs before collection':' → '+(account.before+amount)+' IPCs')+'</b></div></section>';
 }
+function chartList(match,chart,index,choose=false){
+  const known=id=>hasTech(match,match.power,id);
+  const remaining=chart.filter(([id])=>!known(id)).length;
+  const rows=chart.map(([id,name,detail],i)=>ledgerLine((i+1)+' · '+name,known(id)?'Owned':'',detail)).join('');
+  return '<details class="ledger-section"><summary>Chart '+(index+1)+' · '+(index?'Naval and air':'Land and industry')+'</summary>'+rows+'</details>'+
+    (choose?btn(remaining?'Roll on chart '+(index+1):'Chart '+(index+1)+' complete','discover','secondary','data-id="'+index+'" '+(remaining?'':'disabled')):'');
+}
+function researchBudget(match){
+  const wallets=researchWallets(match),cash=w=>wallets.includes(w)?match.treasury[w]:0;
+  const max=Math.floor(wallets.reduce((sum,w)=>sum+cash(w),0)/5);
+  const dice=Math.max(1,Math.min(max,Math.trunc(ui.researchDice)||1)),cost=dice*5;
+  const minPacific=Math.max(0,cost-cash(match.power)),maxPacific=Math.min(cost,cash('UK_Pacific'));
+  return {wallets,max,dice,cost,minPacific,maxPacific,pacific:Math.max(minPacific,Math.min(maxPacific,Math.trunc(ui.pacific)||0))};
+}
+function numberField(label,id,value,min,max){
+  return '<label class="power-seat">'+esc(label)+'<input type="number" inputmode="numeric" id="'+id+'" min="'+min+'" max="'+max+'" step="1" value="'+value+'"></label>';
+}
+function researchPanel(){
+  const match=globalBoard.match,r=match.researchRoll;
+  let html=title('Research & Development','Each die costs 5 IPCs. One or more sixes earn one breakthrough. You choose the chart after rolling.');
+  if(!r){
+    const b=researchBudget(match);
+    html+=b.wallets.map(w=>ledgerLine(treasuryName(w),match.treasury[w]+' IPCs')).join('')+
+      numberField('Research dice','researchDice',b.dice,1,b.max);
+    if(match.power==='British'){
+      if(b.minPacific!==b.maxPacific)html+=numberField('IPCs from UK Pacific','researchPacific',b.pacific,b.minPacific,b.maxPacific);
+      html+=ledgerLine('Funding',b.cost+' IPCs','UK Europe '+(b.cost-b.pacific)+' · UK Pacific '+b.pacific);
+    }
+    $('action').innerHTML='<button id="fundResearch" class="primary hold-to-confirm">Hold to spend '+b.cost+' IPCs and roll</button>';
+    html+=btn('Skip research and purchase units','research-finish');
+  }else{
+    html+=ledgerLine('Research rolls',r.rolls.join(' · '),Object.entries(r.paid).filter(([,n])=>n).map(([w,n])=>treasuryName(w)+' paid '+n+' IPCs').join(' · '));
+    if(r.advance){
+      const [,name,detail]=breakthroughs.flat().find(([id])=>id===r.advance);
+      html+=block('Breakthrough · Chart '+(r.chart+1)+' rolled '+r.breakthroughRolls.join(' → '))+'<h3>'+name+'</h3><p>'+detail+'</p>';
+    }else html+='<h3>'+(r.step==='chart'?'Breakthrough! Choose a chart':'No breakthrough this turn')+'</h3>';
+    if(r.step==='done')$('action').innerHTML=btn('Continue to Purchase & Repair','research-finish','primary');
+  }
+  return html+breakthroughs.map((c,i)=>chartList(match,c,i,r?.step==='chart')).join('');
+}
+function victoryTracker(match){
+  return victoryStatus(match).map(goal=>{
+    const hold=goal.cities.length>=goal.need&&match.victoryHolds?.[goal.key];
+    return ledgerSection(goal.side+' · '+goal.name,goal.cities.length+' / '+goal.need,
+      '<p>'+esc(goal.cities.join(', ')||'None held')+'</p><p>Home capitals held · '+esc(goal.capitals.join(', ')||'None')+'</p>'+
+      (hold?'<p>Hold until the start of '+globalPowers[hold.power]+'’s turn in round '+(hold.round+1)+'.</p>':''));
+  }).join('');
+}
+function victoryPanel(){
+  const match=globalBoard.match,v=match.victory;
+  $('action').innerHTML=btn('Open game review','final-review','primary');
+  return title(v.side==='Axis'?'Axis victory':'Allied victory','Round '+v.round+' · Start of '+globalPowers[v.since.power]+'’s turn')+
+    '<p>'+esc(v.side==='Axis'?'The Axis held at least '+v.need+' victory cities in '+(v.key==='pacific'?'the Pacific':'Europe'):'The Allies held Berlin, Rome and Tokyo')+
+    ' from '+globalPowers[v.since.power]+'’s turn in round '+v.since.round+' through the start of its next turn.</p>'+
+    ledgerLine('Deciding cities',v.cities.length,v.cities.join(', '))+ledgerLine('Home capitals held',v.capitals.length,v.capitals.join(', '))+
+    (ui.inspect?inspectionPanel('Back to victory'):'');
+}
+function objectiveDialog(){
+  const m=globalBoard.match;
+  const owned=Object.entries(m.technology||{}).filter(([,ids])=>ids.length).map(([p,ids])=>
+    '<h4>'+esc(globalPowers[p])+'</h4>'+ids.map(id=>breakthroughs.flat().find(t=>t[0]===id)).filter(Boolean).map(([,n,d])=>ledgerLine(n,'',d)).join('')).join('');
+  showDialog('Victory and technology','<p>The Axis needs 8 European cities or 6 Pacific cities. The Allies need Berlin, Rome and Tokyo. Keep the required cities until the capturing power’s next turn and hold at least one home capital at that point.</p>'+
+    victoryTracker(m)+'<h3>Developed technology</h3>'+(owned||'<p>No breakthroughs recorded.</p>')+
+    (m.researchEnabled===false?'<p>Research is disabled for this game.</p>':breakthroughs.map((c,i)=>chartList(m,c,i)).join('')));
+}
+function supportChoice(kind){
+  const bases=Object.keys(exercise.movement.spaces).filter(id=>exercise.movement.spaces[id].airBase&&(kind!=='paratroopers'||dropRoom(s,id)>0))
+    .map(id=>[id,researchRoutes(s,id,kind)]).filter(([,routes])=>routes.size);
+  const draft=ui.support?.[kind]||{},[from,routes]=bases.find(([id])=>id===draft.from)||bases[0]||[];
+  const to=routes?.has(draft.to)?draft.to:routes?.keys().next().value;
+  const options=to?(kind==='rockets'?raidTargets(s,to,'bomber'):Array.from({length:dropRoom(s,from)},(_,i)=>String(i+1))):[];
+  return {from,to,bases,routes,options,value:options.includes(draft.value)?draft.value:options[0]};
+}
+function supportPanel(){
+  let html='';
+  for(const kind of ['paratroopers','rockets']){
+    if(!combatTech(s,kind))continue;
+    const c=supportChoice(kind),rocket=kind==='rockets';
+    const field=(label,key,options,selected)=>'<label class="power-seat">'+label+'<select data-support="'+kind+'" data-field="'+key+'">'+options.map(([val,name])=>
+      '<option value="'+esc(val)+'" '+(val===selected?'selected':'')+'>'+esc(name)+'</option>').join('')+'</select></label>';
+    html+='<details class="review-item" '+(ui.supportOpen===kind?'open':'')+'><summary>'+(rocket?'Rocket attacks':'Paratroopers')+'</summary>';
+    if(c.from){
+      html+=field('Air base','from',c.bases.map(([id])=>[id,places[id].name]),c.from)+
+        field('Destination','to',[...c.routes.keys()].map(id=>[id,places[id].name]),c.to)+
+        field(rocket?'Facility':'Infantry','value',c.options.map(v=>[v,rocket?raidFacilityNames[v]:v]),c.value)+
+        btn(rocket?'Assign rocket target':'Assign paratroopers','queue-support','secondary','data-id="'+kind+'"');
+    }else html+='<p>'+(rocket?'No enemy facility is within four spaces of an operational air base you control.':'Plan a ground or amphibious attack within three spaces of a friendly operational air base with unused infantry.')+'</p>';
+    html+='</details>';
+  }
+  for(const o of s.rocketOrders||[])html+='<div class="review-item">'+ledgerLine('Rocket from '+places[o.from].name,raidFacilityNames[o.target],places[o.to].name)+
+    btn('Cancel rocket order','remove-rocket','secondary','data-id="'+o.from+'"')+'</div>';
+  return html;
+}
+
 function incomePanel(){
   const match=globalBoard.match,report=match.incomeReport;
   $('map').setAttribute('aria-label','Collect income. Select a territory to inspect its production.');
@@ -951,13 +1058,16 @@ function incomePanel(){
     return title('U.S. entry into the war','At the start of its third income phase, the United States may declare war on any or all Axis powers.')+warEntry(match);
   }
   const total=report.accounts.reduce((n,a)=>n+incomeAmount(a),0);
-  $('action').innerHTML=report.rolled?'<button id="collectIncome" class="primary hold-to-confirm">Hold to collect '+total+' IPCs'+(report.accounts.length>1?' across both treasuries':'')+'</button>':
+  $('action').innerHTML=bondsPending(match)?btn('Roll War Bonds','roll-bonds','primary'):report.rolled?'<button id="collectIncome" class="primary hold-to-confirm">Hold to collect '+total+' IPCs'+(report.accounts.length>1?' across both treasuries':'')+'</button>':
     btn('Roll convoy losses','roll-convoys','primary');
   if(ui.inspect)return inspectionPanel('Back to income');
   const account=report.accounts.find(a=>a.wallet===ui.wallet)||report.accounts[0];
   const wallets=report.accounts.length>1?'<div class="economy-switch" aria-label="Income by treasury">'+report.accounts.map(a=>
     btn(treasuryName(a.wallet)+' · '+(!report.rolled&&a.convoys.length?'Pending':'+'+incomeAmount(a)),'wallet','secondary','data-id="'+a.wallet+'" aria-pressed="'+(a===account)+'"')).join('')+'</div>':'';
-  return '<h2>Collect income</h2>'+warEntry(match)+wallets+incomeLedger(account,report.rolled);
+  const bonds=report.bondRoll?ledgerLine('War Bonds die',report.bondRoll+' IPCs')+
+    (match.power==='British'&&report.accounts.every(a=>a.open)?numberField('War Bonds to UK Pacific','bondSplit',report.accounts.find(a=>a.wallet==='UK_Pacific').bonds||0,0,report.bondRoll):''):
+    bondsPending(match)?'<p>Roll one War Bonds die to add its result to your income.</p>':'';
+  return '<h2>Collect income</h2>'+warEntry(match)+bonds+wallets+incomeLedger(account,report.rolled);
 }
 function mobilizePanel(){
   const plan=reserves(),wallet=ui.wallet||s.power;
@@ -1009,7 +1119,7 @@ function mobilizePanel(){
   }
   if(ready&&pending){
     for(const [id,pool] of Object.entries(plan.remaining)){
-      const refund=Object.entries(pool).reduce((sum,[u,n])=>sum+globalUnits[u][1]*n,0);
+      const refund=Object.entries(pool).reduce((sum,[u,n])=>sum+unitPrice(globalBoard.match,u)*n,0);
       if(refund)html+='<p class="hint">'+esc(ownerNames[id])+(id==='UK_Pacific'?' Pacific':'')+' will receive '+refund+' IPCs for excess purchases.</p>';
     }
   }else if(pending)html+='<p class="hint">'+(plan.required-plan.assigned)+(plan.required-plan.assigned===1?' unit still needs':' units still need')+' placement. You can remove queued placements to free a site.</p>';
@@ -1055,8 +1165,8 @@ function purchasePanel(){
     btn('View order','inspect-order')+'</div>';
   if(group==='Repairs'){
     const ships=eligibleShipRepairs(match);
-    html+=plan.repairs.map(r=>orderRow({unit:r.unit,name:r.name+' · '+globalUnits[r.unit][0],caption:r.damage+' damage · 1 IPC each',
-      quantity:r.quantity,plus:r.quantity<r.damage&&plan.remaining>=1,facility:r.name,operation:'facility-order'})).join('');
+    html+=plan.repairs.map(r=>orderRow({unit:r.unit,name:r.name+' · '+globalUnits[r.unit][0],caption:r.damage+' damage · '+(r.perIPC===2?'2 repairs per IPC':'1 IPC each'),
+      quantity:r.quantity,plus:r.quantity<r.damage&&(plan.remaining>=1||r.quantity%r.perIPC>0),facility:r.name,operation:'facility-order'})).join('');
     if(!plan.repairs.length)html+='<p class="hint">No damaged facilities in this economy.</p>';
     for(const ship of ships)html+='<p class="hint">'+esc(ship.name)+' · '+ship.count+' × '+globalUnits[ship.type][0]+' will repair free.</p>';
     return html;
@@ -1066,7 +1176,7 @@ function purchasePanel(){
   for(const category of group==='All'?unitGroups:[group]){
     if(group==='All'&&unitGroups.length>1)html+=block(category);
     const units=china?(plan.roadOpen?['infantry','artillery']:['infantry']):purchaseGroups[category];
-    html+=units.map(unit=>orderRow({unit,name:globalUnits[unit][0],caption:globalUnits[unit][1]+' IPCs',
+    html+=units.map(unit=>orderRow({unit,name:globalUnits[unit][0],caption:unitPrice(match,unit)+' IPCs',
       quantity:plan.orders[unit]||0,plus:plan.limits[unit]})).join('');
   }
   if(group==='Facilities'||group==='All')html+=plan.upgrades.map(site=>orderRow({unit:'upgrade',name:'Upgrade · '+site.name,
@@ -1100,14 +1210,19 @@ function render(){
   if(award&&!showingAward&&!$('openPanel').hidden)$('openPanel').click();
   showingAward=award;
   $('exerciseBoard').classList.toggle('opening-briefing',briefing);
-  document.querySelector('.power-tab').textContent=award?'France · Player '+globalBoard.match.controllers.French:briefing?'Turn briefing':attacker;
-  if(ui.raidResult)$('panel').innerHTML=raidResultPanel();
+  document.querySelector('.power-tab').textContent=finished()?'Game over':award?'France · Player '+globalBoard.match.controllers.French:briefing?'Turn briefing':attacker;
+  if(finished()||inResearch())$('map').setAttribute('aria-label',finished()?'Final board. Select a territory to inspect.':'Research and development. Pan or pinch the map.');
+  if(finished())$('panel').innerHTML=victoryPanel();
+  else if(inResearch())$('panel').innerHTML=researchPanel();
+  else if(ui.raidResult)$('panel').innerHTML=raidResultPanel();
   else if(award)$('panel').innerHTML=frenchAwardPanel();
   else if(briefing){
     const match=globalBoard.match;
     $('panel').innerHTML=ui.inspect?inspectionPanel('Back to briefing'):
       '<h2>'+seasonForRound(match.round)+'</h2><p class="briefing-round">Round '+match.round+' · '+attacker+(match.power==='Germans'?' moves first':' to move')+'</p>'+
-      '<p class="briefing-address">'+esc(openingAddress(match,match.controllers[match.power]))+' Survey the board, then begin your turn when you’re ready.</p>';
+      '<p class="briefing-address">'+esc(openingAddress(match,match.controllers[match.power]))+' Survey the board, then begin your turn when you’re ready.</p>'+btn('Victory and technology','objective-status')+
+      Object.entries(match.victoryHolds||{}).map(([key,h])=>'<p class="hint">'+globalPowers[h.power]+' can clinch '+({europe:'Europe',pacific:'the Pacific',capitals:'the Allied capital objective'}[key])+' at the start of its turn in round '+(h.round+1)+'.</p>').join('')+
+      (canResearch(match)?btn('Skip research and purchase units','skip-research'):'');
     $('action').innerHTML=btn('Begin '+attacker+'’s turn','begin-turn','primary');
   }else if(inPurchase())$('panel').innerHTML=purchasePanel();
   else if(s.phase==='plan')$('panel').innerHTML=planPanel();
@@ -1123,12 +1238,12 @@ function render(){
     $('action').innerHTML=isGlobal?btn('Begin noncombat move','begin-noncombat','primary'):btn('Start another exercise','reset');
   }
   updateBattleForces();
-  const nextView=[ui.raidResult,s.raidDefensePending,s.activeRaid,currentRaid(s)?.step,ui.raidMode,ui.raidTo,!!ui.assault,ui.assault?.to,ui.landingIndex,award,briefing,inPurchase(),ui.buyGroup,ui.wallet,ui.reserve,ui.site,ui.destination,ui.inspect,s.phase,s.active,currentBattle(s)?.step,ui.from,ui.to,ui.stack,ui.flight,ui.cross,ui.routeTo,ui.twoSpace,...(ui.passageSteps||[])].join('|');
+  const nextView=[finished(),inResearch(),globalBoard?.match.researchRoll?.step,ui.dropIndex,ui.raidResult,s.raidDefensePending,s.activeRaid,currentRaid(s)?.step,ui.raidMode,ui.raidTo,!!ui.assault,ui.assault?.to,ui.landingIndex,award,briefing,inPurchase(),ui.buyGroup,ui.wallet,ui.reserve,ui.site,ui.destination,ui.inspect,s.phase,s.active,currentBattle(s)?.step,ui.from,ui.to,ui.stack,ui.flight,ui.cross,ui.routeTo,ui.twoSpace,...(ui.passageSteps||[])].join('|');
   if(panelView!==nextView)document.querySelector('.panel-scroll').scrollTop=0;
   panelView=nextView;
   $('notice').textContent=message;
   $('mapNotice').textContent=message;
-  $('openPanel').textContent=award?'French reinforcements':briefing?'Open briefing':'Open orders';
+  $('openPanel').textContent=finished()?'View victory':inResearch()?'Open research':award?'French reinforcements':briefing?'Open briefing':'Open orders';
   const nc=s.phase==='noncombat';
   if(nc)$('map').setAttribute('aria-label','Noncombat move. Select an unused unit and a highlighted destination.');
   if(s.phase==='mobilize'){
@@ -1141,8 +1256,9 @@ function render(){
     draw(reserves().game,ui.destination||ui.inspect,null,null,layoutSeed,null,false,choices);
   }else if(ui.assault?.to||ui.raidTo||s.activeRaid||ui.raidResult){
     draw(s,ui.raidResult||ui.raidTo||s.activeRaid||ui.assault?.to,null,null,layoutSeed,null,false,null);
-  }else draw(nc?redeployment():s,ui.inspect||ui.from,ui.routeTo||ui.to,ui.stack||ui.inspectedType,layoutSeed,ui.stack?null:ui.inspectedNation,briefing||inPurchase(),ui.stack?(nc?[...noncombatRoutes(redeployment(),selectedNoncombatOrder()).keys()]:moveChoices()):null);
+  }else draw(nc?redeployment():s,ui.inspect||ui.from,ui.routeTo||ui.to,ui.stack||ui.inspectedType,layoutSeed,ui.stack?null:ui.inspectedNation,briefing||inPurchase()||inResearch()||finished(),ui.stack?(nc?[...noncombatRoutes(redeployment(),selectedNoncombatOrder()).keys()]:moveChoices()):null);
   if(award)bindHold($('placeFrenchAward'),()=>run(()=>{placeFrenchAward(s);ui=freshUI();}));
+  else if($('fundResearch'))bindHold($('fundResearch'),()=>{const b=researchBudget(globalBoard.match);advanceEconomy('research-buy',[b.dice,b.pacific]);});
   else if($('collectIncome'))bindHold($('collectIncome'),()=>advanceEconomy('collect'));
   else if($('finishMobilization'))bindHold($('finishMobilization'),()=>advanceEconomy('mobilize'));
   else if($('finishNoncombat'))bindHold($('finishNoncombat'),()=>run(()=>{s=beginMobilization(s);ui=freshUI();}));
@@ -1181,6 +1297,11 @@ async function advanceEconomy(action,targets=[]){
     if(action==='mobilize')next=finishMobilization(match,s);
     else if(action==='politics')next=confirmPoliticalChoice(match,targets);
     else if(action==='roll')next=rollConvoys(match);
+    else if(action==='bonds')next=rollBonds(match);
+    else if(action==='research-buy'||action==='discover'){
+      next=structuredClone(match);
+      if(action==='research-buy')buyResearch(next,...targets);else discover(next,...targets);
+    }
     else next=collectIncome(match);
     localStorage.setItem(key,JSON.stringify(next));
     location.reload();
@@ -1200,6 +1321,11 @@ document.addEventListener('change',event=>{
 document.addEventListener('click',e=>{
   const b=e.target.closest('button[data-act]');if(!b)return;
   const {act,id,k,n}=b.dataset;
+  if(act==='objective-status'){objectiveDialog();return;}
+  if(act==='final-review'){$('journal').click();return;}
+  if(finished()&&act!=='clear')return;
+  if(act==='discover'){advanceEconomy('discover',[Number(id)]);return;}
+  if(act==='roll-bonds'){advanceEconomy('bonds');return;}
   if(act==='war-open'){chooseWarTargets();return;}
   if(act==='war-cancel'){stopHold();$('dialog').close();return;}
   if(act==='war-review'){reviewWarTargets();return;}
@@ -1208,9 +1334,19 @@ document.addEventListener('click',e=>{
   run(()=>{
     switch(act){
       case 'french-unit':changeFrenchDraft(s,k,Number(n));break;
+      case 'research-finish':finishResearch(globalBoard.match,s);ui=freshUI();$('map').setAttribute('aria-label','Purchase and repair. Select a territory or force to inspect.');break;
+      case 'queue-support':{
+        const c=supportChoice(id);
+        if(id==='rockets')queueRocket(s,c.from,c.to,c.value);else queueDrop(s,c.from,c.to,Number(c.value));
+        ui=freshUI();break;
+      }
+      case 'remove-drop':s.orders=s.orders.filter((_,i)=>i!==ui.dropIndex);ui=freshUI();break;
+      case 'remove-rocket':s.rocketOrders=s.rocketOrders.filter(o=>o.from!==id);break;
+      case 'fire-rocket':fireRocket(s,id);message=s.record.findLast(e=>e.rocket).detail;break;
+      case 'skip-research':
       case 'begin-turn':
         if(inBriefing()){
-          globalBoard.match.phase='purchase';ui=freshUI();
+          globalBoard.match.phase=act==='begin-turn'&&canResearch(globalBoard.match)?'research':'purchase';ui=freshUI();
           $('map').setAttribute('aria-label','Purchase and repair. Select a territory or force to inspect.');
         }
         break;
@@ -1306,6 +1442,7 @@ document.addEventListener('click',e=>{
       case 'back': ui=freshUI();break;
       case 'clear': ui=inPurchase()||s.phase==='income'?{...freshUI(),wallet:ui.wallet,buyGroup:ui.buyGroup}:freshUI();break;
       case 'edit': {const order=s.orders[Number(id)];
+        if(order.drop){ui={...freshUI(),dropIndex:Number(id)};break;}
         if(order.raid){
           const stack=Object.keys(order.units).find(t=>order.units[t]>0);
           ui={...freshUI(),raidIndex:Number(id),from:order.from,raidTo:order.to,via:orderPassages(order),stack,quantity:order.units[stack]};break;
@@ -1321,7 +1458,7 @@ document.addEventListener('click',e=>{
       case 'retreat': retreat(s,id);break;
       case 'air-orders': {
         if(!isGlobal)break;
-        const locked=s.phase!=='plan'||s.orders.length>0;
+        const locked=s.phase!=='plan'||(s.orders.length>0||s.rocketOrders?.length>0);
         const options=Object.entries(globalPowers).filter(([p])=>p!=='Chinese').map(([p,name])=>
           '<label class="power-seat">'+esc(name)+'<select data-air-order="'+p+'" '+(locked?'disabled':'')+'>'+
           '<option value="scramble">Scramble</option><option value="hold" '+(exercise.holdScrambles[p]?'selected':'')+'>Stay at base</option></select></label>').join('');
@@ -1329,7 +1466,7 @@ document.addEventListener('click',e=>{
           options+(locked?'<p>Change orders before the next combat moves are planned.</p>':btn('Save air defense orders','save-air-orders','primary')));break;
       }
       case 'save-air-orders':
-        if(isGlobal&&s.phase==='plan'&&!s.orders.length){
+        if(isGlobal&&s.phase==='plan'&&!s.orders.length&&!s.rocketOrders?.length){
           for(const input of $('dialogBody').querySelectorAll('[data-air-order]')){
             if(input.value==='hold')exercise.holdScrambles[input.dataset.airOrder]=true;
             else delete exercise.holdScrambles[input.dataset.airOrder];
@@ -1339,13 +1476,13 @@ document.addEventListener('click',e=>{
         break;
       case 'players': {
         if(!isGlobal)break;
-        const locked=s.orders.length>0||s.phase!=='plan';
+        const locked=(s.orders.length>0||s.rocketOrders?.length>0)||s.phase!=='plan';
         const rows=Object.entries(globalPowers).map(([p,name])=>'<label class="power-seat">'+name+'<select data-power="'+p+'" '+(locked?'disabled':'')+'>'+
           Array.from({length:9},(_,i)=>'<option value="'+(i+1)+'" '+(i+1===globalBoard.match.controllers[p]?'selected':'')+'>Player '+(i+1)+'</option>').join('')+'</select></label>').join('');
         showDialog('Local players',rows+(locked?'':btn('Save players','save-players','primary')));break;
       }
       case 'save-players':
-        if(isGlobal&&s.phase==='plan'&&!s.orders.length){
+        if(isGlobal&&s.phase==='plan'&&!s.orders.length&&!s.rocketOrders?.length){
           for(const select of $('dialogBody').querySelectorAll('[data-power]'))globalBoard.match.controllers[select.dataset.power]=Number(select.value);
           $('dialog').close();
         }
@@ -1357,7 +1494,7 @@ document.addEventListener('click',e=>{
         if(s.phase==='income')throw Error('Mobilization has already been committed.');
         endPlayback();
         if(isGlobal){
-          const procurement=s.record.filter(entry=>entry.title==='Purchase & Repair'||entry.declaration);
+          const procurement=s.record.filter(entry=>entry.title==='Purchase & Repair'||entry.research||entry.declaration);
           reverseCapitalPayments(globalBoard.match);
           globalBoard.match.board=structuredClone(globalBoard.match.combatStart);s=structuredClone(globalBoard.game);s.record=procurement;
         }
@@ -1372,6 +1509,19 @@ document.addEventListener('click',e=>{
   }
 });
 $('panel').addEventListener('change',e=>{
+  const field=e.target.id;
+  if(field==='researchDice'||field==='researchPacific')run(()=>{
+    const b=researchBudget(globalBoard.match),n=Number(e.target.value);
+    if(field==='researchDice')ui.researchDice=Math.max(1,Math.min(b.max,Math.trunc(n)||1));
+    else ui.pacific=Math.max(b.minPacific,Math.min(b.maxPacific,Math.trunc(n)||0));
+  });
+  if(field==='bondSplit')run(()=>splitBonds(globalBoard.match,Number(e.target.value)));
+  if(e.target.matches('[data-support]'))run(()=>{
+    const kind=e.target.dataset.support,key=e.target.dataset.field,options=(ui.support??={})[kind]??={};
+    options[key]=e.target.value;ui.supportOpen=kind;
+    if(key==='from')delete options.to;
+    if(key!=='value')delete options.value;
+  });
   if(e.target.matches('[data-interceptor]'))run(()=>setInterceptorCount(s,e.target.dataset.place,e.target.dataset.interceptor,Number(e.target.value)));
   if(e.target.matches('[data-bomb-target]'))run(()=>setRaidTarget(s,Number(e.target.dataset.bombTarget),e.target.value));
   if(e.target.matches('[data-raid-loss]'))run(()=>{
@@ -1389,15 +1539,15 @@ $('map').setAttribute('aria-label',inBriefing()?'Opening board. Pan or pinch the
 $('controlKey').innerHTML=(isGlobal?[attacker]:[attacker,defender]).map(n=>'<i data-nation="'+n+'"></i>'+n).join(' ');
 $('closeDialog').onclick=()=>$('dialog').close();
 $('journal').onclick=()=>{
-  const current=['review','noncombat','mobilize','income'].includes(s.phase)?timeline()||'<p>No combat was recorded.</p>':timeline(s.record.filter(e=>e.declaration||e.capital||e.frenchUnits||e.scramblePower||e.raid))+'<p>The current combat review opens after all battles are resolved.</p>';
+  const current=finished()?'<h3>'+esc(globalBoard.match.victory.side==='Axis'?'Axis victory':'Allied victory')+' · Round '+globalBoard.match.victory.round+'</h3>':['review','noncombat','mobilize','income'].includes(s.phase)?timeline()||'<p>No combat was recorded.</p>':timeline(s.record.filter(e=>e.research||e.declaration||e.capital||e.frenchUnits||e.scramblePower||e.raid))+'<p>The current combat review opens after all battles are resolved.</p>';
   const previous=(globalBoard?.match.turnReviews||[]).slice().reverse().map(turn=>{
     const nation=globalPowers[turn.power];
-    return '<details class="review-item review-round"><summary>'+seasonForRound(turn.round)+' · '+nation+'</summary>'+
+    return '<details class="review-item review-round" '+(finished()&&turn===globalBoard.match.turnReviews.at(-1)?'open':'')+'><summary>'+seasonForRound(turn.round)+' · '+nation+'</summary>'+
       (timeline(turn.record,nation)||'<p>No combat was recorded.</p>')+'</details>';
   }).join('');
   showDialog(isGlobal?'Game review':'Exercise review',current+previous);
 };
-$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. '+(isGlobal?'The global map wraps east and west across the Americas. ':'')+'Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The national color fades inward from the hatched border. Neutral hatching slopes up to the right across the whole territory. Single grey lines mark strict neutrals, paired lines mark pro-Allied neutrals, and dashed lines mark pro-Axis neutrals. Grey stippling marks impassable terrain. Units cannot enter or cross these spaces. A committed strict-neutral invasion changes the other eligible strict neutrals immediately. Friendly neutrals can be activated after combat. Tap a territory to mark it in violet and read its status. Tap it again to clear the selection. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><details class="unit-key"><summary>Unit symbols</summary><ul>'+Object.entries(globalUnits).map(([type,[name]])=>'<li>'+unitCounter(boardUnitType(type),undefined,attacker)+' '+name+'</li>').join('')+'</ul></details><h3>Plan an attack</h3><p>Land arrows are brick red, air arrows are blue, and sea arrows are ochre. Nearby routes in the same category can share an arrowhead.</p><p>Select a stack on the map, adjust the quantity, then tap a highlighted enemy territory to place the order. Assigned stacks at the front have a muted national color and a dark corner. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this board</h3><p>'+ (isGlobal?'After combat review, choose Begin noncombat move to redeploy unused units, make sea crossings or change aircraft landings. A transport can carry one land unit and one additional infantry between friendly coasts in a single move. You can remove queued moves or undo the last move. Hold to commit your moves and begin mobilization. Select a purchase, a highlighted site and the quantity to place. Ships use an adjacent coastal factory. You can reserve a purchased carrier’s launch during combat or noncombat movement when aircraft need its deck to land. Hold to place your reserves and review income. Open any income line to see its sources. Hold to credit your treasury and hand over the board. Global 1940 uses the opening forces of all nine powers. Tap any territory or counter to inspect it. Amber marks eligible destinations. Select a distant destination, then follow the dashed teal spaces to choose each passage. Tanks and mechanized infantry move two spaces. Each mechanized infantry needs a tank on the same route to blitz. Ships move two sea zones, fighters and tactical bombers four spaces, and strategic bombers six. An operational friendly naval or air base adds one movement point at departure. Aircraft need enough movement to land in territory that was friendly at the start of the turn, or on an eligible carrier. The order shows the outbound cost and planned landing site. AAA fires at incoming aircraft during opening fire.':'This local exercise covers adjacent land attacks with infantry and tanks. The forces are arranged for testing.')+'</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+(isGlobal?'<p>Inland China terrain data courtesy of Mapzen, the U.S. Geological Survey and NOAA. Rivers and lakes from Natural Earth.</p>'+btn('Air defense orders','air-orders','secondary')+btn('Local players','players','secondary')+((inBriefing()||inPurchase()||s.phase==='income')?'':btn('Restart combat','reset','danger')):btn('Restart exercise','reset','danger')));
+$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. '+(isGlobal?'The global map wraps east and west across the Americas. ':'')+'Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The national color fades inward from the hatched border. Neutral hatching slopes up to the right across the whole territory. Single grey lines mark strict neutrals, paired lines mark pro-Allied neutrals, and dashed lines mark pro-Axis neutrals. Grey stippling marks impassable terrain. Units cannot enter or cross these spaces. A committed strict-neutral invasion changes the other eligible strict neutrals immediately. Friendly neutrals can be activated after combat. Tap a territory to mark it in violet and read its status. Tap it again to clear the selection. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><details class="unit-key"><summary>Unit symbols</summary><ul>'+Object.entries(globalUnits).map(([type,[name]])=>'<li>'+unitCounter(boardUnitType(type),undefined,attacker)+' '+name+'</li>').join('')+'</ul></details><h3>Plan an attack</h3><p>Land arrows are brick red, air arrows are blue, and sea arrows are ochre. Nearby routes in the same category can share an arrowhead.</p><p>Select a stack on the map, adjust the quantity, then tap a highlighted enemy territory to place the order. Assigned stacks at the front have a muted national color and a dark corner. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this board</h3><p>'+ (isGlobal?'After combat review, choose Begin noncombat move to redeploy unused units, make sea crossings or change aircraft landings. A transport can carry one land unit and one additional infantry between friendly coasts in a single move. You can remove queued moves or undo the last move. Hold to commit your moves and begin mobilization. Select a purchase, a highlighted site and the quantity to place. Ships use an adjacent coastal factory. You can reserve a purchased carrier’s launch during combat or noncombat movement when aircraft need its deck to land. Hold to place your reserves and review income. Open any income line to see its sources. Hold to credit your treasury and hand over the board. Global 1940 uses the opening forces of all nine powers. Tap any territory or counter to inspect it. Amber marks eligible destinations. Select a distant destination, then follow the dashed teal spaces to choose each passage. Tanks and mechanized infantry move two spaces. Mechanized infantry needs a tank on the same route to blitz until it gains Improved Mechanized Infantry. Ships move two sea zones, fighters and tactical bombers four spaces, and strategic bombers six. An operational friendly naval or air base adds one movement point at departure. Aircraft need enough movement to land in territory that was friendly at the start of the turn, or on an eligible carrier. The order shows the outbound cost and planned landing site. AAA fires at incoming aircraft during opening fire.':'This local exercise covers adjacent land attacks with infantry and tanks. The forces are arranged for testing.')+'</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+(isGlobal?'<p>Inland China terrain data courtesy of Mapzen, the U.S. Geological Survey and NOAA. Rivers and lakes from Natural Earth.</p>'+btn('Victory and technology','objective-status')+(finished()?'':btn('Air defense orders','air-orders','secondary')+btn('Local players','players','secondary'))+((finished()||inResearch()||inBriefing()||inPurchase()||s.phase==='income')?'':btn('Restart combat','reset','danger')):btn('Restart exercise','reset','danger')));
 // Store the two panel dimensions separately so rotating the phone restores the last fit.
 function setupOrdersPanel(){
   const main=document.querySelector('main'),sheet=$('ordersPanel'),grip=$('resizePanel');

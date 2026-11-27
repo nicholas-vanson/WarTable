@@ -9,7 +9,7 @@ export function samePassages(order,value){
   return a.length===b.length&&a.every((id,i)=>id===b[i]);
 }
 
-export function combatMovement(spaces,neighbors,canalOpen,seaStop=()=>true){
+export function combatMovement(spaces,neighbors,canalOpen,seaStop=()=>true,longRange=()=>false){
   const flightDistances=new Map();
   const flyOver=id=>{
     const p=spaces[id];
@@ -29,7 +29,7 @@ export function combatMovement(spaces,neighbors,canalOpen,seaStop=()=>true){
     return distances;
   }
   function allowance(from,type){
-    if(aircraft.includes(type))return (type==='bomber'?6:4)+Number(spaces[from].airBase);
+    if(aircraft.includes(type))return (type==='bomber'?6:4)+Number(spaces[from].airBase)+Number(longRange());
     if(ships.includes(type))return 2+Number(spaces[from].navalBase);
     return type==='tank'||type==='mech_infantry'?2:1;
   }

@@ -151,7 +151,7 @@ if(route==='global'||route.startsWith('exercise/')&&Object.hasOwn(exercises,rout
         event.preventDefault();selectTab(tabs[next]);tabs[next].focus();
       };
     });
-    const phases={briefing:'Turn briefing',purchase:'Purchase & Repair',combatMove:'Combat Move',conductCombat:'Conduct Combat',combatReview:'Combat Review',noncombatMove:'Noncombat Move',mobilize:'Mobilize New Units',income:'Collect Income'};
+    const phases={research:'Research & Development',victory:'Game over',briefing:'Turn briefing',purchase:'Purchase & Repair',combatMove:'Combat Move',conductCombat:'Conduct Combat',combatReview:'Combat Review',noncombatMove:'Noncombat Move',mobilize:'Mobilize New Units',income:'Collect Income'};
     const summary=el('campaignSummary');
     const defaultSummary=summary.textContent;
     let setupSnapshot;
@@ -160,8 +160,9 @@ if(route==='global'||route.startsWith('exercise/')&&Object.hasOwn(exercises,rout
       try{match=JSON.parse(localStorage.getItem(globalKey));}catch{}
       const saved=match?.version===1&&match.board?.Germany&&Object.hasOwn(globalPowers,match.power);
       el('continueGlobal').hidden=!saved;
+      el('continueGlobal').firstChild.nodeValue=saved&&match.victory?'View final board ':'Continue game ';
       el('newGlobal').className=saved?'campaign-secondary':'campaign-primary';
-      summary.textContent=saved?'Round '+match.round+' · '+globalPowers[match.power]+' · '+(match.combat?.game.frenchAward?.status==='pending'?'French liberation reinforcements':phases[match.phase]||'Local match'):defaultSummary;
+      summary.textContent=saved&&match.victory?(match.victory.side==='Axis'?'Axis victory':'Allied victory')+' · Round '+match.victory.round:saved?'Round '+match.round+' · '+globalPowers[match.power]+' · '+(match.combat?.game.frenchAward?.status==='pending'?'French liberation reinforcements':phases[match.phase]||'Local match'):defaultSummary;
     }
     function confirmReplacement(raw){
       setupSnapshot=raw;
@@ -185,6 +186,7 @@ if(route==='global'||route.startsWith('exercise/')&&Object.hasOwn(exercises,rout
         }
         const seats=Object.fromEntries(Object.keys(globalPowers).map(power=>[power,1]));
         const match=startGlobalPlaytest(setup,seats);
+        match.researchEnabled=el('enableResearch').checked;
         localStorage.setItem(globalKey,JSON.stringify(match));
         location.hash='global';
       }catch{showError('The local game could not be started. Check device storage and reopen the playtest.');}

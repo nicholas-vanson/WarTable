@@ -1,5 +1,6 @@
 // Global 1940 Second Edition, Conduct Combat, "Strategic and Tactical Bombing Raids".
-import {exerciseOf,places,stats,alterStack,die,returnAircraft,resumeCombat} from './rules.js';
+import {technologyRoll} from './research.js';
+import {combatTech,exerciseOf,places,stats,alterStack,die,returnAircraft,resumeCombat} from './rules.js';
 
 export const damageLimit={factory_major:20,factory_minor:6,airfield:6,harbour:6};
 export const raidFacilityNames={factory_major:'Major industrial complex',factory_minor:'Minor industrial complex',airfield:'Air base',harbour:'Naval base'};
@@ -74,10 +75,10 @@ export function setRaidTarget(s,index,facility){
     throw Error('Choose an eligible facility for this surviving bomber.');
   p.target=facility;
 }
-const hitsOnOne=dice=>dice.filter(d=>d.face===1).length;
+const raidHits=dice=>dice.filter(d=>d.face<=(d.threshold||1)).length;
 export function raidLossGroups(r){
-  if(r.step==='airLoss')return [{target:null,hits:Math.min(r.planes.length,hitsOnOne(r.defenseDice))}];
-  if(r.step==='aaLoss')return [...new Set(r.aaDice.map(d=>d.target))].map(target=>({target,hits:hitsOnOne(r.aaDice.filter(d=>d.target===target))}));
+  if(r.step==='airLoss')return [{target:null,hits:Math.min(r.planes.length,raidHits(r.defenseDice))}];
+  if(r.step==='aaLoss')return [...new Set(r.aaDice.map(d=>d.target))].map(target=>({target,hits:raidHits(r.aaDice.filter(d=>d.target===target))}));
   return [];
 }
 function finishRaid(s,r){
@@ -93,11 +94,11 @@ export function advanceRaid(s,step,losses=[],random=die){
   const faces=dice=>dice.map(d=>d.face).join(', ');
   switch(step){
     case 'attack':
-      r.attackDice=live.map(p=>({type:p.type,face:random()}));
-      log('Raid attack roll','Rolls '+faces(r.attackDice)+'. Hits on 1.');r.step='defense';break;
+      r.attackDice=live.map(p=>({type:p.type,threshold:p.type==='fighter'&&combatTech(s,'jets')?2:1,...technologyRoll(random,p.type==='bomber'&&combatTech(s,'heavy'))}));
+      log('Raid attack roll','Rolls '+faces(r.attackDice)+'. Hits · '+raidHits(r.attackDice)+'.');r.step='defense';break;
     case 'defense':
-      r.defenseDice=r.interceptors.flatMap(f=>Array.from({length:f.remaining},()=>({power:f.power,face:random()})));
-      log('Interceptor roll','Rolls '+faces(r.defenseDice)+'. Hits on 1.');r.step='airLoss';break;
+      r.defenseDice=r.interceptors.flatMap(f=>Array.from({length:f.remaining},()=>({power:f.power,threshold:combatTech(s,'jets',f.power)?2:1,face:random()})));
+      log('Interceptor roll','Rolls '+faces(r.defenseDice)+'. Hits · '+raidHits(r.defenseDice)+'.');r.step='airLoss';break;
     case 'airLoss':
     case 'aaLoss': {
       const groups=raidLossGroups(r);
@@ -108,7 +109,7 @@ export function advanceRaid(s,step,losses=[],random=die){
       for(const i of losses)r.planes[i].lost=step;
       let detail='Attacker lost '+(losses.map(i=>stats[r.planes[i].type].name.toLowerCase()).join(', ')||'no aircraft')+'.';
       if(step==='airLoss'){
-        let hits=hitsOnOne(r.attackDice),lost=0;
+        let hits=raidHits(r.attackDice),lost=0;
         for(const f of r.interceptors){const n=Math.min(f.remaining,hits);f.remaining-=n;hits-=n;lost+=n;}
         detail+=' Defending fighters lost · '+lost+'.';
       }
@@ -118,15 +119,15 @@ export function advanceRaid(s,step,losses=[],random=die){
       break;
     }
     case 'targets':
-      r.aaDice=bombers.map(p=>({target:p.target,type:p.type,face:random()}));
+      r.aaDice=bombers.map(p=>({target:p.target,type:p.type,threshold:combatTech(s,'radar',exerciseOf(s).shapes[r.to].homePower)?2:1,face:random()}));
       for(const t of new Set(bombers.map(p=>p.target))){
         const dice=r.aaDice.filter(d=>d.target===t);
-        log(raidFacilityNames[t]+' fire','Rolls '+faces(dice)+'. Bomber hits · '+hitsOnOne(dice)+'.');
+        log(raidFacilityNames[t]+' fire','Rolls '+faces(dice)+'. Bomber hits · '+raidHits(dice)+'.');
       }
-      r.step=hitsOnOne(r.aaDice)?'aaLoss':'damage';break;
+      r.step=raidHits(r.aaDice)?'aaLoss':'damage';break;
     case 'damage': {
       r.outcomes=[];
-      r.damageDice=bombers.map(p=>({target:p.target,type:p.type,face:random()}));
+      r.damageDice=bombers.map(p=>({target:p.target,type:p.type,...technologyRoll(random,p.type==='bomber'&&combatTech(s,'heavy'),true)}));
       const ledger=(s.raidDamage??={})[r.to]??={};
       for(const t of new Set(bombers.map(p=>p.target))){
         const dice=r.damageDice.filter(d=>d.target===t);
