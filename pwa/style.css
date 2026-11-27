@@ -413,3 +413,48 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
 .lan-actions,.lan-seats{display:flex;flex-wrap:wrap;gap:.55rem;margin-top:.75rem}.lan-pane .campaign-primary{background:#334b3b;color:#fff8e6;border-color:#334b3b}.lan-pane .campaign-secondary{background:transparent;color:#334b3b;border-color:#85917d}.lan-pane button:disabled{opacity:.55}.lan-actions:empty,#lanNotice:empty{display:none}
 .lan-seats strong{padding:.45rem .7rem;border:1px solid #aaa186}.lan-pane input:not([type=checkbox]){display:block;width:min(100%,29rem);padding:.55rem;margin:.35rem 0;font:inherit}.lan-code-input,#lanCode{font-family:monospace;letter-spacing:.09em;text-transform:uppercase}
 #lanNotice{margin-top:.8rem}.lan-status{font-size:.85rem;margin:.2rem 0 .55rem;padding:.4rem .55rem;background:var(--sheet);border-left:3px solid var(--nation-ink)}
+
+.briefing-guides{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 8px}
+#dialog:has(#guideTabs){width:min(480px,calc(100vw - 20px));height:min(690px,87dvh);max-height:calc(100dvh - 20px)}
+#dialogBody:has(#guideTabs){padding:0;scrollbar-gutter:stable}
+#guideTabs{display:grid;grid-template-columns:repeat(3,1fr);position:sticky;top:0;z-index:1;background:#e8e4d2;border-bottom:1px solid #939780}
+#guideTabs button{color:#454e40;background:transparent;border:0;border-bottom:3px solid transparent;padding:11px 4px 8px;min-height:44px;font:700 14px Georgia,serif}
+#guideTabs button[aria-selected="true"]{background:#f5efdd;border-color:#536448;color:#25382c}
+#guideContent{padding:16px clamp(14px,4vw,22px) 24px}
+#guideContext:not([hidden]){display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:3px 11px;margin-bottom:15px}
+#guideContext label,.guide-wallet{font:700 11px/1.4 var(--typewriter);letter-spacing:.06em;text-transform:uppercase}
+#guidePower{background:#fbf6e6;border:1px solid #8d907c;border-left:4px solid var(--guide-ink);padding:7px 8px;min-height:42px;border-radius:2px;font-weight:650}
+#guideTurn{grid-column:2;color:#5b6151;font-size:12px}
+.guide-total{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-block:1px solid #8e947e}
+#guidePage h3{font-size:23px;margin:0}
+#guidePage h3:not(:first-child){margin-top:16px}
+#guidePage .guide-total p{font-size:12px;line-height:1.35;margin:4px 0 0;color:#505a4b}
+.guide-total>strong{font:700 30px/1 Georgia,serif;color:var(--guide-ink);white-space:nowrap}
+.guide-total>strong small{font:700 12px var(--typewriter)}
+.guide-objective,.guide-declaration,.guide-relations li{border-bottom:1px solid #c3c0aa}
+.guide-objective summary{display:flex;align-items:center;gap:10px;justify-content:space-between;cursor:pointer;min-height:55px;padding:8px 2px}
+.guide-objective summary::-webkit-details-marker{display:none}
+.guide-objective summary::after{content:'›';font:20px Georgia,serif;color:#535f4c}
+.guide-objective[open] summary::after{transform:rotate(90deg)}
+.guide-objective summary>span:first-child{flex:1;min-width:0}
+.guide-objective summary strong,.guide-relations strong{font-size:14px;font-weight:650}
+.guide-state{display:block;font:600 12px/1.5 var(--typewriter);color:#646456}
+.guide-state.earned{color:#3d5838}
+.guide-state.earned::before{content:'✓ ';font-family:system-ui,sans-serif}
+.guide-amount{font:700 12px var(--typewriter);text-align:right}
+.guide-condition{border-left:2px solid #a3aa90;padding:1px 10px;margin:0 1px 10px}
+#guidePage .guide-condition p,.guide-declaration p{font-size:13px;margin:3px 0}
+.guide-progress{font-weight:650;color:#43583c}
+.guide-wallet{margin:18px 0 5px;padding-bottom:5px;color:#4b5847;border-bottom:1px solid #9ba18e}
+.guide-wallet span{float:right}
+#guidePage .guide-note{padding:9px 12px;margin:12px 0 6px;background:#e9e6d3;border-left:3px solid #828b70}
+.guide-relations{padding:0;margin:8px 0 0;list-style:none}
+.guide-relations li{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:38px}
+.guide-relations span{font:700 12px var(--typewriter)}
+.at-war{color:#843d30}.at-peace{color:#476047}
+.guide-declaration summary{cursor:pointer;padding:10px 0;font-size:14px;font-weight:650}
+#guidePage>.secondary,#guidePage>.danger{margin:4px 4px 0 0}
+#guideContent :focus-visible{outline:2px solid #9b5227;outline-offset:-2px}
+.guide-rule{border-bottom:1px solid #c3c0aa}
+.guide-rule>summary{padding:12px 1px;cursor:pointer;font-size:14px;font-weight:650}
+.guide-rule>summary small{float:right;color:#4a5b41;font:700 11px/1.6 var(--typewriter)}
