@@ -2,6 +2,7 @@ import {lanRequest,lanSeats,lanToken} from './lan.js';
 import {lanDecision,lanSide} from './lan-game.js';
 import {breakthroughs,hasTech,canResearch,researchWallets,buyResearch,discover,finishResearch} from './research.js';
 import {researchRoutes,dropRoom,queueDrop,queueRocket,rocketsPending,fireRocket} from './research-moves.js';
+import {esc,objectivesReference,politicsReference} from './field-guide.js';
 import {victoryStatus} from './victory.js';
 import {raidTargets,facilityHits,damageLimit,raidFacilityNames,pendingRaids,currentRaid,chooseRaid,setInterceptorCount,confirmInterceptors,setRaidTarget,raidLossGroups,advanceRaid} from './raids.js';
 import {scramblePlan,scrambleRows} from './scramble.js';
@@ -221,7 +222,6 @@ function run(fn){
   try{fn();save();}catch(e){message=e.message;}
   render();
 }
-function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function btn(text,act,cls='secondary',extra=''){return '<button class="'+cls+'" data-act="'+act+'" '+extra+'>'+text+'</button>';}
 function opt(id,label,sub,code,act,selected=false){
   return '<button class="option '+(selected?'active':'')+'" data-act="'+act+'" data-id="'+id+'"><span class="unitcode" aria-hidden="true">'+code+'</span><span><strong>'+label+'</strong><small>'+sub+'</small></span><span class="end" aria-hidden="true">›</span></button>';
@@ -1232,6 +1232,7 @@ function applyRoom(packet,own=false,after){
   if(!own)ui=freshUI();
   if(after)after();
   render();
+  if($('dialog').open&&$('guideTabs'))refreshFieldGuide();
 }
 async function refreshRoom(){
   if(roomBusy||roomPolling||document.hidden)return;
@@ -1331,7 +1332,7 @@ function render(){
     const match=globalBoard.match;
     $('panel').innerHTML=ui.inspect?inspectionPanel('Back to briefing'):
       '<h2>'+seasonForRound(match.round)+'</h2><p class="briefing-round">Round '+match.round+' · '+attacker+(match.power==='Germans'?' moves first':' to move')+'</p>'+
-      '<p class="briefing-address">'+esc(openingAddress(match,match.controllers[match.power]))+' Survey the board, then begin your turn when you’re ready.</p>'+btn('Victory and technology','objective-status')+
+      '<p class="briefing-address">'+esc(openingAddress(match,match.controllers[match.power]))+' Survey the board, then begin your turn when you’re ready.</p><div class="briefing-guides">'+btn('National objectives &amp; politics','power-reference')+btn('Victory and technology','objective-status')+'</div>'+
       Object.entries(match.victoryHolds||{}).map(([key,h])=>'<p class="hint">'+globalPowers[h.power]+' can clinch '+({europe:'Europe',pacific:'the Pacific',capitals:'the Allied capital objective'}[key])+' at the start of its turn in round '+(h.round+1)+'.</p>').join('')+
       (canResearch(match)?btn('Skip research and purchase units','skip-research'):'');
     $('action').innerHTML=btn('Begin '+attacker+'’s turn','begin-turn','primary');
@@ -1375,7 +1376,7 @@ function render(){
     status.textContent=!roomOnline?'Host disconnected · Reconnecting…':roomBusy?'Saving to host…':d.side?(can?'Your decision':'Waiting for '+d.side)+' · '+d.label:'Final board';
     $('panel').prepend(status);
     if(!can){
-      for(const el of document.querySelectorAll('#panel button:not([data-act="objective-status"]),#panel select,#panel input,#action button:not([data-act="final-review"])'))el.disabled=true;
+      for(const el of document.querySelectorAll('#panel button:not([data-act="objective-status"]):not([data-act="power-reference"]),#panel select,#panel input,#action button:not([data-act="final-review"])'))el.disabled=true;
       return;
     }
   }
@@ -1397,6 +1398,64 @@ function render(){
   }));
   else bindHold($('hold'),()=>roomSend('commit')||run(()=>{commit(s);ui=freshUI();}));
 }
+const guideTabs={objectives:'Objectives',politics:'Politics',rules:'How to play'};
+function openFieldGuide(){
+  const tabs=Object.entries(guideTabs).map(([id,name])=>'<button type="button" role="tab" id="guide-'+id+
+    '" data-section="'+id+'" aria-controls="guideContent">'+name+'</button>').join('');
+  const options=Object.entries(globalPowers).map(([id,name])=>'<option value="'+id+'">'+esc(name)+'</option>').join('');
+  showDialog('Field guide','<div id="guideTabs" role="tablist" aria-label="Field guide sections">'+tabs+
+    '</div><div id="guideContent" role="tabpanel" tabindex="0"><div id="guideContext"><label for="guidePower">Power</label>'+
+    '<select id="guidePower">'+options+'</select><small id="guideTurn"></small></div><div id="guidePage"></div></div>');
+  $('guidePower').value=globalBoard.match.power;
+  switchGuideTab('objectives');
+}
+function switchGuideTab(section){
+  const body=$('guideContent');
+  body.setAttribute('aria-labelledby','guide-'+section);
+  for(const tab of $('guideTabs').children){
+    const selected=tab.dataset.section===section;
+    tab.setAttribute('aria-selected',String(selected));
+    tab.tabIndex=selected?0:-1;
+  }
+  $('guideContext').hidden=section==='rules';
+  updateGuidePage(section);
+  $('dialogBody').scrollTop=0;
+}
+function updateGuidePage(section){
+  const match=globalBoard.match,power=$('guidePower').value;
+  $('guideTurn').textContent='Round '+match.round+' · '+(finished()?'Game over':globalPowers[match.power]+' to move');
+  $('guideContent').style.setProperty('--guide-ink',styleFor(globalPowers[power]).ink);
+  $('guidePage').innerHTML=section==='objectives'?objectivesReference(match,power):
+    section==='politics'?politicsReference(match,power):fieldGuideCopy();
+}
+function refreshFieldGuide(){
+  const section=$('guideTabs').querySelector('[aria-selected="true"]').dataset.section;
+  const summaryKey=el=>el&&(el.querySelector('strong')?.textContent||el.firstChild.textContent);
+  const open=new Set([...$('guidePage').querySelectorAll('details[open]>summary')].map(summaryKey));
+  const focused=summaryKey(document.activeElement.closest('summary'));
+  const scroll=$('dialogBody').scrollTop;
+  updateGuidePage(section);
+  for(const d of $('guidePage').querySelectorAll('details')){
+    const summary=d.querySelector('summary');
+    d.open=open.has(summaryKey(summary));
+    if(focused===summaryKey(summary))summary.focus({preventScroll:true});
+  }
+  $('dialogBody').scrollTop=scroll;
+}
+$('dialogBody').addEventListener('change',e=>{
+  if(e.target.id==='guidePower')updateGuidePage($('guideTabs').querySelector('[aria-selected="true"]').dataset.section);
+});
+$('dialogBody').addEventListener('click',e=>{
+  const tab=e.target.closest('#guideTabs [role="tab"]');
+  if(tab)switchGuideTab(tab.dataset.section);
+});
+$('dialogBody').addEventListener('keydown',e=>{
+  if(!e.target.matches('#guideTabs [role="tab"]'))return;
+  const tabs=[...$('guideTabs').children],i=tabs.indexOf(e.target);
+  const dest={ArrowRight:(i+1)%tabs.length,ArrowLeft:(i+tabs.length-1)%tabs.length,Home:0,End:tabs.length-1}[e.key];
+  if(dest===undefined)return;
+  e.preventDefault();tabs[dest].focus();switchGuideTab(tabs[dest].dataset.section);
+});
 function showDialog(heading,html){
   $('dialogTitle').textContent=heading;
   $('dialogBody').innerHTML=html;
@@ -1448,6 +1507,7 @@ document.addEventListener('change',event=>{
 document.addEventListener('click',e=>{
   const b=e.target.closest('button[data-act]');if(!b)return;
   const {act,id,k,n}=b.dataset;
+  if(act==='power-reference'){openFieldGuide();return;}
   if(act==='objective-status'){objectiveDialog();return;}
   if(act==='final-review'){$('journal').click();return;}
   if(finished()&&act!=='clear')return;
@@ -1680,7 +1740,41 @@ $('journal').onclick=()=>{
   }).join('');
   showDialog(isGlobal?'Game review':'Exercise review',current+previous);
 };
-$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. '+(isGlobal?'The global map wraps east and west across the Americas. ':'')+'Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The national color fades inward from the hatched border. Neutral hatching slopes up to the right across the whole territory. Single grey lines mark strict neutrals, paired lines mark pro-Allied neutrals, and dashed lines mark pro-Axis neutrals. Grey stippling marks impassable terrain. Units cannot enter or cross these spaces. A committed strict-neutral invasion changes the other eligible strict neutrals immediately. Friendly neutrals can be activated after combat. Tap a territory to mark it in violet and read its status. Tap it again to clear the selection. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><details class="unit-key"><summary>Unit symbols</summary><ul>'+Object.entries(globalUnits).map(([type,[name]])=>'<li>'+unitCounter(boardUnitType(type),undefined,attacker)+' '+name+'</li>').join('')+'</ul></details><h3>Plan an attack</h3><p>Land arrows are brick red, air arrows are blue, and sea arrows are ochre. Nearby routes in the same category can share an arrowhead.</p><p>Select a stack on the map, adjust the quantity, then tap a highlighted enemy territory to place the order. Assigned stacks at the front have a muted national color and a dark corner. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this board</h3><p>'+ (isGlobal?'After combat review, choose Begin noncombat move to redeploy unused units, make sea crossings or change aircraft landings. A transport can carry one land unit and one additional infantry between friendly coasts in a single move. You can remove queued moves or undo the last move. Hold to commit your moves and begin mobilization. Select a purchase, a highlighted site and the quantity to place. Ships use an adjacent coastal factory. You can reserve a purchased carrier’s launch during combat or noncombat movement when aircraft need its deck to land. Hold to place your reserves and review income. Open any income line to see its sources. Hold to credit your treasury and hand over the board. Global 1940 uses the opening forces of all nine powers. Tap any territory or counter to inspect it. Amber marks eligible destinations. Select a distant destination, then follow the dashed teal spaces to choose each passage. Tanks and mechanized infantry move two spaces. Mechanized infantry needs a tank on the same route to blitz until it gains Improved Mechanized Infantry. Ships move two sea zones, fighters and tactical bombers four spaces, and strategic bombers six. An operational friendly naval or air base adds one movement point at departure. Aircraft need enough movement to land in territory that was friendly at the start of the turn, or on an eligible carrier. The order shows the outbound cost and planned landing site. AAA fires at incoming aircraft during opening fire.':'This local exercise covers adjacent land attacks with infantry and tanks. The forces are arranged for testing.')+'</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+(isGlobal?'<p>Inland China terrain data courtesy of Mapzen, the U.S. Geological Survey and NOAA. Rivers and lakes from Natural Earth.</p>'+btn('Victory and technology','objective-status')+(finished()?'':btn('Air defense orders','air-orders','secondary')+btn(roomCode?'Room seats':'Local players','players','secondary'))+((roomCode||finished()||inResearch()||inBriefing()||inPurchase()||s.phase==='income')?'':btn('Restart combat','reset','danger')):btn('Restart exercise','reset','danger')));
+function fieldGuideCopy(){
+  const navigation='<p>Pan with one finger. '+(isGlobal?'The global map wraps east and west. ':'')+
+    'Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet, or tap Hide orders for the full map.</p>';
+  const terrain='<p>★ marks a capital victory city. ◆ marks another victory city. Both count as one.</p>'+
+    '<p>National colors fade inward from the border. Across neutral territories, single grey lines mark strict neutrals, paired lines mark pro-Allied neutrals and dashed lines mark pro-Axis neutrals. Grey stippling marks impassable terrain.</p>'+
+    '<p>Tap a territory to inspect it in violet, then tap again to clear it. Dashed borders separate sea zones. Tap water to see adjacent zone numbers.</p>';
+  const symbols='<details class="unit-key"><summary>Unit symbols</summary><ul>'+Object.entries(globalUnits).map(([type,[name]])=>
+    '<li>'+unitCounter(boardUnitType(type),undefined,attacker)+' '+name+'</li>').join('')+'</ul></details>';
+  const planning='<p>Select a stack, set its quantity and tap a highlighted destination. Tap a planned attack to revise or cancel it. Hold to commit all attacks together.</p>'+
+    '<p>Land arrows are red, air arrows blue and sea arrows ochre. Nearby routes of the same category can share an arrowhead. Assigned stacks have a muted national color and a dark corner.</p>';
+  if(!isGlobal)return '<h3>Navigate the map</h3>'+navigation+'<h3>Read the board</h3>'+terrain+symbols+'<h3>Plan an attack</h3>'+planning+
+    '<p>This local exercise covers adjacent land attacks with infantry and tanks. Your position saves on this device.</p>'+btn('Restart exercise','reset','danger');
+  const phase=globalBoard.match.phase;
+  const phases=[
+    ['briefing','Turn briefing','<p>Inspect the board and check your national objectives before beginning your turn. An opponent’s capital or a change in diplomacy can affect your next collection.</p>'],
+    ['research','Research and development','<p>When research is available, each die costs 5 IPCs. At least one 6 lets you choose a development chart and roll for one new technology. You may skip research and save your IPCs.</p>'],
+    ['purchase','Purchase and repair','<p>Choose new units and repairs, then hold to pay. New units go to your reserves until mobilization. The United Kingdom spends from its Europe and Pacific treasuries separately.</p>'],
+    ['combatMove','Combat move',planning+'<p>Issue any declaration of war before queuing orders. Amber marks eligible destinations. For a distant destination, choose the dashed teal passages along the route. Committing an attack on a strict neutral changes the alignment of other eligible strict neutrals.</p>'+
+      '<p>Tanks and mechanized infantry move two spaces. Mechanized infantry needs a tank on the same route to blitz until it gains Improved Mechanized Infantry. Ships normally move two spaces, fighters and tactical bombers four, and strategic bombers six. An operational friendly base can add one space at departure. Aircraft must have enough range to land on eligible carriers or territory that was friendly at the start of the turn.</p>'],
+    ['conductCombat','Conduct combat','<p>Select a pending battle or raid. Follow the prompts for opening fire, dice, casualties and any retreat. Antiaircraft artillery fires at incoming aircraft during opening fire. A capture or liberation can change who receives territory income.</p>'],
+    ['combatReview','Combat review','<p>Read the battle results and territory changes. Choose Begin noncombat move to continue.</p>'],
+    ['noncombatMove','Noncombat move','<p>Redeploy unused units, choose eligible aircraft landings and activate friendly neutrals. A transport can carry one land unit plus one additional infantry between friendly coasts. Queued moves can be removed before you commit.</p>'],
+    ['mobilize','Mobilize new units','<p>Select a reserve, a highlighted site and the quantity to place. Ships use a sea zone adjacent to an eligible coastal factory. A purchased carrier can be reserved earlier when aircraft need its deck to land. Hold to place your reserves.</p>'],
+    ['income','Collect income','<p>Open the territory and national objective lines to see their sources. Resolve any convoy losses, War Bonds or political decision shown on the sheet. Hold to credit your treasury and pass the turn.</p>']
+  ];
+  const phaseList=phases.filter(([id])=>id!=='research'||globalBoard.match.researchEnabled!==false).map(([id,label,copy])=>
+    '<details class="guide-rule"'+(id===phase?' open':'')+'><summary>'+label+(id===phase?' <small>Current phase</small>':'')+'</summary>'+copy+'</details>').join('');
+  const actions=btn('Victory and technology','objective-status')+(finished()?'':btn('Air defense orders','air-orders')+
+    btn(roomCode?'Room seats':'Local players','players'))+((roomCode||finished()||inResearch()||inBriefing()||inPurchase()||s.phase==='income')?'':btn('Restart combat','reset','danger'));
+  return '<h3>Turn sequence</h3>'+phaseList+'<h3>Map and counters</h3>'+navigation+terrain+symbols+
+    '<p>'+(roomCode?'Your position saves on the Wi-Fi host.':'Your position saves on this device.')+
+    ' On Android, use the browser menu to install WarTable when available.</p>'+actions+
+    '<p>Inland China terrain data courtesy of Mapzen, the U.S. Geological Survey and NOAA. Rivers and lakes from Natural Earth.</p>';
+}
+$('help').onclick=()=>isGlobal?openFieldGuide():showDialog('Field guide',fieldGuideCopy());
 // Store the two panel dimensions separately so rotating the phone restores the last fit.
 function setupOrdersPanel(){
   const main=document.querySelector('main'),sheet=$('ordersPanel'),grip=$('resizePanel');

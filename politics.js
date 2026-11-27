@@ -29,9 +29,13 @@ function enteredChineseArea(match,power){
 export function usIncomeChoice(match){
   return match.phase==='income'&&match.power==='Americans'&&match.round===3&&!fightingAxis(match,'Americans')&&!match.incomeReport?.stayedAtPeace;
 }
+export function declarationWindowOpen(match){
+  const game=match.combat?.game;
+  return usIncomeChoice(match)||(match.phase==='combatMove'&&game?.phase==='plan'&&!game.orders.length&&!game.rocketOrders?.length);
+}
 export function declarationTargets(match){
-  const p=match.power,game=match.combat?.game;
-  if(!usIncomeChoice(match)&&(match.phase!=='combatMove'||game?.phase!=='plan'||game.orders.length||game.rocketOrders?.length))return [];
+  const p=match.power;
+  if(!declarationWindowOpen(match))return [];
   let targets;
   switch(p){
     case 'British':case 'ANZAC':case 'French':targets=['Japanese'];break;
