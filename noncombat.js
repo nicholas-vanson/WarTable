@@ -1,3 +1,4 @@
+import {departures,aboard} from './assault.js';
 // Drafts replay from the resolved battle position. Arrivals never replenish the
 // opening allowance, including when a stack returns to its starting territory.
 import {places,stats,ships,aircraft,samePower,exerciseOf,deckSpace,reservedBerths} from './rules.js';
@@ -78,10 +79,12 @@ function shipRedeployments(g,from,type){
   return shortestNoncombatRoutes(g,from,ex.movement.allowance(from,type),
     (a,b)=>places[b].water&&ex.movement.spaces[b].allowed&&ex.canalOpen(a,b,type)&&canEnterSeaZone(g,b,type),()=>true,id=>ex.seaStop(id,type));
 }
+function idleCargo(g,zone){return aboard(g,zone).filter(h=>!g.spentCargo.includes(h.id));}
+function emptyTransports(g,zone){return Math.max(0,(g.unused[zone]?.transport||0)-idleCargo(g,zone).length);}
 function transportCrossings(g,from){
   const ex=exerciseOf(g),choices=new Map();
   for(const port of ex.neighbors[from]){
-    if(!places[port].water||!g.unused[port]?.transport||!canEnterSeaZone(g,port,'transport'))continue;
+    if(!places[port].water||!emptyTransports(g,port)||!canEnterSeaZone(g,port,'transport'))continue;
     const paths=[...shipRedeployments(g,port,'transport').values()];
     if(ex.seaStop(port,'transport'))paths.unshift([port]);
     for(const path of paths)for(const to of ex.neighbors[path.at(-1)]){
@@ -98,6 +101,17 @@ export function noncombatRoutes(g,order){
   if(!g.unused[from]||!stats[type]||!Number.isSafeInteger(quantity)||quantity<1||
     (flight!=null&&(!sortie||sortie.from!==from||sortie.type!==type))||
     quantity>(sortie?sortie.available:g.unused[from][type]||0))return new Map();
+  if(order.load){
+    if(type!=='transport'||quantity!==1||g.spentCargo.includes(order.load)||!aboard(g,from).some(h=>h.id===order.load))return new Map();
+    const routes=new Map();
+    for(const path of [[from],...shipRedeployments(g,from,type).values()]){
+      const zone=path.at(-1);
+      if(!ex.seaStop(zone,type)||!canEnterSeaZone(g,zone,type))continue;
+      for(const id of ex.neighbors[zone])if(!places[id].water&&ex.movement.spaces[id].allowed&&
+        (friendlyDestination(g,id)||canActivateDestination(g,id))&&!routes.has(id))routes.set(id,[...path,id]);
+    }
+    return routes;
+  }
   if(transport){
     if(sortie||ships.includes(type)||aircraft.includes(type)||quantity>(type==='inf'?2:1)||
       (extraInf&&(type==='inf'||!(g.unused[from].inf>0))))return new Map();
@@ -125,6 +139,13 @@ export function noncombatRoutes(g,order){
 }
 function moveNoncombatShip(g,from,to,type,n){
   const own=p=>samePower(p,g.power);
+  if(type==='transport'&&from!==to){
+    const loads=idleCargo(g,from).slice(0,Math.max(0,n-emptyTransports(g,from)));
+    for(const boat of loads){
+      g.embarked[from]=g.embarked[from].filter(h=>h.id!==boat.id);
+      (g.embarked[to]??=[]).push(boat);g.spentCargo.push(boat.id);
+    }
+  }
   if(type==='carrier'){
     const load=carrierPassengers(g,from,n);
     if(!load)throw Error('Move the aircraft to a legal landing site first.');
@@ -145,6 +166,18 @@ function applyNoncombatOrder(g,order){
   const path=noncombatRoutes(g,order).get(order.to);
   if(!path)throw Error('Choose an available unit and a highlighted destination.');
   const {from,to,type,quantity,flight,transport,extraInf}=order,own=p=>samePower(p,g.power);
+  if(order.load){
+    const boat=aboard(g,from).find(h=>h.id===order.load),zone=path.at(-2);
+    g.embarked[from]=g.embarked[from].filter(h=>h.id!==boat.id);
+    transferNoncombatUnits(g,from,zone,'transport',1,own);g.unused[from].transport--;
+    if(canActivateDestination(g,to))takeFriendlyControl(g,to,g.power,exerciseOf(g).attacker);
+    for(const [t,n] of Object.entries(boat.units)){
+      let row=g.pieces[to].find(([p,k])=>p===boat.power&&k===t);
+      if(!row){row=[boat.power,t,0];g.pieces[to].push(row);}
+      row[2]+=n;g.units[to][t]=(g.units[to][t]||0)+n;
+    }
+    g.moves.push({...order,path,unloaded:boat.units});return;
+  }
   if(flight!=null){
     const sortie=g.flights[flight];
     if(sortie.base)transferNoncombatUnits(g,sortie.base,to,type,quantity,own);
@@ -169,16 +202,17 @@ export function noncombatPosition(s,orders=s.noncombatOrders||[]){
   if(s.phase!=='noncombat')throw Error('Noncombat movement is not open.');
   const ex=exerciseOf(s),own=p=>samePower(p,s.power);
   const g={...s,pieces:structuredClone(s.pieces),owners:{...s.owners},units:structuredClone(s.units),
-    shipDamage:structuredClone(s.shipDamage||{}),unused:{},unusedDamage:{},moves:[],
+    shipDamage:structuredClone(s.shipDamage||{}),embarked:structuredClone(s.embarked||{}),spentCargo:[...(s.spentCargo||[])],unused:{},unusedDamage:{},moves:[],
     flights:(s.landedFlights||[]).map(f=>({...f,available:f.count}))};
+  const spent=[...s.orders.flatMap(departures),...(s.navalParticipants||[]).filter(o=>o.garrison)];
   for(const [id,rows] of Object.entries(s.pieces)){
     const free=g.unused[id]={};
     for(const [p,t,n] of ex.shapes[id].garrison)if(own(p)&&stats[t])free[t]=(free[t]||0)+n;
-    for(const o of s.orders)if(o.from===id)for(const [t,n] of Object.entries(o.units))free[t]=(free[t]||0)-n;
+    for(const o of spent)if(o.from===id)for(const [t,n] of Object.entries(o.units))free[t]=(free[t]||0)-n;
     for(const t of Object.keys(free))free[t]=Math.max(0,Math.min(sumStackType(rows,t,own),free[t]-(s.activationMoves?.[id]?.[t]||0)));
     for(const t of ['carrier','battleship']){
       const opening=ex.openingDamage?.[id]?.[s.power]?.[t]||0;
-      const departed=s.orders.reduce((sum,o)=>sum+(o.from===id?(o.units[t]||0):0),0);
+      const departed=spent.reduce((sum,o)=>sum+(o.from===id?(o.units[t]||0):0),0);
       (g.unusedDamage[id]??={})[t]=Math.max(0,Math.min(opening-departed,s.shipDamage?.[id]?.[s.power]?.[t]||0));
     }
   }
@@ -199,7 +233,7 @@ export function completeNoncombat(s){
     record.push({title:places[f.from].name,detail:f.available+' '+stats[f.type].name+' lost without a landing space.'});
   }
   for(const m of g.moves)record.push({title:m.path.map(id=>places[id].name).join(' → '),
-    detail:(m.flight!=null?'Landing · ':m.transport?'Sea crossing · ':'Noncombat move · ')+m.quantity+' × '+stats[m.type].name+(m.extraInf?' + 1 infantry':'')});
+    detail:m.unloaded?'Unloaded transport cargo · '+Object.entries(m.unloaded).map(([t,n])=>n+' × '+stats[t].name).join(', '):(m.flight!=null?'Landing · ':m.transport?'Sea crossing · ':'Noncombat move · ')+m.quantity+' × '+stats[m.type].name+(m.extraInf?' + 1 infantry':'')});
   if(!g.moves.length)record.push({title:'Noncombat move',detail:'No redeployments ordered.'});
-  return {...s,phase:'noncombatComplete',pieces:g.pieces,units:g.units,owners:g.owners,shipDamage:g.shipDamage,record};
+  return {...s,phase:'noncombatComplete',pieces:g.pieces,units:g.units,owners:g.owners,shipDamage:g.shipDamage,embarked:g.embarked,record};
 }
