@@ -395,3 +395,15 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
 .convoy-dice{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.18rem}
 .convoy-dice b{border:1px solid #807660;border-radius:3px;min-width:1.3em;text-align:center}
 .convoy-dice .hit{background:#e6c7ad;color:#633423}.convoy-dice .miss{color:#615f55}
+
+#ordersPanel .war-open{color:#702f25;border-color:#965448;font-weight:650;margin:.35rem 0}
+.war-targets{padding:0;border:0;margin:0}
+.war-targets legend,.war-warning h3{font:600 21px/1.2 Georgia,serif}
+.war-targets label{display:flex;align-items:center;gap:10px;min-height:46px;border-bottom:1px solid #bbb4a1;cursor:pointer}
+.war-targets input{width:18px;height:18px;accent-color:#803f31}
+.war-actions{display:flex;align-items:stretch;gap:8px;margin-top:16px}
+.war-actions button{min-height:44px}.war-actions .primary{flex:1}
+.war-warning{border-left:4px solid #914737;background:#f4e6d7;padding:12px;color:#542c24}
+.war-warning ul{padding-left:18px;margin:8px 0 0;font-size:.88rem}
+#issueWar{background:#833b2e;color:#fff7e8}#issueWar::before{background:#5e291f}
+.war-receipt{border-left:3px solid #914737;padding:.3rem .6rem;color:#643529}

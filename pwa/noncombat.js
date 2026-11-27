@@ -75,13 +75,14 @@ function shortestNoncombatRoutes(g,from,range,edge,transit,finish){
 function shipRedeployments(g,from,type){
   const ex=exerciseOf(g);
   return shortestNoncombatRoutes(g,from,ex.movement.allowance(from,type),
-    (a,b)=>places[b].water&&ex.movement.spaces[b].allowed&&ex.canalOpen(a,b,type)&&canEnterSeaZone(g,b,type),()=>true,()=>true);
+    (a,b)=>places[b].water&&ex.movement.spaces[b].allowed&&ex.canalOpen(a,b,type)&&canEnterSeaZone(g,b,type),()=>true,id=>ex.seaStop(id,type));
 }
 function transportCrossings(g,from){
   const ex=exerciseOf(g),choices=new Map();
   for(const port of ex.neighbors[from]){
     if(!places[port].water||!g.unused[port]?.transport||!canEnterSeaZone(g,port,'transport'))continue;
-    const paths=[[port],...shipRedeployments(g,port,'transport').values()];
+    const paths=[...shipRedeployments(g,port,'transport').values()];
+    if(ex.seaStop(port,'transport'))paths.unshift([port]);
     for(const path of paths)for(const to of ex.neighbors[path.at(-1)]){
       if(to===from||places[to].water||!ex.movement.spaces[to].allowed||!(friendlyDestination(g,to)||canActivateDestination(g,to)))continue;
       const route=[from,...path,to];

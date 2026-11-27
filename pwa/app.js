@@ -1,4 +1,5 @@
-import {incomeAmount,rollConvoys,collectIncome} from './income.js';
+import {countryInSentence,usIncomeChoice,declarationTargets,declarationDetails} from './politics.js';
+import {incomeAmount,rollConvoys,collectIncome,confirmPoliticalChoice,restoreChineseStatement} from './income.js';
 import {beginMobilization,mobilizationPlan,placementOptions,finishMobilization,launchPlan,reviseLaunches} from './mobilize.js';
 import {beginNoncombat,noncombatPosition,noncombatRoutes} from './noncombat.js';
 import {asPassages,orderPassages,samePassages} from './movement.js';
@@ -12,6 +13,7 @@ const $=id=>document.getElementById(id);
 const isGlobal=location.hash==='#global';
 const exerciseId=isGlobal?'global':location.hash.slice('#exercise/'.length);
 const globalBoard=isGlobal?await loadGlobalBoard():null;
+if(globalBoard)restoreChineseStatement(globalBoard.match);
 let lastGlobalSave=isGlobal?localStorage.getItem(globalKey):null;
 const key=isGlobal?globalKey:exerciseId==='west'?'wartable.western-front.v1':'wartable.exercise.'+exerciseId+'.v1';
 const exercise=exercises[exerciseId],{attacker,defender}=exercise;
@@ -105,7 +107,14 @@ function addStackOrder(to,path=[]){
   ui=freshUI();
 }
 function selectTarget(id){
-  if(!moveChoices().includes(id))throw new Error('Choose a highlighted space for this move.');
+  if(!moveChoices().includes(id)){
+    if(isGlobal){
+      const match=globalBoard.match,owner=match.board[places[id].name]?.owner;
+      const target=owner==='UK_Pacific'||match.power==='Japanese'&&['ANZAC','Dutch'].includes(owner)?'British':owner;
+      if(declarationTargets(match).includes(target))throw Error('At peace with '+countryInSentence(target)+'. Choose Declare war to review this decision first.');
+    }
+    throw new Error('Choose a highlighted space for this move.');
+  }
   const search=stackSearch()?.search;
   if(ui.routeTo){
     const prefix=ui.passageSteps||[];
@@ -281,6 +290,29 @@ function inspectionPanel(backLabel){
   return title(esc(name||place.name),place.blocked?'Impassable terrain':esc((ui.inspectedNation||s.owners[id])+' · '+place.name))+
     (note?'<p class="hint">'+note+'</p>':'')+(place.blocked?'':boardGarrison(id))+btn(backLabel,'clear');
 }
+function warEntry(match){
+  const declarations=(match.combat?.game.record||[]).filter(e=>e.declaration);
+  const receipt=declarations.map(e=>'<p class="war-receipt">'+esc(e.title)+'</p>').join('');
+  if(!declarationTargets(match).length)return receipt;
+  return receipt+btn('Declare war…','war-open','secondary war-open');
+}
+function chooseWarTargets(){
+  const match=globalBoard.match,targets=declarationTargets(match);
+  if(!targets.length)return;
+  showDialog('Declare war', '<fieldset class="war-targets"><legend>Who will '+esc(countryInSentence(match.power))+' declare war on?</legend>'+
+    targets.map(t=>'<label><input type="checkbox" value="'+t+'"> '+esc(match.power==='Japanese'&&t==='British'?'United Kingdom and ANZAC':globalPowers[t])+'</label>').join('')+
+    '</fieldset><div class="war-actions">'+btn('Cancel','war-cancel')+btn('Review declaration','war-review','primary','disabled')+'</div>');
+}
+function reviewWarTargets(){
+  const targets=[...$('dialogBody').querySelectorAll('.war-targets input:checked')].map(el=>el.value);
+  const {names,title:declaration,effects}=declarationDetails(globalBoard.match,targets);
+  showDialog('Confirm declaration of war','<div class="war-warning"><h3>'+esc(declaration)+'</h3>'+
+    '<p>This declaration takes effect immediately and is permanent for this match.</p>'+
+    (effects.length?'<ul>'+effects.map(e=>'<li>'+esc(e)+'</li>').join('')+'</ul>':'')+'</div>'+
+    '<div class="war-actions">'+btn('Cancel','war-cancel')+'<button id="issueWar" class="primary hold-to-confirm">Hold to declare war on '+esc(names)+'</button></div>');
+  $('dialogBody').querySelector('[data-act="war-cancel"]').focus();
+  bindHold($('issueWar'),()=>advanceEconomy('politics',targets));
+}
 function planPanel(){
   let html=title('Combat move','Tap a unit stack on the map to plan an attack.');
   if(ui.to){
@@ -323,6 +355,7 @@ function planPanel(){
       html+='<p class="hint">Committing this invasion shifts eligible strict neutrals to the '+(allianceOf(s.power)==='Axis'?'Allied':'Axis')+' side.</p>';
     }
   }
+  if(isGlobal&&!ui.to&&!ui.routeTo)html+=warEntry(globalBoard.match);
   if(isGlobal&&!ui.to&&!ui.stack&&!ui.inspect)html+=carrierLaunchPanel();
   if(!ui.to&&!ui.stack)$('action').innerHTML='<button class="primary hold-to-confirm" id="hold" '+(s.orders.length||isGlobal?'':'disabled')+'>'+(isGlobal&&!s.orders.length?'Hold to finish combat moves':'Hold to commit attacks')+'</button>';
   return html;
@@ -682,12 +715,16 @@ function incomeLedger(account,rolled){
     ledgerSection('Territory income',sign(account.land),(account.open?'':'<p class="hint">Printed values of territories still held</p>')+(landRows||'<p class="hint">No IPC-producing territories held.</p>'))+
     ledgerSection('National objectives',sign(account.bonus),(bonusRows||'<p class="hint">No bonus income this turn.</p>')+inactive)+
     ledgerSection('Convoy losses',pending?'Pending':account.loss?'−'+account.loss:'0',convoyRows?'<p class="hint">Rolls of 1–3 cause damage. Each coast can lose only its own IPC value.</p>'+convoyRows:
-      '<p class="hint">'+(account.open?'No eligible convoy raids this turn.':'Convoys are suspended while the capital is occupied.')+'</p>')+
+      '<p class="hint">'+(account.wallet==='Chinese'?'China is exempt from convoy disruption.':account.open?'No eligible convoy raids this turn.':'Convoys are suspended while the capital is occupied.')+'</p>')+
     '<div class="income-balance"><span>Treasury</span><b>'+account.before+(pending?' IPCs before collection':' → '+(account.before+amount)+' IPCs')+'</b></div></section>';
 }
 function incomePanel(){
   const match=globalBoard.match,report=match.incomeReport;
   $('map').setAttribute('aria-label','Collect income. Select a territory to inspect its production.');
+  if(usIncomeChoice(match)){
+    $('action').innerHTML=btn('Stay at peace and review income','war-peace','primary');
+    return title('U.S. entry into the war','At the start of its third income phase, the United States may declare war on any or all Axis powers.')+warEntry(match);
+  }
   const total=report.accounts.reduce((n,a)=>n+incomeAmount(a),0);
   $('action').innerHTML=report.rolled?'<button id="collectIncome" class="primary hold-to-confirm">Hold to collect '+total+' IPCs'+(report.accounts.length>1?' across both treasuries':'')+'</button>':
     btn('Roll convoy losses','roll-convoys','primary');
@@ -695,7 +732,7 @@ function incomePanel(){
   const account=report.accounts.find(a=>a.wallet===ui.wallet)||report.accounts[0];
   const wallets=report.accounts.length>1?'<div class="economy-switch" aria-label="Income by treasury">'+report.accounts.map(a=>
     btn(treasuryName(a.wallet)+' · '+(!report.rolled&&a.convoys.length?'Pending':'+'+incomeAmount(a)),'wallet','secondary','data-id="'+a.wallet+'" aria-pressed="'+(a===account)+'"')).join('')+'</div>':'';
-  return '<h2>Collect income</h2>'+wallets+incomeLedger(account,report.rolled);
+  return '<h2>Collect income</h2>'+warEntry(match)+wallets+incomeLedger(account,report.rolled);
 }
 function mobilizePanel(){
   const plan=reserves(),wallet=ui.wallet||s.power;
@@ -876,13 +913,20 @@ function showDialog(heading,html){
   if(!$('dialog').open)$('dialog').showModal();
   $('closeDialog').focus();
 }
+$('dialog').addEventListener('close',()=>{
+  if($('issueWar')||$('dialogBody').querySelector('.war-targets')){
+    render();
+    $('panel').querySelector('[data-act="war-open"]')?.focus({preventScroll:true});
+  }
+});
 // Persist the phase transition and its financial effects in one local-storage write.
-async function advanceEconomy(action){
+async function advanceEconomy(action,targets=[]){
   const persist=()=>{
     if(localStorage.getItem(key)!==lastGlobalSave){location.reload();return;}
     const match=globalBoard.match;
     let next;
     if(action==='mobilize')next=finishMobilization(match,s);
+    else if(action==='politics')next=confirmPoliticalChoice(match,targets);
     else if(action==='roll')next=rollConvoys(match);
     else next=collectIncome(match);
     localStorage.setItem(key,JSON.stringify(next));
@@ -894,6 +938,7 @@ async function advanceEconomy(action){
   }catch(error){message=error.message;render();}
 }
 document.addEventListener('change',event=>{
+  if(event.target.matches('.war-targets input'))$('dialogBody').querySelector('[data-act="war-review"]').disabled=!$('dialogBody').querySelector('.war-targets input:checked');
   if(event.target.id==='buyGroup'){
     run(()=>{ui.buyGroup=event.target.value;});
     $('buyGroup')?.focus({preventScroll:true});
@@ -902,6 +947,10 @@ document.addEventListener('change',event=>{
 document.addEventListener('click',e=>{
   const b=e.target.closest('button[data-act]');if(!b)return;
   const {act,id,k,n}=b.dataset;
+  if(act==='war-open'){chooseWarTargets();return;}
+  if(act==='war-cancel'){stopHold();$('dialog').close();return;}
+  if(act==='war-review'){reviewWarTargets();return;}
+  if(act==='war-peace'){advanceEconomy('politics');return;}
   if(act==='roll-convoys'){advanceEconomy('roll');return;}
   run(()=>{
     switch(act){
@@ -994,7 +1043,7 @@ document.addEventListener('click',e=>{
         if(s.phase==='income')throw Error('Mobilization has already been committed.');
         endPlayback();
         if(isGlobal){
-          const procurement=s.record.filter(entry=>entry.title==='Purchase & Repair');
+          const procurement=s.record.filter(entry=>entry.title==='Purchase & Repair'||entry.declaration);
           globalBoard.match.board=structuredClone(globalBoard.match.combatStart);s=structuredClone(globalBoard.game);s.record=procurement;
         }
         else s=newGame(exerciseId);
@@ -1014,7 +1063,7 @@ $('map').setAttribute('aria-label',inBriefing()?'Opening board. Pan or pinch the
 $('controlKey').innerHTML=(isGlobal?[attacker]:[attacker,defender]).map(n=>'<i data-nation="'+n+'"></i>'+n).join(' ');
 $('closeDialog').onclick=()=>$('dialog').close();
 $('journal').onclick=()=>{
-  const current=['review','noncombat','mobilize','income'].includes(s.phase)?timeline()||'<p>No combat was recorded.</p>':'<p>The current combat review opens after all battles are resolved.</p>';
+  const current=['review','noncombat','mobilize','income'].includes(s.phase)?timeline()||'<p>No combat was recorded.</p>':timeline(s.record.filter(e=>e.declaration))+'<p>The current combat review opens after all battles are resolved.</p>';
   const previous=(globalBoard?.match.turnReviews||[]).slice().reverse().map(turn=>{
     const nation=globalPowers[turn.power];
     return '<details class="review-item review-round"><summary>'+seasonForRound(turn.round)+' · '+nation+'</summary>'+

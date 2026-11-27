@@ -9,7 +9,7 @@ export function samePassages(order,value){
   return a.length===b.length&&a.every((id,i)=>id===b[i]);
 }
 
-export function combatMovement(spaces,neighbors,canalOpen){
+export function combatMovement(spaces,neighbors,canalOpen,seaStop=()=>true){
   const flightDistances=new Map();
   const flyOver=id=>{
     const p=spaces[id];
@@ -57,6 +57,7 @@ export function combatMovement(spaces,neighbors,canalOpen){
     }
     function finish(last,to,spent){
       const p=spaces[to];
+      if(ship&&!seaStop(to,type))return false;
       if(p.water?!p.enemyFleet:!p.attackLand){
         return armored&&last!==from&&spaces[last].blitz&&p.friendly;
       }
