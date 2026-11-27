@@ -1,3 +1,4 @@
+import {incomeAmount,rollConvoys,collectIncome} from './income.js';
 import {beginMobilization,mobilizationPlan,placementOptions,finishMobilization,launchPlan,reviseLaunches} from './mobilize.js';
 import {beginNoncombat,noncombatPosition,noncombatRoutes} from './noncombat.js';
 import {asPassages,orderPassages,samePassages} from './movement.js';
@@ -50,7 +51,7 @@ function save(){
     if(isGlobal){
       if(localStorage.getItem(key)!==lastGlobalSave){location.reload();return;}
       const match=globalBoard.match;
-      if(!inBriefing()&&!inPurchase()){
+      if(!inBriefing()&&!inPurchase()&&s.phase!=='income'){
         saveGlobalPosition(match,s);
         match.phase=s.phase==='plan'?'combatMove':s.phase==='combat'?'conductCombat':s.phase==='noncombat'?'noncombatMove':s.phase==='mobilize'?'mobilize':'combatReview';
       }
@@ -121,7 +122,7 @@ function selectTarget(id){
 }
 function pick(id,type,origin,nation){
   if(!id){run(()=>{ui=freshUI();});return;}
-  if(inBriefing()||inPurchase()){
+  if(inBriefing()||inPurchase()||s.phase==='income'){
     run(()=>{
       const deselect=ui.inspect===id&&type===ui.inspectedType&&nation===ui.inspectedNation;
       ui={...freshUI(),wallet:ui.wallet,buyGroup:ui.buyGroup};
@@ -512,6 +513,8 @@ function savedRoundLosses(entry){
 function timeline(record=s.record,attacking=attacker){
   return record.map(e=>{
     const heading=esc(e.title);
+    if(e.income)return '<div class="review-item"><strong>Income collected</strong>'+e.income.accounts.map(a=>
+      '<h4>'+esc(treasuryName(a.wallet))+'</h4>'+incomeLedger(a,true)).join('')+'</div>';
     if(!e.dice)return '<div class="review-item"><strong>'+heading+'</strong><p>'+reviewDetail(e.detail,attacking,e.heldBy)+'</p></div>';
     const losses=savedRoundLosses(e);
     const owner=e.defender||/^Losses — [^:]+: .+; ([^:]+): /.exec(e.detail)?.[1]||exercise.defender;
@@ -646,6 +649,54 @@ function choosePlacementSite(id){
   ui.destination=id;ui.site=null;ui.quantity=1;
   if(choices.length===1)setProducingSite(choices[0].site);
 }
+function treasuryName(wallet){
+  return wallet==='British'?'UK Europe':wallet==='UK_Pacific'?'UK Pacific':globalPowers[wallet];
+}
+function ledgerLine(label,value,note=''){
+  return '<div class="ledger-line"><div>'+esc(label)+(note?'<small>'+esc(note)+'</small>':'')+'</div><b>'+esc(value)+'</b></div>';
+}
+function ledgerSection(name,value,body){
+  return '<details class="ledger-section"><summary><span>'+name+'</span><b>'+value+'</b></summary>'+body+'</details>';
+}
+function incomeLedger(account,rolled){
+  const sign=n=>n>0?'+'+n:String(n);
+  const amount=incomeAmount(account),pending=!rolled&&account.convoys.length>0;
+  const earned=account.objectives.filter(o=>o.earned),unearned=account.objectives.filter(o=>!o.earned);
+  const landRows=account.territories.map(t=>ledgerLine(t.name,t.value)).join('');
+  const bonusRows=earned.map(o=>ledgerLine(o.label,sign(o.earned),o.condition)).join('');
+  const inactive=unearned.length?'<details class="income-unearned"><summary>Unearned objectives ('+unearned.length+')</summary>'+
+    unearned.map(o=>ledgerLine(o.label,0,o.condition)).join('')+'</details>':'';
+  const convoyRows=account.convoys.map(raid=>{
+    const cap=account.territories.filter(t=>raid.coasts.includes(t.name)).reduce((n,t)=>n+t.value,0);
+    const debit=Object.entries(raid.charges).map(([n,v])=>n+' −'+v).join(' · ');
+    const groups=raid.dice.map(g=>'<div class="convoy-group">'+esc((ownerNames[g.power]||g.power)+' · '+g.count+' × '+globalUnits[g.type][0])+
+      (g.rolls?'<span class="convoy-dice" aria-label="Dice results">'+g.rolls.map(d=>'<b class="'+(d<=3?'hit':'miss')+'">'+d+'</b>').join('')+'</span>':
+        '<small>'+g.number+(g.number===1?' die':' dice')+'</small>')+'</div>').join('');
+    return '<div class="convoy-detail">'+ledgerLine('Sea zone '+raid.zone,pending?'Pending':'−'+raid.loss,
+      'Adjacent production '+cap+' IPCs · '+raid.coasts.join(', '))+groups+
+      (pending?'':'<p class="hint">Damage rolled '+raid.rolled+' · Charged '+raid.loss+' IPCs'+(debit?' · '+esc(debit):'')+'</p>')+'</div>';
+  }).join('');
+  const summary='<div class="income-total"><span>'+(pending?'Before convoy losses':'Net income')+'</span><strong>'+sign(amount)+' <small>IPCs</small></strong></div>';
+  const locked=account.open?'':'<p class="income-closed">'+esc(account.capital)+' is occupied. This treasury collects 0 IPCs.</p>';
+  return '<section class="income-ledger">'+summary+locked+
+    ledgerSection('Territory income',sign(account.land),(account.open?'':'<p class="hint">Printed values of territories still held</p>')+(landRows||'<p class="hint">No IPC-producing territories held.</p>'))+
+    ledgerSection('National objectives',sign(account.bonus),(bonusRows||'<p class="hint">No bonus income this turn.</p>')+inactive)+
+    ledgerSection('Convoy losses',pending?'Pending':account.loss?'−'+account.loss:'0',convoyRows?'<p class="hint">Rolls of 1–3 cause damage. Each coast can lose only its own IPC value.</p>'+convoyRows:
+      '<p class="hint">'+(account.open?'No eligible convoy raids this turn.':'Convoys are suspended while the capital is occupied.')+'</p>')+
+    '<div class="income-balance"><span>Treasury</span><b>'+account.before+(pending?' IPCs before collection':' → '+(account.before+amount)+' IPCs')+'</b></div></section>';
+}
+function incomePanel(){
+  const match=globalBoard.match,report=match.incomeReport;
+  $('map').setAttribute('aria-label','Collect income. Select a territory to inspect its production.');
+  const total=report.accounts.reduce((n,a)=>n+incomeAmount(a),0);
+  $('action').innerHTML=report.rolled?'<button id="collectIncome" class="primary hold-to-confirm">Hold to collect '+total+' IPCs'+(report.accounts.length>1?' across both treasuries':'')+'</button>':
+    btn('Roll convoy losses','roll-convoys','primary');
+  if(ui.inspect)return inspectionPanel('Back to income');
+  const account=report.accounts.find(a=>a.wallet===ui.wallet)||report.accounts[0];
+  const wallets=report.accounts.length>1?'<div class="economy-switch" aria-label="Income by treasury">'+report.accounts.map(a=>
+    btn(treasuryName(a.wallet)+' · '+(!report.rolled&&a.convoys.length?'Pending':'+'+incomeAmount(a)),'wallet','secondary','data-id="'+a.wallet+'" aria-pressed="'+(a===account)+'"')).join('')+'</div>':'';
+  return '<h2>Collect income</h2>'+wallets+incomeLedger(account,report.rolled);
+}
 function mobilizePanel(){
   const plan=reserves(),wallet=ui.wallet||s.power;
   const pending=Object.values(plan.remaining).reduce((sum,pool)=>sum+Object.values(pool).reduce((n,v)=>n+v,0),0);
@@ -677,8 +728,8 @@ function mobilizePanel(){
     }
     return html+btn('Back to reserves','place-back');
   }
-  $('action').innerHTML='<button id="endTurn" class="primary hold-to-confirm" '+(ready?'':'disabled')+'>'+
-    (!ready?'Assign remaining units to continue':pending?'Hold to refund excess and end turn':plan.assigned||plan.upgrades.length?'Hold to mobilize and end turn':'Hold to end turn')+'</button>';
+  $('action').innerHTML='<button id="finishMobilization" class="primary hold-to-confirm" '+(ready?'':'disabled')+'>'+
+    (!ready?'Assign remaining units to continue':pending?'Hold to refund excess and review income':plan.assigned||plan.upgrades.length?'Hold to mobilize and review income':'Hold to review income')+'</button>';
   if(ui.inspect)return title(places[ui.inspect].name,'Mobilization')+boardGarrison(ui.inspect)+btn('Back to reserves','place-back');
   let html=title('Mobilize new units',pending?'Choose a purchase to see where it can enter play.':
     plan.assigned?'All purchased units are queued for placement.':'No purchased units to place this turn.');
@@ -779,6 +830,7 @@ function render(){
   else if(s.phase==='combat')$('panel').innerHTML=battlePanel();
   else if(s.phase==='noncombat')$('panel').innerHTML=noncombatPanel();
   else if(s.phase==='mobilize')$('panel').innerHTML=mobilizePanel();
+  else if(s.phase==='income')$('panel').innerHTML=incomePanel();
   else{
     $('panel').innerHTML=title(isGlobal?'Combat review':'Exercise review','Committed attacks and resolved outcomes.')+timeline();
     $('action').innerHTML=isGlobal?btn('Begin noncombat move','begin-noncombat','primary'):btn('Start another exercise','reset');
@@ -801,7 +853,8 @@ function render(){
     }
     draw(reserves().game,ui.destination||ui.inspect,null,null,layoutSeed,null,false,choices);
   }else draw(nc?redeployment():s,ui.inspect||ui.from,ui.routeTo||ui.to,ui.stack||ui.inspectedType,layoutSeed,ui.stack?null:ui.inspectedNation,briefing||inPurchase(),ui.stack?(nc?[...noncombatRoutes(redeployment(),selectedNoncombatOrder()).keys()]:moveChoices()):null);
-  if($('endTurn'))bindHold($('endTurn'),endTurn);
+  if($('collectIncome'))bindHold($('collectIncome'),()=>advanceEconomy('collect'));
+  else if($('finishMobilization'))bindHold($('finishMobilization'),()=>advanceEconomy('mobilize'));
   else if($('finishNoncombat'))bindHold($('finishNoncombat'),()=>run(()=>{s=beginMobilization(s);ui=freshUI();}));
   else if(inPurchase())bindHold($('confirmOrder'),()=>run(()=>{
     const receipt=confirmPurchase(globalBoard.match);
@@ -823,15 +876,22 @@ function showDialog(heading,html){
   if(!$('dialog').open)$('dialog').showModal();
   $('closeDialog').focus();
 }
-function endTurn(){
-  try{
+// Persist the phase transition and its financial effects in one local-storage write.
+async function advanceEconomy(action){
+  const persist=()=>{
     if(localStorage.getItem(key)!==lastGlobalSave){location.reload();return;}
-    const next=finishMobilization(globalBoard.match,s);
+    const match=globalBoard.match;
+    let next;
+    if(action==='mobilize')next=finishMobilization(match,s);
+    else if(action==='roll')next=rollConvoys(match);
+    else next=collectIncome(match);
     localStorage.setItem(key,JSON.stringify(next));
     location.reload();
-  }catch(error){
-    message='Could not hand over the turn. '+error.message;render();
-  }
+  };
+  try{
+    if(navigator.locks)await navigator.locks.request(key+'.economy',persist);
+    else persist();
+  }catch(error){message=error.message;render();}
 }
 document.addEventListener('change',event=>{
   if(event.target.id==='buyGroup'){
@@ -842,6 +902,7 @@ document.addEventListener('change',event=>{
 document.addEventListener('click',e=>{
   const b=e.target.closest('button[data-act]');if(!b)return;
   const {act,id,k,n}=b.dataset;
+  if(act==='roll-convoys'){advanceEconomy('roll');return;}
   run(()=>{
     switch(act){
       case 'begin-turn':
@@ -903,7 +964,7 @@ document.addEventListener('click',e=>{
       case 'assign': ui.units[k]=(ui.units[k]||0)+Number(n);break;
       case 'casualty': ui.losses[k]=(ui.losses[k]||0)+Number(n);break;
       case 'back': ui=freshUI();break;
-      case 'clear': ui=inPurchase()?{...freshUI(),wallet:ui.wallet,buyGroup:ui.buyGroup}:freshUI();break;
+      case 'clear': ui=inPurchase()||s.phase==='income'?{...freshUI(),wallet:ui.wallet,buyGroup:ui.buyGroup}:freshUI();break;
       case 'edit': {const order=s.orders[Number(id)];selectOrigin(order.from);ui.to=order.to;ui.via=orderPassages(order);ui.units={...order.units};break;}
       case 'add': plan(s,ui.from,ui.to,ui.units,ui.via);ui=freshUI();break;
       case 'remove': plan(s,ui.from,ui.to,{},ui.via);ui=freshUI();break;
@@ -930,6 +991,7 @@ document.addEventListener('click',e=>{
       case 'reset':
         showDialog(isGlobal?'Restart global combat?':'Restart exercise?', '<p>'+(isGlobal?'Restore the position at the start of this combat move and clear its orders and review?':'This replaces the position and its local review on this device.')+'</p>'+btn(isGlobal?'Restart combat':'Restart exercise','confirm-reset','danger'));break;
       case 'confirm-reset':
+        if(s.phase==='income')throw Error('Mobilization has already been committed.');
         endPlayback();
         if(isGlobal){
           const procurement=s.record.filter(entry=>entry.title==='Purchase & Repair');
@@ -952,7 +1014,7 @@ $('map').setAttribute('aria-label',inBriefing()?'Opening board. Pan or pinch the
 $('controlKey').innerHTML=(isGlobal?[attacker]:[attacker,defender]).map(n=>'<i data-nation="'+n+'"></i>'+n).join(' ');
 $('closeDialog').onclick=()=>$('dialog').close();
 $('journal').onclick=()=>{
-  const current=['review','noncombat','mobilize'].includes(s.phase)?timeline()||'<p>No combat was recorded.</p>':'<p>The current combat review opens after all battles are resolved.</p>';
+  const current=['review','noncombat','mobilize','income'].includes(s.phase)?timeline()||'<p>No combat was recorded.</p>':'<p>The current combat review opens after all battles are resolved.</p>';
   const previous=(globalBoard?.match.turnReviews||[]).slice().reverse().map(turn=>{
     const nation=globalPowers[turn.power];
     return '<details class="review-item review-round"><summary>'+seasonForRound(turn.round)+' · '+nation+'</summary>'+
@@ -960,7 +1022,7 @@ $('journal').onclick=()=>{
   }).join('');
   showDialog(isGlobal?'Game review':'Exercise review',current+previous);
 };
-$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. '+(isGlobal?'The global map wraps east and west across the Americas. ':'')+'Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The national color fades inward from the hatched border. Neutral hatching slopes up to the right across the whole territory. Single grey lines mark strict neutrals, paired lines mark pro-Allied neutrals, and dashed lines mark pro-Axis neutrals. Grey stippling marks impassable terrain. Units cannot enter or cross these spaces. A committed strict-neutral invasion changes the other eligible strict neutrals immediately. Friendly neutrals can be activated after combat. Tap a territory to mark it in violet and read its status. Tap it again to clear the selection. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><details class="unit-key"><summary>Unit symbols</summary><ul>'+Object.entries(globalUnits).map(([type,[name]])=>'<li>'+unitCounter(boardUnitType(type),undefined,attacker)+' '+name+'</li>').join('')+'</ul></details><h3>Plan an attack</h3><p>Land arrows are brick red, air arrows are blue, and sea arrows are ochre. Nearby routes in the same category can share an arrowhead.</p><p>Select a stack on the map, adjust the quantity, then tap a highlighted enemy territory to place the order. Assigned stacks at the front have a muted national color and a dark corner. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this board</h3><p>'+ (isGlobal?'After combat review, choose Begin noncombat move to redeploy unused units, make sea crossings or change aircraft landings. A transport can carry one land unit and one additional infantry between friendly coasts in a single move. You can remove queued moves or undo the last move. Hold to commit your moves and begin mobilization. Select a purchase, a highlighted site and the quantity to place. Ships use an adjacent coastal factory. You can reserve a purchased carrier’s launch during combat or noncombat movement when aircraft need its deck to land. Hold to place your reserves and hand over the turn. Global 1940 uses the opening forces of all nine powers. Tap any territory or counter to inspect it. Amber marks eligible destinations. Select a distant destination, then follow the dashed teal spaces to choose each passage. Tanks and mechanized infantry move two spaces. Each mechanized infantry needs a tank on the same route to blitz. Ships move two sea zones, fighters and tactical bombers four spaces, and strategic bombers six. An operational friendly naval or air base adds one movement point at departure. Aircraft need enough movement to land in territory that was friendly at the start of the turn, or on an eligible carrier. The order shows the outbound cost and planned landing site. AAA fires at incoming aircraft during opening fire.':'This local exercise covers adjacent land attacks with infantry and tanks. The forces are arranged for testing.')+'</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+(isGlobal?'<p>Inland China terrain data courtesy of Mapzen, the U.S. Geological Survey and NOAA. Rivers and lakes from Natural Earth.</p>'+btn('Local players','players','secondary')+((inBriefing()||inPurchase())?'':btn('Restart combat','reset','danger')):btn('Restart exercise','reset','danger')));
+$('help').onclick=()=>showDialog('Field guide','<h3>Navigate the map</h3><p>Pan with one finger. '+(isGlobal?'The global map wraps east and west across the Americas. ':'')+'Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet. Use Hide orders for a full map and Open orders to return.</p><h3>Read the board</h3><p>★ marks a victory city that is a power’s capital. ◆ marks another victory city. Each counts as one.</p><p>The national color fades inward from the hatched border. Neutral hatching slopes up to the right across the whole territory. Single grey lines mark strict neutrals, paired lines mark pro-Allied neutrals, and dashed lines mark pro-Axis neutrals. Grey stippling marks impassable terrain. Units cannot enter or cross these spaces. A committed strict-neutral invasion changes the other eligible strict neutrals immediately. Friendly neutrals can be activated after combat. Tap a territory to mark it in violet and read its status. Tap it again to clear the selection. Dashed lines separate numbered sea zones. Tap water to see its zone and adjacent zone numbers.</p><details class="unit-key"><summary>Unit symbols</summary><ul>'+Object.entries(globalUnits).map(([type,[name]])=>'<li>'+unitCounter(boardUnitType(type),undefined,attacker)+' '+name+'</li>').join('')+'</ul></details><h3>Plan an attack</h3><p>Land arrows are brick red, air arrows are blue, and sea arrows are ochre. Nearby routes in the same category can share an arrowhead.</p><p>Select a stack on the map, adjust the quantity, then tap a highlighted enemy territory to place the order. Assigned stacks at the front have a muted national color and a dark corner. Select the remaining stack to split it again. Tap a planned attack to revise or cancel it. Hold the commit button to lock in all attacks.</p><h3>About this board</h3><p>'+ (isGlobal?'After combat review, choose Begin noncombat move to redeploy unused units, make sea crossings or change aircraft landings. A transport can carry one land unit and one additional infantry between friendly coasts in a single move. You can remove queued moves or undo the last move. Hold to commit your moves and begin mobilization. Select a purchase, a highlighted site and the quantity to place. Ships use an adjacent coastal factory. You can reserve a purchased carrier’s launch during combat or noncombat movement when aircraft need its deck to land. Hold to place your reserves and review income. Open any income line to see its sources. Hold to credit your treasury and hand over the board. Global 1940 uses the opening forces of all nine powers. Tap any territory or counter to inspect it. Amber marks eligible destinations. Select a distant destination, then follow the dashed teal spaces to choose each passage. Tanks and mechanized infantry move two spaces. Each mechanized infantry needs a tank on the same route to blitz. Ships move two sea zones, fighters and tactical bombers four spaces, and strategic bombers six. An operational friendly naval or air base adds one movement point at departure. Aircraft need enough movement to land in territory that was friendly at the start of the turn, or on an eligible carrier. The order shows the outbound cost and planned landing site. AAA fires at incoming aircraft during opening fire.':'This local exercise covers adjacent land attacks with infantry and tanks. The forces are arranged for testing.')+'</p><p>Your position saves on this device. On Android, use the browser menu and choose <b>Install app</b> or <b>Add to home screen</b> when available.</p>'+(isGlobal?'<p>Inland China terrain data courtesy of Mapzen, the U.S. Geological Survey and NOAA. Rivers and lakes from Natural Earth.</p>'+btn('Local players','players','secondary')+((inBriefing()||inPurchase()||s.phase==='income')?'':btn('Restart combat','reset','danger')):btn('Restart exercise','reset','danger')));
 // Store the two panel dimensions separately so rotating the phone restores the last fit.
 function setupOrdersPanel(){
   const main=document.querySelector('main'),sheet=$('ordersPanel'),grip=$('resizePanel');

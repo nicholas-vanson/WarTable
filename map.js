@@ -401,7 +401,7 @@ function combineLegs(legs){
   return [...grouped.values()];
 }
 function arrivals(game,to){
-  if(game.phase==='noncombat'||game.phase==='mobilize')return [];
+  if(game.phase==='noncombat'||game.phase==='mobilize'||game.phase==='income')return [];
   const orders=combineLegs(game.orders.filter(o=>o.to===to).map(o=>({...o,from:entrySpace(o)})));
   if(game.phase==='plan')return orders;
   const battle=game.battles.find(b=>b.to===to&&!b.resolved);
@@ -538,7 +538,7 @@ function homeStacks(game,id,exercise,offsets){
 // opening roster and departures identify its unmoved portion even in older saves.
 function movedInGarrison(game,exercise,id,type,number){
   if(game.phase==='noncombat')return Math.max(0,number-(game.unused[id][type]||0));
-  if(game.phase==='plan'||game.phase==='mobilize'||!game.orders.length)return 0;
+  if(game.phase==='plan'||game.phase==='income'||game.phase==='mobilize'||!game.orders.length)return 0;
   if(exercise.world&&neutralKey(places[id].startOwner)&&!game.battles.some(b=>b.to===id&&b.resolved))return 0;
   const opening=exercise.world?exercise.shapes[id].garrison.reduce((n,[power,t,count])=>
     n+(samePower(power,game.power)&&t===type?count:0),0):
@@ -1171,7 +1171,7 @@ export async function atlas(onPick,onView,initial,exercise) {
       highlightedSea=inspectedSea;
     }
     const redeploy=game.phase==='noncombat';
-    const placing=game.phase==='mobilize';
+    const placing=game.phase==='mobilize'||game.phase==='income';
     const choosingMove=!surveying&&(game.phase==='plan'||redeploy||placing)&&routeChoices!==null;
     const moveStage=choosingMove&&exercise.world?(target?'passage':'destination'):null;
     const prompt=moveStage==='passage'?(routeChoices.includes(target)?'Tap '+places[target].name+' to finish, or choose another passage':'Tap a passage to '+places[target].name):

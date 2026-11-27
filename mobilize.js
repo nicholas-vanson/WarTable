@@ -1,7 +1,8 @@
+import {openIncome} from './income.js';
 // Phase 5 uses the factories held at turn opening, after purchase-phase repairs.
 // Keep the paid reserves and committed board intact while a player revises the draft.
 import {places,samePower,exerciseOf,deckSpace,flightRecoveries} from './rules.js';
-import {spendingEconomies,globalUnits,boardUnitType,purchaseGroups,isFacility,facilitySite,productionSlots,saveGlobalPosition,nextPlaytestTurn} from './global-game.js';
+import {spendingEconomies,globalUnits,boardUnitType,purchaseGroups,isFacility,facilitySite,productionSlots,saveGlobalPosition} from './global-game.js';
 import {completeNoncombat,noncombatPosition} from './noncombat.js';
 
 export function beginMobilization(game){
@@ -167,6 +168,6 @@ export function finishMobilization(match,s){
   }
   if(record.length===s.record.length)record.push({title:'Mobilize new units',detail:'No reserves to place.'});
   saveGlobalPosition(next,plan.game);
-  next.combat.game={...s,phase:'mobilized',record};
-  return nextPlaytestTurn(next);
+  next.combat.game={...s,pieces:plan.game.pieces,units:plan.game.units,record};
+  return openIncome(next);
 }
