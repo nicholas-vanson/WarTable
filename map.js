@@ -405,7 +405,7 @@ function combineLegs(legs){
 const mappedOrders=new WeakMap();
 function mapOrders(game){
   if(mappedOrders.has(game.orders))return mappedOrders.get(game.orders);
-  if(!game.orders.some(o=>o.landing)){mappedOrders.set(game.orders,game.orders);return game.orders;}
+  if(!game.orders.some(o=>o.landing||o.raid)){mappedOrders.set(game.orders,game.orders);return game.orders;}
   const lines=new Map(),ex=exercises[game.exercise];
   function add(from,to,passages,units,seaCargo=false){
     const key=[from,...passages,to,seaCargo].join('/');
@@ -430,10 +430,14 @@ function mapOrders(game){
 }
 function arrivals(game,to){
   if(game.phase==='noncombat'||game.phase==='mobilize'||game.phase==='income')return [];
-  const orders=combineLegs(mapOrders(game).filter(o=>o.to===to).map(o=>({...o,from:entrySpace(o)})));
-  if(game.phase==='plan')return orders;
+  const atFront=orders=>combineLegs(orders.filter(o=>o.to===to).map(o=>({...o,from:entrySpace(o)})));
+  if(game.phase==='plan')return atFront(mapOrders(game));
+  const raid=game.raids?.find(r=>r.to===to&&r.step!=='done');
+  const raiders=(raid?.planes||[]).filter(p=>!p.lost).map(p=>({from:entrySpace(game.orders[p.order]),to,units:{[p.type]:1}}));
   const battle=game.battles.find(b=>b.to===to&&!b.resolved);
-  if(!battle)return [];
+  if(!battle)return combineLegs(raiders);
+  const ordinary=game.raids?{...game,orders:game.orders.filter(o=>!o.raid)}:game;
+  const orders=atFront(mapOrders(ordinary));
   const groups=orders.map(o=>({from:o.from,units:{}}));
   for(const type of Object.keys(battle.attack)){
     const total=orders.reduce((n,o)=>n+(o.units[type]||0),0);
@@ -447,7 +451,7 @@ function arrivals(game,to){
     shares.sort((a,b)=>b.remainder-a.remainder);
     for(const {i} of shares.slice(0,battle.attack[type]-assigned))groups[i].units[type]++;
   }
-  return groups;
+  return raiders.length?combineLegs([...groups.map(g=>({...g,to})),...raiders]):groups;
 }
 const pencilLine='M-24 -5 C-21 -14 -4 -17 10 -16 C23 -15 30 -8 27 2 C25 12 9 16 -5 15 C-19 15 -29 10 -28 2 C-28 -5 -23 -11 -15 -14';
 const selectionOrange='#a4441b';
@@ -1054,7 +1058,7 @@ export async function atlas(onPick,onView,initial,exercise) {
   const intel=document.querySelector('#mapIntel');
   let inspectedPlace, exerciseSea=null, highlightedSea=null, lastBattle=null, lastScale=0;
   function selectedPlace(){
-    return game.phase==='combat'?(inspectedPlace===undefined?game.active:inspectedPlace):target||focus;
+    return game.phase==='combat'?(inspectedPlace===undefined?game.activeRaid||game.active:inspectedPlace):target||focus;
   }
   const labelGroup=document.querySelector('#labels'),towns=[];
   for(const [name,lon,lat,kind,boardX,boardY,boardAngle] of labels){
@@ -1234,7 +1238,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     }
     const tacticalZoom=view.z;
     const compact=tacticalZoom<.66;
-    const nextRouteKey=[layoutSeed,game.phase,game.frenchAward?.status,JSON.stringify(placing?game.placements:redeploy?game.moves:game.orders),JSON.stringify(game.battles)].join('|');
+    const nextRouteKey=[layoutSeed,game.phase,game.frenchAward?.status,JSON.stringify(placing?game.placements:redeploy?game.moves:game.orders),JSON.stringify(game.battles),JSON.stringify(game.raids)].join('|');
     if(routeKey!==nextRouteKey){
       const nextStarts=new Map(),now=performance.now(),period=exercise.projection?.width;
       const byTarget=new Map();

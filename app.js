@@ -1,3 +1,4 @@
+import {raidTargets,facilityHits,damageLimit,raidFacilityNames,pendingRaids,currentRaid,chooseRaid,setInterceptorCount,confirmInterceptors,setRaidTarget,raidLossGroups,advanceRaid} from './raids.js';
 import {scramblePlan,scrambleRows} from './scramble.js';
 import {aboard,cargoSources,landingRoutes,escortOptions,queueLanding,landingSeaBattle,landingWait} from './assault.js';
 import {reverseCapitalPayments} from './occupation.js';
@@ -64,7 +65,7 @@ function save(){
   }
   catch{$('storage').textContent='Saving unavailable';}
 }
-function selectOrigin(id){delete ui.editLanding;delete ui.assault;delete ui.landingIndex;delete ui.via;delete ui.passageSteps;delete ui.routeTo;delete ui.twoSpace;ui.from=id;ui.to=null;ui.stack=null;delete ui.inspect;delete ui.inspectedType;delete ui.inspectedNation;delete ui.inspectedOrigin;message='';}
+function selectOrigin(id){delete ui.raidMode;delete ui.raidTo;delete ui.raidIndex;delete ui.editLanding;delete ui.assault;delete ui.landingIndex;delete ui.via;delete ui.passageSteps;delete ui.routeTo;delete ui.twoSpace;ui.from=id;ui.to=null;ui.stack=null;delete ui.inspect;delete ui.inspectedType;delete ui.inspectedNation;delete ui.inspectedOrigin;message='';}
 function selectStack(id,type){
   if(ui.from===id && ui.stack===type){
     ui=freshUI();
@@ -96,16 +97,29 @@ function moveChoices(){
     if(prefix.length&&result.search.legal(ui.routeTo,prefix))choices.unshift(ui.routeTo);
     return choices;
   }
-  return ui.twoSpace?result.multi:result.all.filter(id=>id!==ui.from);
+  const choices=ui.twoSpace?result.multi:result.all.filter(id=>id!==ui.from);
+  return ui.raidMode?choices.filter(id=>raidTargets(s,id,ui.stack).length):choices;
 }
 function addStackOrder(to,path=[]){
-  const prior=s.orders.find(o=>o.from===ui.from&&o.to===to&&samePassages(o,path));
+  if(ui.raidMode){
+    ui.raidTo=to;ui.via=path;delete ui.routeTo;
+    if(ui.stack==='fighter')queueRaidSortie('escort');
+    return;
+  }
+  const prior=s.orders.find(o=>!o.raid&&!o.landing&&o.from===ui.from&&o.to===to&&samePassages(o,path));
   const units={...prior?.units};
   units[ui.stack]=(units[ui.stack]||0)+ui.quantity;
   if(ui.stack==='mech_infantry'&&path.length&&exercise.movement.spaces[path[0]].blitz)
     units.tank=Math.max(units.tank||0,units.mech_infantry);
   plan(s,ui.from,to,units,path);
   ui=freshUI();
+}
+function queueRaidSortie(target){
+  const draft={...s,orders:s.orders.filter((_,i)=>i!==ui.raidIndex)};
+  const prior=draft.orders.find(o=>o.raid===target&&o.units[ui.stack]&&o.from===ui.from&&o.to===ui.raidTo&&samePassages(o,ui.via));
+  const n=ui.quantity+(prior?.units[ui.stack]||0);
+  plan(draft,ui.from,ui.raidTo,{[ui.stack]:n},ui.via,target);
+  s.orders=draft.orders;ui=freshUI();
 }
 function selectTarget(id){
   if(ui.assault){pickLandingCoast(id);return;}
@@ -132,7 +146,7 @@ function selectTarget(id){
   addStackOrder(id);
 }
 function pick(id,type,origin,nation){
-  if(s.frenchAward?.status==='pending'||ui.assault?.to)return;
+  if(s.frenchAward?.status==='pending'||ui.assault?.to||ui.raidTo||ui.raidResult)return;
   if(!id){run(()=>{ui=freshUI();});return;}
   if(inBriefing()||inPurchase()||s.phase==='income'){
     run(()=>{
@@ -178,6 +192,9 @@ function pick(id,type,origin,nation){
     ui.inspect=ui.inspect===id?null:id;
 
   });
+  else if(s.phase==='combat'&&pendingRaids(s).length){
+    if(!s.raidDefensePending&&!s.activeRaid&&pendingRaids(s).some(r=>r.to===id))run(()=>chooseRaid(s,id));
+  }
   else if(s.phase==='combat'&&!s.active&&s.battles.some(b=>b.to===id&&!b.resolved))run(()=>chooseBattle(s,id));
 }
 function run(fn){
@@ -253,7 +270,8 @@ function boardGarrison(id){
     }
     if(Object.keys(units).length)forces.push(block(esc(nation))+unitLine(units,nation));
   }
-  if(facilities.size)forces.push(block('Facilities')+[...facilities].map(type=>unitCounter(type)).join(' '));
+  if(facilities.size)forces.push(block('Facilities')+[...facilities].map(type=>unitCounter(type)+' '+esc(raidFacilityNames[type]||type)+
+    (facilityHits(s,id,type)?' · '+facilityHits(s,id,type)+' damage':'')).join('<br>'));
   return forces.join('')||'<p class="hint">No units present.</p>';
 }
 function scrambleNotice(flights,forecast=false){
@@ -271,7 +289,8 @@ function plannedAttacks(){
   const landings=isGlobal?flightRecoveries(s,s.orders):null;
   s.orders.forEach((order,index)=>{
     if(!destinations.has(order.to))destinations.set(order.to,[]);
-    const origin=order.landing?'Amphibious assault · '+places[order.landing.path.at(-1)].name:[order.from,...orderPassages(order)].map(id=>places[id].name).join(' → ');
+    const mission=order.raid?(order.raid==='escort'?'Escort':'Raid · '+raidFacilityNames[order.raid])+' · ':'';
+    const origin=order.landing?'Amphibious assault · '+places[order.landing.path.at(-1)].name:mission+[order.from,...orderPassages(order)].map(id=>places[id].name).join(' → ');
     const spent=orderPassages(order).length+1;
     const flights=aircraft.filter(t=>order.units[t]>0).map(type=>{
       const range=exercise.movement.allowance(order.from,type);
@@ -396,7 +415,23 @@ function landingPanel(){
   return html+btn('Choose another coast','land-another')+btn('Cancel','clear');
 }
 
+function raidDraftPanel(){
+  const editing=ui.raidIndex!=null,escort=ui.stack==='fighter',to=ui.raidTo;
+  const position=editing?{...s,orders:s.orders.filter((_,i)=>i!==ui.raidIndex)}:s;
+  let html=title((escort?'Escort raid in ':'Raid facilities in ')+places[to].name,
+    stats[ui.stack].name+' · '+[ui.from,...asPassages(ui.via),to].map(id=>places[id].name).join(' → '))+
+    stepper('raid-quantity',{[ui.stack]:ui.quantity},available(position,ui.from),[ui.stack],1);
+  if(!escort)html+=block(editing?'Choose facility to save sortie':'Choose facility to queue sortie');
+  for(const target of raidTargets(position,to,ui.stack)){
+    if(target==='escort'){html+=btn('Save escort','raid-assign','primary','data-id="escort"');continue;}
+    html+=opt(target,raidFacilityNames[target],facilityHits(s,to,target)+' of '+damageLimit[target]+' damage'+
+      (s.orders[ui.raidIndex]?.raid===target?' · Current target':''),'↗','raid-assign');
+  }
+  if(editing)html+=btn('Cancel sortie','raid-remove','danger');
+  return html+btn('Back to orders','clear');
+}
 function planPanel(){
+  if(ui.raidTo)return raidDraftPanel();
   if(ui.assault)return landingPanel();
   if(ui.landingIndex!=null){
     const o=s.orders[ui.landingIndex];
@@ -406,10 +441,10 @@ function planPanel(){
   }
   let html=title('Combat move',isGlobal?'Tap a unit stack to plan an attack. Select a transport for an amphibious assault.':'Tap a unit stack on the map to plan an attack.');
   if(ui.to){
-    const existing=s.orders.some(o=>o.from===ui.from&&o.to===ui.to&&samePassages(o,ui.via));
+    const existing=s.orders.some(o=>!o.raid&&!o.landing&&o.from===ui.from&&o.to===ui.to&&samePassages(o,ui.via));
     const limit=available(s,ui.from,ui.to,ui.via);
     const path=asPassages(ui.via);
-    const editing={...s,orders:s.orders.filter(o=>o.from!==ui.from||o.to!==ui.to||!samePassages(o,path))};
+    const editing={...s,orders:s.orders.filter(o=>o.raid||o.landing||o.from!==ui.from||o.to!==ui.to||!samePassages(o,path))};
     const editable=mobileTypes.filter(t=>limit[t]>0&&(isGlobal?movementFor(editing,ui.from,t).legal(ui.to,path):targetsFor(s,ui.from,t).includes(ui.to)));
     html=title(path.length?'Edit route':'Plan attack',[ui.from,...path,ui.to].map(id=>places[id].name).join(' → '))+block('Assign units')+stepper('assign',ui.units,limit,editable)+
     '<div class="actions">'+btn('Back','back')+btn(existing?'Update order':'Add order','add','primary',count(ui.units)?'':'disabled')+'</div>';
@@ -428,12 +463,14 @@ function planPanel(){
     const reach=range?' · '+range+(aircraft.includes(ui.stack)?' total spaces for combat and landing':range===1?' space':' spaces'):'';
     html=title(unitCounter(ui.stack,undefined,attacker)+' '+esc(s.formationNames[ui.from+'/'+attacker]?.[ui.stack]||s.formationNames[ui.from]?.[ui.stack]||stats[ui.stack].name),stats[ui.stack].name+' · '+places[ui.from].name+reach)+block('Units to move')+
       (isGlobal&&ui.stack==='transport'?btn('Amphibious assault','land-start','primary',landingChoices().size?'':'disabled'):'')+
+      (isGlobal&&aircraft.includes(ui.stack)?btn(ui.raidMode?'Return to ordinary attack':ui.stack==='fighter'?'Escort a raid':'Facility raid','raid-mode',ui.raidMode?'secondary':'primary',
+        ui.raidMode||stackSearch().all.some(id=>raidTargets(s,id,ui.stack).length)?'':'disabled'):'')+
       stepper('quantity',{[ui.stack]:ui.quantity},available(s,ui.from),[ui.stack],1)+
       (stackSearch()?.multi.length?btn(ui.twoSpace?'Show all moves':'Choose a multi-space route','two-space'):'')+
-      block(moveChoices().length?'Tap destination to plan move':'No eligible enemy spaces')+
+      block(ui.raidMode?(ui.stack==='fighter'?'Choose a raid to escort':'Choose a territory to raid'):moveChoices().length?'Tap destination to plan move':'No eligible enemy spaces')+
       moveChoices().map(id=>{
         const routed=ui.twoSpace||isGlobal&&!stackSearch().search.legal(id);
-        return opt(id,places[id].name,(routed?'Choose passage · ':'')+targetUnits(id),'↗','target');
+        return opt(id,places[id].name,(routed?'Choose passage · ':'')+(ui.raidMode?raidTargets(s,id,ui.stack).map(t=>raidFacilityNames[t]||'Escort bombers').join(' · '):targetUnits(id)),'↗','target');
       }).join('')+
       '<div class="actions">'+btn('Deselect stack','clear')+'</div>';
   }
@@ -588,7 +625,76 @@ function battleChoice(b){
     '<span class="battle-choice-title"><strong>'+places[b.to].name+'</strong><span class="end" aria-hidden="true">›</span></span>'+
     cityObjective(b.to)+scrambleNotice((s.scrambles||[]).filter(f=>f.zone===b.to))+'<span class="force-columns">'+forceColumns(b.attack,s.units[b.to],s.owners[b.to],'total',isGlobal?armiesAt(b.to,true):null)+'</span></button>';
 }
+function raidResultPanel(){
+  const r=s.raids.find(raid=>raid.to===ui.raidResult);
+  let html=title('Raid result · '+places[r.to].name,r.outcomes?.length?'Facility damage is recorded. Each point costs 1 IPC to repair.':'All bombers were lost before they could damage a facility.');
+  for(const o of r.outcomes||[]){
+    const rolls=r.damageDice.filter(d=>d.target===o.target);
+    html+='<section class="review-item"><strong>'+unitCounter(o.target)+' '+raidFacilityNames[o.target]+'</strong><p>'+
+      rolls.map(d=>stats[d.type].name+' rolled '+d.face+(d.type==='bomber'?' + 2':'')).join('<br>')+
+      '</p><p>Added '+o.added+' damage · '+o.before+' → <b>'+o.total+' of '+damageLimit[o.target]+'</b></p></section>';
+  }
+  const lost=r.planes.filter(p=>p.lost).length,defendersLost=r.interceptors.reduce((n,f)=>n+f.assigned-f.remaining,0);
+  html+='<p class="hint">Aircraft lost · '+attacker+' '+lost+' · Defenders '+defendersLost+'</p>';
+  html+='<details class="review-item"><summary>Raid rolls and losses</summary>'+timeline(s.record.filter(e=>e.raidSite===r.to))+'</details>';
+  $('action').innerHTML=btn(s.phase==='review'?'Continue to combat review':'Continue combat','raid-result-close','primary');
+  return html;
+}
+function raidPanel(){
+  const raids=pendingRaids(s),r=currentRaid(s);
+  if(s.raidDefensePending){
+    let html=title('Assign interceptors','Choose how many local fighters will intercept. Fighters already scrambled offshore are unavailable. Interceptors defend only against the raid this turn.');
+    for(const raid of raids){
+      if(!raid.interceptors.length)continue;
+      html+=block(places[raid.to].name)+unitLine(raid.planes.reduce((a,p)=>{a[p.type]=(a[p.type]||0)+1;return a;},{}),attacker);
+      for(const f of raid.interceptors)html+='<label class="power-seat">'+esc(ownerNames[f.power]||f.power)+' fighters<select data-interceptor="'+f.power+'" data-place="'+raid.to+'">'+
+        Array.from({length:f.n+1},(_,i)=>'<option value="'+i+'" '+(i===f.assigned?'selected':'')+'>'+i+' of '+f.n+'</option>').join('')+'</select></label>';
+    }
+    $('action').innerHTML=btn('Commit interceptor assignments','confirm-interceptors','primary');return html;
+  }
+  if(!r)return title('Bombing raids','Resolve each territory’s raid before the other battles.')+
+    raids.map(raid=>opt(raid.to,places[raid.to].name,raid.planes.filter(p=>p.type!=='fighter').length+' bombers · '+
+      raid.interceptors.reduce((n,f)=>n+f.remaining,0)+' interceptors','↗','raid-battle')).join('');
+  const number=r.interceptors.reduce((n,f)=>n+f.remaining,0);
+  const name=p=>stats[p.type].name+' from '+places[s.orders[p.order].from].name;
+  let html=title('Bombing raid · '+places[r.to].name,r.step==='attack'||r.step==='defense'?'One air battle. Each bomber, escort and interceptor hits on a 1.':
+    r.step==='targets'?'Assign each surviving bomber to a facility. Each facility rolls once per bomber targeting it and hits on a 1.':
+    r.step==='damage'?'Each surviving strategic bomber rolls one die plus 2. Each tactical bomber rolls one die.':'Choose the attacking aircraft lost.');
+  const labels={attack:'Roll raid attack',defense:'Roll interception',targets:'Roll facility fire',damage:'Roll facility damage',airLoss:'Confirm interception losses',aaLoss:'Confirm facility fire losses'};
+  let ready=true;
+  if(['attack','defense'].includes(r.step)){
+    html+=block('Attacking aircraft')+r.planes.map(p=>'<p>'+unitCounter(p.type,1,attacker)+' '+esc(name(p))+'</p>').join('')+block('Defending fighters · '+number);
+    html+=r.interceptors.filter(f=>f.remaining).map(f=>unitCounter('fighter',f.remaining,ownerNames[f.power])+' '+esc(ownerNames[f.power])).join(' · ');
+  }
+  const dieList=dice=>dice.map(d=>dieFace({type:d.type||'fighter',hit:d.face===1},d.face,'marked',d.power?ownerNames[d.power]:attacker)).join(' ');
+  if(r.attackDice&&['defense','airLoss'].includes(r.step))html+=block('Attacking rolls')+dieList(r.attackDice);
+  if(r.step==='airLoss')html+=block('Interceptor rolls')+dieList(r.defenseDice);
+  if(r.step==='targets'){
+    for(const [i,p] of r.planes.entries()){
+      if(p.lost||p.type==='fighter')continue;
+      html+='<label class="power-seat">'+esc(name(p))+'<select data-bomb-target="'+i+'">'+raidTargets(s,r.to,p.type).map(t=>
+        '<option '+(t===p.target?'selected':'')+' value="'+t+'">'+raidFacilityNames[t]+' · '+facilityHits(s,r.to,t)+'/'+damageLimit[t]+'</option>').join('')+'</select></label>';
+    }
+  }
+  if(r.aaDice&&['aaLoss','damage'].includes(r.step)){
+    for(const target of new Set(r.aaDice.map(d=>d.target)))html+=block(raidFacilityNames[target]+' fire')+
+      r.aaDice.filter(d=>d.target===target).map(d=>dieFace({type:'aaGun',hit:d.face===1},d.face,'marked',s.owners[r.to])).join(' ');
+  }
+  for(const group of raidLossGroups(r)){
+    const selected=ui.raidLosses||[],inGroup=i=>!r.planes[i].lost&&(!group.target||r.planes[i].target===group.target);
+    const chosen=selected.filter(inGroup).length;
+    if(chosen!==group.hits)ready=false;
+    html+=block((raidFacilityNames[group.target]||'Air battle')+' · '+chosen+' of '+group.hits+' losses');
+    if(group.hits)for(const [i,p] of r.planes.entries())if(inGroup(i))
+      html+='<label class="power-seat">'+esc(name(p))+'<input type="checkbox" data-raid-loss="'+i+'" '+(selected.includes(i)?'checked':chosen>=group.hits?'disabled':'')+'></label>';
+  }
+  if(r.step==='damage')html+=block('Bombers over target')+r.planes.filter(p=>!p.lost&&p.type!=='fighter').map(p=>
+    '<p>'+unitCounter(p.type,1,attacker)+' '+esc(raidFacilityNames[p.target])+'</p>').join('');
+  $('action').innerHTML=btn(labels[r.step],'raid-step','primary','data-id="'+r.step+'" '+(ready?'':'disabled'));
+  return html;
+}
 function battlePanel(){
+  if(pendingRaids(s).length)return raidPanel();
   const b=currentBattle(s);
   if(!b){
     return title('Conduct combat','Choose the next battle to resolve.')+block('Battle order')+s.battles.map(battleChoice).join('');
@@ -995,7 +1101,8 @@ function render(){
   showingAward=award;
   $('exerciseBoard').classList.toggle('opening-briefing',briefing);
   document.querySelector('.power-tab').textContent=award?'France · Player '+globalBoard.match.controllers.French:briefing?'Turn briefing':attacker;
-  if(award)$('panel').innerHTML=frenchAwardPanel();
+  if(ui.raidResult)$('panel').innerHTML=raidResultPanel();
+  else if(award)$('panel').innerHTML=frenchAwardPanel();
   else if(briefing){
     const match=globalBoard.match;
     $('panel').innerHTML=ui.inspect?inspectionPanel('Back to briefing'):
@@ -1016,7 +1123,7 @@ function render(){
     $('action').innerHTML=isGlobal?btn('Begin noncombat move','begin-noncombat','primary'):btn('Start another exercise','reset');
   }
   updateBattleForces();
-  const nextView=[!!ui.assault,ui.assault?.to,ui.landingIndex,award,briefing,inPurchase(),ui.buyGroup,ui.wallet,ui.reserve,ui.site,ui.destination,ui.inspect,s.phase,s.active,currentBattle(s)?.step,ui.from,ui.to,ui.stack,ui.flight,ui.cross,ui.routeTo,ui.twoSpace,...(ui.passageSteps||[])].join('|');
+  const nextView=[ui.raidResult,s.raidDefensePending,s.activeRaid,currentRaid(s)?.step,ui.raidMode,ui.raidTo,!!ui.assault,ui.assault?.to,ui.landingIndex,award,briefing,inPurchase(),ui.buyGroup,ui.wallet,ui.reserve,ui.site,ui.destination,ui.inspect,s.phase,s.active,currentBattle(s)?.step,ui.from,ui.to,ui.stack,ui.flight,ui.cross,ui.routeTo,ui.twoSpace,...(ui.passageSteps||[])].join('|');
   if(panelView!==nextView)document.querySelector('.panel-scroll').scrollTop=0;
   panelView=nextView;
   $('notice').textContent=message;
@@ -1032,8 +1139,8 @@ function render(){
       choices=ui.destination&&!ui.site?options.filter(o=>o.to===ui.destination).map(o=>o.site):[...new Set(options.map(o=>o.to))];
     }
     draw(reserves().game,ui.destination||ui.inspect,null,null,layoutSeed,null,false,choices);
-  }else if(ui.assault?.to){
-    draw(s,ui.assault.to,null,null,layoutSeed,null,false,null);
+  }else if(ui.assault?.to||ui.raidTo||s.activeRaid||ui.raidResult){
+    draw(s,ui.raidResult||ui.raidTo||s.activeRaid||ui.assault?.to,null,null,layoutSeed,null,false,null);
   }else draw(nc?redeployment():s,ui.inspect||ui.from,ui.routeTo||ui.to,ui.stack||ui.inspectedType,layoutSeed,ui.stack?null:ui.inspectedNation,briefing||inPurchase(),ui.stack?(nc?[...noncombatRoutes(redeployment(),selectedNoncombatOrder()).keys()]:moveChoices()):null);
   if(award)bindHold($('placeFrenchAward'),()=>run(()=>{placeFrenchAward(s);ui=freshUI();}));
   else if($('collectIncome'))bindHold($('collectIncome'),()=>advanceEconomy('collect'));
@@ -1155,6 +1262,20 @@ document.addEventListener('click',e=>{
       }
       case 'nc-undo':s.noncombatOrders=s.noncombatOrders.slice(0,-1);ui=freshUI();break;
       case 'quantity': ui.quantity=Math.max(1,Math.min(available(s,ui.from)[ui.stack],ui.quantity+Number(n)));break;
+      case 'raid-mode':ui.raidMode=!ui.raidMode;delete ui.routeTo;delete ui.passageSteps;break;
+      case 'raid-quantity':{
+        const draft={...s,orders:s.orders.filter((_,i)=>i!==ui.raidIndex)};
+        ui.quantity=Math.max(1,Math.min(available(draft,ui.from)[ui.stack],ui.quantity+Number(n)));break;
+      }
+      case 'raid-assign':queueRaidSortie(id);break;
+      case 'raid-remove':s.orders=s.orders.filter((_,i)=>i!==ui.raidIndex);ui=freshUI();break;
+      case 'raid-battle':chooseRaid(s,id);break;
+      case 'confirm-interceptors':confirmInterceptors(s);break;
+      case 'raid-step':{
+        const raid=currentRaid(s);advanceRaid(s,id,ui.raidLosses||[]);delete ui.raidLosses;
+        if(raid.step==='done')ui.raidResult=raid.to;break;
+      }
+      case 'raid-result-close':delete ui.raidResult;break;
       case 'land-start':ui.assault={};break;
       case 'land-engage':ui.assault.engage=!ui.assault.engage;break;
       case 'land-coast':pickLandingCoast(id);break;
@@ -1184,7 +1305,12 @@ document.addEventListener('click',e=>{
       case 'lost-boat':ui.lostBoats=ui.lostBoats?.includes(id)?ui.lostBoats.filter(x=>x!==id):[...(ui.lostBoats||[]),id];break;
       case 'back': ui=freshUI();break;
       case 'clear': ui=inPurchase()||s.phase==='income'?{...freshUI(),wallet:ui.wallet,buyGroup:ui.buyGroup}:freshUI();break;
-      case 'edit': {const order=s.orders[Number(id)];if(order.landing){ui={...freshUI(),landingIndex:Number(id)};break;}selectOrigin(order.from);ui.to=order.to;ui.via=orderPassages(order);ui.units={...order.units};break;}
+      case 'edit': {const order=s.orders[Number(id)];
+        if(order.raid){
+          const stack=Object.keys(order.units).find(t=>order.units[t]>0);
+          ui={...freshUI(),raidIndex:Number(id),from:order.from,raidTo:order.to,via:orderPassages(order),stack,quantity:order.units[stack]};break;
+        }
+        if(order.landing){ui={...freshUI(),landingIndex:Number(id)};break;}selectOrigin(order.from);ui.to=order.to;ui.via=orderPassages(order);ui.units={...order.units};break;}
       case 'add': plan(s,ui.from,ui.to,ui.units,ui.via);ui=freshUI();break;
       case 'remove': plan(s,ui.from,ui.to,{},ui.via);ui=freshUI();break;
       case 'battle': chooseBattle(s,id);break;
@@ -1246,6 +1372,12 @@ document.addEventListener('click',e=>{
   }
 });
 $('panel').addEventListener('change',e=>{
+  if(e.target.matches('[data-interceptor]'))run(()=>setInterceptorCount(s,e.target.dataset.place,e.target.dataset.interceptor,Number(e.target.value)));
+  if(e.target.matches('[data-bomb-target]'))run(()=>setRaidTarget(s,Number(e.target.dataset.bombTarget),e.target.value));
+  if(e.target.matches('[data-raid-loss]'))run(()=>{
+    const i=Number(e.target.dataset.raidLoss);
+    ui.raidLosses=e.target.checked?[...(ui.raidLosses||[]),i]:(ui.raidLosses||[]).filter(n=>n!==i);
+  });
   if(e.target.matches('[data-beach-loss]'))run(()=>{(ui.beachLoss??={})[e.target.dataset.beachLoss]=Number(e.target.value);});
   if(e.target.matches('[data-landing-route]'))run(()=>setLandingPath(Number(e.target.value)));
   if(e.target.matches('[data-landing-load]'))run(()=>{ui.assault.load=e.target.value||null;ui.assault.cargo=[];});
@@ -1257,7 +1389,7 @@ $('map').setAttribute('aria-label',inBriefing()?'Opening board. Pan or pinch the
 $('controlKey').innerHTML=(isGlobal?[attacker]:[attacker,defender]).map(n=>'<i data-nation="'+n+'"></i>'+n).join(' ');
 $('closeDialog').onclick=()=>$('dialog').close();
 $('journal').onclick=()=>{
-  const current=['review','noncombat','mobilize','income'].includes(s.phase)?timeline()||'<p>No combat was recorded.</p>':timeline(s.record.filter(e=>e.declaration||e.capital||e.frenchUnits||e.scramblePower))+'<p>The current combat review opens after all battles are resolved.</p>';
+  const current=['review','noncombat','mobilize','income'].includes(s.phase)?timeline()||'<p>No combat was recorded.</p>':timeline(s.record.filter(e=>e.declaration||e.capital||e.frenchUnits||e.scramblePower||e.raid))+'<p>The current combat review opens after all battles are resolved.</p>';
   const previous=(globalBoard?.match.turnReviews||[]).slice().reverse().map(turn=>{
     const nation=globalPowers[turn.power];
     return '<details class="review-item review-round"><summary>'+seasonForRound(turn.round)+' · '+nation+'</summary>'+

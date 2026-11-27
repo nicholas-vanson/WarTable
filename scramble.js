@@ -82,21 +82,25 @@ function landDefender(s,f,id,n){
 // Only after all combat is the launch territory's final controller known.
 // Retain aircraft nationality and share scarce carrier spaces across diversions.
 export function recoverScrambles(s){
-  if(!s.scrambles?.length||s.scramblesRecovered)return;
+  const interceptors=(s.raids||[]).flatMap(r=>r.interceptors.filter(f=>f.remaining).map(f=>
+    ({...f,from:r.to,zone:r.to,type:'fighter',intercept:true})));
+  const defendingFlights=[...(s.scrambles||[]),...interceptors];
+  if(!defendingFlights.length||s.scramblesRecovered)return;
   const ex=exerciseOf(s),atSea=[],outcomes=new Map();
   function land(f,id,n){
     if(id)landDefender(s,f,id,n);
     const key=[f.from,f.zone,f.power,f.type,id].join('/');
     const item=outcomes.get(key)||{f,id,n:0};item.n+=n;outcomes.set(key,item);
   }
-  for(const f of s.scrambles){
+  for(const f of defendingFlights){
     if(!f.remaining)continue;
-    const friendly=id=>!places[id].water&&!places[id].blocked&&ex.friends[f.power].includes(s.owners[id]);
+    const friendly=id=>!places[id].water&&!places[id].blocked&&ex.friends[f.power].includes(s.owners[id])&&
+      (f.power!=='Chinese'||places[id].original==='Chinese'||['Burma','Kwangtung'].includes(places[id].name));
     const adjacent=ex.neighbors[f.zone];
     const landSite=friendly(f.from)?f.from:adjacent.find(friendly);
     if(landSite){land(f,landSite,f.remaining);continue;}
     const side=ex.friendlyPowers[f.power];
-    const choices=[f.zone,...adjacent.filter(id=>places[id].water)].filter(id=>
+    const choices=[f.zone,...adjacent].filter(id=>places[id].water&&f.power!=='Chinese'&&
       !s.pieces[id].some(([p,t,n])=>n&&ex.hostileTo(f.power,p)&&ships.includes(t)&&t!=='submarine'&&t!=='transport'));
     for(let i=0;i<f.remaining;i++)atSea.push({f,side,choices});
   }
@@ -132,7 +136,7 @@ export function recoverScrambles(s){
   for(const flight of atSea)reserve(flight,new Set());
   for(const {f,base} of atSea)land(f,base||null,1);
   for(const {f,id,n} of outcomes.values()){
-    s.record.push({title:id?'Scramble recovery · '+places[id].name:'Scrambled aircraft lost',
+    s.record.push({title:id?(f.intercept?'Interceptor recovery · ':'Scramble recovery · ')+places[id].name:f.intercept?'Interceptor lost':'Scrambled aircraft lost',
       detail:n+' × '+stats[f.type].name+' from '+places[f.zone].name+
         (id===f.from?' returned to '+places[id].name+'.':id?' diverted to '+places[id].name+' after '+places[f.from].name+' fell.':
           ' lost after '+places[f.from].name+' fell. No friendly landing space was available.'),scramblePower:f.power,scrambleRecovery:true});

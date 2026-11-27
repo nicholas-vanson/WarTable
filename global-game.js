@@ -275,7 +275,7 @@ export function prepareGlobalBoard(setup,atlas,match){
     const region=setup.regions[name],owner=match.board[name].owner;
     return enemies.has(owner)||neutralOwners[owner]&&canEnterNeutral(match.power,enemies,region)&&hostileNeutral(match.power,owner);
   }
-  const spaces={},openingDamage={},embarked={},defensiveBases=[];
+  const spaces={},openingDamage={},openingFacilityDamage={},embarked={},defensiveBases=[];
   function canalOpen(from,to,type){
     const gate=[parseInt(places[from].name),parseInt(places[to].name)].sort((a,b)=>a-b).join('-');
     return type==='submarine'&&gate==='91-92'||!gates[gate]?.some(coast=>!allies.has(match.board[coast].owner));
@@ -316,6 +316,7 @@ export function prepareGlobalBoard(setup,atlas,match){
     const base=(name,type)=>allies.has(board[name].owner)&&hasFacility(board[name],type)&&(board[name].facilityDamage?.[type]||0)<3;
     for(const [name,r] of Object.entries(setup.regions)){
       const space=spaces[ids[name]];
+      if(board[name].facilityDamage)openingFacilityDamage[ids[name]]={...board[name].facilityDamage};
       if(r.water)openingDamage[ids[name]]=structuredClone(board[name].shipDamage||{});
       space.airBase=!r.water&&base(name,'airfield');
       if(!r.water&&hasFacility(board[name],'airfield')&&
@@ -377,7 +378,7 @@ export function prepareGlobalBoard(setup,atlas,match){
     return match.power==='British'&&pacific?'UK_Pacific':match.power;
   }
   const occupy=(game,id)=>occupyTerritory(game,id,places,ids,captureWallet,match.frenchLiberationAwarded);
-  const exercise={occupy,name:'Global 1940',attacker,power:match.power,camera,forces,shapes,cities,world:true,friendlyPowers,friends,enemies:[...enemies],projection,neighbors,neutralEntry,unmovedLand,movement,defensiveBases,holdScrambles,hostileTo,refreshBases,canalOpen,seaStop,openingDamage};
+  const exercise={occupy,name:'Global 1940',attacker,power:match.power,camera,forces,shapes,cities,world:true,friendlyPowers,friends,enemies:[...enemies],projection,neighbors,neutralEntry,unmovedLand,movement,defensiveBases,holdScrambles,hostileTo,refreshBases,canalOpen,seaStop,openingDamage,openingFacilityDamage};
   exercises.global=exercise;
   let openingView;
   if(match.phase==='briefing'&&match.power!=='Germans'){
@@ -406,6 +407,7 @@ export function saveGlobalPosition(match,game){
       area.owner=match.power==='British'&&pacific?'UK_Pacific':match.power;
     }else if(neutralKey(game.owners[id]))area.owner=neutralKey(game.owners[id]);
     else if(game.owners[id]==='Soviet Union'&&places[id].original==='Mongolians')area.owner='Russians';
+    if(game.raidDamage?.[id])Object.assign(area.facilityDamage??={},game.raidDamage[id]);
     if((assigned||legacyCapture)&&area.facilityDamage){
       if(area.facilityDamage.factory_major&&stacks.some(([,t,n])=>t==='factory_minor'&&n)){
         area.facilityDamage.factory_minor=Math.min(6,area.facilityDamage.factory_major);
