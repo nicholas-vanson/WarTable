@@ -4,6 +4,7 @@ import {places,stats,ships,aircraft,samePower,exerciseOf,deckSpace,reservedBerth
 import {neutralKey,takeFriendlyControl,hostileNeutral} from './neutral-rules.js';
 
 export function beginNoncombat(game){
+  if(game.frenchAward?.status==='pending')throw Error('France must finish its liberation placement first.');
   if(game.exercise!=='global'||game.phase!=='review'||game.battles.some(b=>!b.resolved))
     throw Error('Resolve every battle before starting noncombat movement.');
   game.phase='noncombat';game.noncombatOrders=[];

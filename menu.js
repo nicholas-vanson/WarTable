@@ -161,7 +161,7 @@ if(route==='global'||route.startsWith('exercise/')&&Object.hasOwn(exercises,rout
       const saved=match?.version===1&&match.board?.Germany&&Object.hasOwn(globalPowers,match.power);
       el('continueGlobal').hidden=!saved;
       el('newGlobal').className=saved?'campaign-secondary':'campaign-primary';
-      summary.textContent=saved?'Round '+match.round+' · '+globalPowers[match.power]+' · '+(phases[match.phase]||'Local match'):defaultSummary;
+      summary.textContent=saved?'Round '+match.round+' · '+globalPowers[match.power]+' · '+(match.combat?.game.frenchAward?.status==='pending'?'French liberation reinforcements':phases[match.phase]||'Local match'):defaultSummary;
     }
     function confirmReplacement(raw){
       setupSnapshot=raw;
