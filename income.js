@@ -1,5 +1,6 @@
 // Global 1940 Second Edition, Europe pp. 23–24 and the Global national objectives.
 // Printed convoy symbols from the board's Global 1940 Second Edition scenario.
+import {declareWar,usIncomeChoice,rememberPoliticalCaptures} from './politics.js';
 import {capitals,purchaseCapitalAvailable,spendingEconomies,purchaseGroups,burmaRoadOpen,nextPlaytestTurn} from './global-game.js';
 const convoyZones=[1,6,10,19,20,26,35,36,37,39,41,42,43,44,54,62,63,70,71,72,80,82,85,89,93,97,98,99,101,105,106,109,119,125];
 const axisPowers=['Germans','Italians','Japanese'];
@@ -160,7 +161,7 @@ function accountStatement(match,wallet){
   const land=open?territories.reduce((sum,t)=>sum+t.value,0):0;
   const bonus=objectives.reduce((sum,o)=>sum+o.earned,0);
   return {wallet,capital:capitals[wallet],open,before:match.treasury[wallet],territories,objectives,land,bonus,
-    convoys:open?convoyRaids(match,territories):[],loss:0};
+    convoys:open&&wallet!=='Chinese'?convoyRaids(match,territories):[],loss:0};
 }
 export function incomeAmount(account){return account.land+account.bonus-account.loss;}
 function makeStatement(match){
@@ -171,8 +172,36 @@ export function openIncome(match){
   if(match.phase!=='mobilize'||match.combat?.game.phase!=='mobilize')throw Error('Finish mobilization before reviewing income.');
   match.phase='income';match.combat.game.phase='income';match.combat.ui={};
   if(match.power==='Japanese'&&attackedIndochina(match))match.japanAttackedIndochina=true;
+  rememberPoliticalCaptures(match);
   match.incomeReport=makeStatement(match);
   return match;
+}
+// A 0.1.88 save can already have a pending or rolled Chinese convoy. Its treasury
+// has not yet been credited. Completed receipts remain the record of the old turn.
+export function restoreChineseStatement(match){
+  for(const turn of match.turnReviews||[]){
+    if(turn.power!=='Chinese'||turn.record.some(e=>e.chinaConvoyRefund))continue;
+    const paid=turn.record.find(e=>e.income)?.income.accounts.find(a=>a.wallet==='Chinese')?.loss||0;
+    if(!paid)continue;
+    match.treasury.Chinese+=paid;
+    const pending=match.incomeReport?.accounts.find(a=>a.wallet==='Chinese');
+    if(pending)pending.before+=paid;
+    turn.record.push({title:'Chinese convoy refund',detail:paid+' IPCs returned to China for an earlier convoy deduction.',chinaConvoyRefund:paid});
+  }
+  if(match.phase!=='income'||match.power!=='Chinese')return;
+  const report=match.incomeReport,account=report?.accounts.find(a=>a.wallet==='Chinese');
+  if(account){account.convoys=[];account.loss=0;report.rolled=true;}
+}
+export function confirmPoliticalChoice(match,targets){
+  if(!targets.length){
+    if(!usIncomeChoice(match))throw Error('The income declaration window is closed.');
+    const next=structuredClone(match);
+    next.incomeReport.stayedAtPeace=true;
+    return next;
+  }
+  const next=declareWar(match,targets);
+  if(next.phase==='income')next.incomeReport=makeStatement(next);
+  return next;
 }
 export function rollConvoys(match,random=Math.random){
   if(match.phase!=='income'||!match.incomeReport||match.incomeReport.rolled)throw Error('There are no pending convoy rolls.');
@@ -192,6 +221,7 @@ export function rollConvoys(match,random=Math.random){
   return next;
 }
 export function collectIncome(match){
+  if(usIncomeChoice(match))throw Error('Choose whether to enter the war before collecting income.');
   const report=match.incomeReport;
   if(match.phase!=='income'||match.combat?.game.phase!=='income'||!report?.rolled||report.power!==match.power||report.round!==match.round)
     throw Error('Finish reviewing income and resolving convoys before collecting.');

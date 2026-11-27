@@ -1,11 +1,9 @@
+import {politicalPowers,atWarWith} from './politics.js';
 import {combatMovement} from './movement.js';
 import {places,exercises,stats,aircraft,ships,mobileTypes,samePower,strengthOf} from './rules.js';
 import {neutralOwners,neutralKey,canEnterNeutral,hostileNeutral,openingLand} from './neutral-rules.js';
 // Global 1940 Second Edition order of play. Both British economies share a controller.
-export const globalPowers={
-  Germans:'Germany',Russians:'Soviet Union',Japanese:'Japan',Americans:'United States',
-  Chinese:'China',British:'United Kingdom',Italians:'Italy',ANZAC:'ANZAC',French:'France'
-};
+export const globalPowers=politicalPowers;
 export const ownerNames={...globalPowers,UK_Pacific:'United Kingdom',Dutch:'Netherlands',
   ...neutralOwners};
 // Both British treasuries can field pieces in the same battle under the same flag.
@@ -78,7 +76,7 @@ export const capitals={Germans:'Germany',Russians:'Russia',Japanese:'Japan',Amer
   British:'United Kingdom',UK_Pacific:'India',Italians:'Southern Italy',ANZAC:'New South Wales',French:'France'};
 
 function preparePurchaseSites(match,setup){
-  match.diplomacy??=setup.diplomacy;
+  match.diplomacy??=structuredClone(setup.diplomacy);
   for(const [name,region] of Object.entries(setup.regions)){
     const area=match.board[name];
     if(!area)continue;
@@ -277,6 +275,37 @@ export function prepareGlobalBoard(setup,atlas,match){
     const gate=[parseInt(places[from].name),parseInt(places[to].name)].sort((a,b)=>a-b).join('-');
     return type==='submarine'&&gate==='91-92'||!gates[gate]?.some(coast=>!allies.has(match.board[coast].owner));
   }
+  const power=match.power,war=p=>enemies.has(p);
+  const sovietPacific=atWarWith(match,'Russians','Japanese');
+  const sovietEurope=['Germans','Italians'].some(p=>atWarWith(match,'Russians',p));
+  function politicallyOpen(name,r,owner){
+    if(r.water)return power!=='Chinese';
+    if(power==='Chinese')return r.original==='Chinese'||name==='Burma'||name==='Kwangtung';
+    if(r.original==='Chinese'&&!war('Japanese')&&['Americans','British','ANZAC','French','Russians'].includes(power))return false;
+    // The printed map boundary differs from the UK treasury boundary.
+    const pacific=!['West India','Kazakhstan','Evenkiyskiy'].includes(name)&&(pacificOriginals.has(r.original)||otherPacificLand.has(name)||
+      ['Western United States','Alaska','British Columbia','Aleutian Islands','Mexico'].includes(name));
+    if(power==='Russians'&&owner!=='Russians'&&!enemies.has(owner))return pacific?sovietPacific:sovietEurope;
+    if(owner==='Russians'&&power!=='Russians'&&allies.has(owner))return pacific?sovietPacific:sovietEurope;
+    return true;
+  }
+  // Neutral naval patrol rules constrain the end of a move, including transports.
+  const restrictedSea=new Set();
+  if(power==='Japanese'&&!war('Americans')){
+    for(const name of ['Alaska','Western United States'])for(const coast of setup.regions[name].links){
+      if(!setup.regions[coast].water)continue;
+      restrictedSea.add(ids[coast]);
+      for(const near of setup.regions[coast].links)if(setup.regions[near].water)restrictedSea.add(ids[near]);
+    }
+  }
+  function seaStop(id,type){
+    if(restrictedSea.has(id))return false;
+    if(power!=='Americans')return true;
+    const name=places[id].name,coasts=match.board[name].coasts||[];
+    if(!war('Japanese')&&coasts.some(n=>match.board[n].owner==='Japanese'))return false;
+    return parseInt(name)<=64||war('Germans')||war('Italians')||coasts.some(n=>match.board[n].owner==='Americans')||
+      parseInt(name)===102&&type!=='transport';
+  }
   function refreshBases(board){
     const base=(name,type)=>allies.has(board[name].owner)&&hasFacility(board[name],type)&&(board[name].facilityDamage?.[type]||0)<3;
     for(const [name,r] of Object.entries(setup.regions)){
@@ -294,7 +323,7 @@ export function prepareGlobalBoard(setup,atlas,match){
     if(position.shipDamage)shipDamage[id]=structuredClone(position.shipDamage);
     const enemyAtSea=position.units.filter(([p,t,n])=>n&&enemies.has(p)&&ships.includes(t));
     spaces[id]={water:r.water,friendly:allies.has(position.owner),enemy:enemies.has(position.owner),
-      allowed:!r.blocked&&(match.power!=='Chinese'||!r.water&&(r.original==='Chinese'||['Burma','Kwangtung'].includes(name))),
+      allowed:!r.blocked&&politicallyOpen(name,r,position.owner),
       attackLand:!r.water&&!r.blocked&&!!hostileLand(name),
       blitz:!r.water&&enemies.has(position.owner)&&!position.units.some(([, ,n])=>n>0),
       enemyFleet:enemyAtSea.length>0,blockingFleet:enemyAtSea.some(([,t])=>t!=='transport'&&t!=='submarine'),
@@ -307,7 +336,7 @@ export function prepareGlobalBoard(setup,atlas,match){
       (r.water?enemies.has(power):owner!==attacker||samePower(power,match.power))));
   }
   refreshBases(match.board);
-  const movement=combatMovement(spaces,neighbors,canalOpen);
+  const movement=combatMovement(spaces,neighbors,canalOpen,seaStop);
   for(const id of Object.keys(forces)){
     const place=places[id];
     for(const [power,type,n] of pieces[id]){
@@ -334,7 +363,7 @@ export function prepareGlobalBoard(setup,atlas,match){
     British:'United Kingdom',Italians:'Southern Italy',ANZAC:'New South Wales',French:'France'}[match.power];
   const [x,y]=sectors[home].center;
   const camera={x,y,z:.7*projection.detailScale,surveyZoom:true};
-  const exercise={name:'Global 1940',attacker,power:match.power,camera,forces,shapes,cities,world:true,friendlyPowers,friends,enemies:[...enemies],projection,neighbors,neutralEntry,unmovedLand,movement,refreshBases,canalOpen,openingDamage};
+  const exercise={name:'Global 1940',attacker,power:match.power,camera,forces,shapes,cities,world:true,friendlyPowers,friends,enemies:[...enemies],projection,neighbors,neutralEntry,unmovedLand,movement,refreshBases,canalOpen,seaStop,openingDamage};
   exercises.global=exercise;
   let openingView;
   if(match.phase==='briefing'&&match.power!=='Germans'){
@@ -388,6 +417,10 @@ export async function loadGlobalBoard(){
   preparePurchaseSites(match,setup);
   const board=prepareGlobalBoard(setup,sectors,{...match,board:match.combatStart,mongolianPactBroken:match.combatStartPactBroken});
   const savedGame=match.combat?.game;
+  if(savedGame?.refreshPoliticalForces){
+    savedGame.units=structuredClone(board.game.units);
+    delete savedGame.refreshPoliticalForces;
+  }
   if(savedGame)savedGame.shipDamage??=structuredClone(board.game.shipDamage);
   if(savedGame)for(const id of Object.keys(board.game.owners)){
     if(!places[id].blocked)continue;

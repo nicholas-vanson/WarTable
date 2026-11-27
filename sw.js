@@ -1,6 +1,6 @@
 const scope=self.registration.scope;
 const prefix='wartable:'+scope+':';
-const release='0.1.88';
+const release='0.1.89';
 const cacheName=prefix+'shell-'+release;
 const atlasRevision='d045665337249e6073797c2026edd27d40f1e96bf1998c86d982f435d4a7de5f';
 // 0.1.55 already cached this exact atlas. Adopt its cache under the original
@@ -8,7 +8,7 @@ const atlasRevision='d045665337249e6073797c2026edd27d40f1e96bf1998c86d982f435d4a
 const previousAtlas='d045665337249e6073797c2026edd27d40f1e96bf1998c86d982f435d4a7de5f';
 const previousCache=prefix+'main-menu-56';
 const atlasName=atlasRevision===previousAtlas?previousCache:prefix+'atlas-'+atlasRevision;
-const shell=['LICENSE.txt','index.html','menu.js','preferences.js','app.js','global-game.js','neutral-rules.js','movement.js','noncombat.js','mobilize.js','income.js','rules.js','formation-names.js','front-layout.js','map.js','style.css','manifest.webmanifest'];
+const shell=['LICENSE.txt','index.html','menu.js','preferences.js','app.js','global-game.js','politics.js','neutral-rules.js','movement.js','noncombat.js','mobilize.js','income.js','rules.js','formation-names.js','front-layout.js','map.js','style.css','manifest.webmanifest'];
 const assets=['wartable-mark.svg','staff-map.svg','staff-overview.webp','territories.json','fronts.json','control-washes.json','menu-staff-table.webp','global-setup.json','world-sectors.json','world-staff.webp','world-engraving.svg','world-terrain.json','sea-zones.json','icon-192.png','icon-512.png'];
 const fresh=path=>new Request(new URL(path,scope),{cache:'reload'});
 
