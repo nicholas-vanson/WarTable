@@ -188,8 +188,8 @@ export function commit(s) {
   const ex=exerciseOf(s);
   for(const via of new Set(s.orders.filter(o=>o.units.tank&&o.via).map(o=>o.via))){
     if(ex.friends[s.power].includes(s.owners[via]))continue;
-    s.owners[via]=ex.attacker;
-    s.record.push({title:places[via].name,detail:'Captured by '+ex.attacker+' during a tank blitz.'});
+    const control=ex.occupy(s,via);
+    s.record.push({title:places[via].name,detail:control+' during a tank blitz.'});
   }
   for(const o of s.orders) {
     const path=[o.from,...orderPassages(o),o.to].map(id=>places[id].name).join(' → ');
@@ -219,14 +219,25 @@ export function commit(s) {
   }
   s.phase=s.battles.length?'combat':'review';
   if(s.phase==='review')settleMongolianPact(s);
+  resolveUnopposed(s);
+}
+function resolveUnopposed(s){
   for(const b of s.battles){
+    if(s.frenchAward?.status==='pending')break;
+    if(b.resolved||b.step!=='ready')continue;
+    if(s.controlChanges?.[b.to]){
+      placeSurvivors(s,b,b.to);
+      finishBattle(s,b,'Joined friendly forces in '+places[b.to].name+'.');
+      continue;
+    }
     if(s.pieces)s.units[b.to]=strengthOf(defendingRows(s,b.to));
     const landOccupation=s.pieces&&!places[b.to].water&&Object.entries(b.attack).some(([type,n])=>n&&!aircraft.includes(type));
-    if(landOccupation&&!count(s.units[b.to]))captureBattle(s,b,ex.attacker);
+    if(landOccupation&&!count(s.units[b.to]))captureBattle(s,b,exerciseOf(s).attacker);
   }
 }
 export function chooseBattle(s,to) {
   const b=s.battles.find(b=>b.to===to);
+  check(s.frenchAward?.status!=='pending','France must finish its liberation placement first.');
   check(s.phase==='combat'&&!s.active&&b&&!b.resolved,'Finish the current battle before choosing another.');
   s.active=to;
 }
@@ -386,16 +397,41 @@ function placeSurvivors(s,b,destination){
 function captureBattle(s,b,attacker){
   const sea=places[b.to].water;
   const occupies=!sea&&Object.entries(b.attack).some(([t,n])=>n&&!aircraft.includes(t));
+  let control='Captured by '+attacker;
   if(occupies){
-    for(const row of s.pieces?.[b.to]||[]){
-      if(row[2]&&!stats[row[1]]){row[0]=s.power;if(row[1]==='factory_major')row[1]='factory_minor';}
-    }
-    s.owners[b.to]=attacker;
+    if(s.exercise==='global')control=exerciseOf(s).occupy(s,b.to);
+    else s.owners[b.to]=attacker;
   }
   s.units[b.to]=empty();placeSurvivors(s,b,b.to);
-  const result=occupies?'Captured by '+attacker+' with '+describe(b.attack)+'.':
+  const result=occupies?control+' with '+describe(b.attack)+'.':
     sea?'Sea battle won by '+attacker+'.':'Defenders eliminated by air. Territory control is unchanged.';
   finishBattle(s,b,result);
+}
+export const frenchReinforcements=Object.keys(stats).filter(t=>!ships.includes(t)&&stats[t].cost<=12);
+export function frenchReinforcementCost(draft){
+  let spent=0;
+  for(const [t,n] of Object.entries(draft)){
+    check(frenchReinforcements.includes(t)&&Number.isInteger(n)&&n>=0,'Choose French land or air units.');
+    spent+=stats[t].cost*n;
+  }
+  check(spent<=12,'France can place up to 12 IPCs of reinforcements.');
+  return spent;
+}
+export function changeFrenchDraft(s,type,delta){
+  check(s.frenchAward?.status==='pending'&&[1,-1].includes(delta),'French placement is closed.');
+  const draft={...s.frenchAward.draft,[type]:(s.frenchAward.draft[type]||0)+delta};
+  frenchReinforcementCost(draft);if(!draft[type])delete draft[type];
+  s.frenchAward.draft=draft;
+}
+export function placeFrenchAward(s){
+  check(s.frenchAward?.status==='pending'&&s.owners.fr==='France','French placement is closed.');
+  const draft=s.frenchAward.draft,spent=frenchReinforcementCost(draft);
+  for(const [type,n] of Object.entries(draft)){
+    alterStack(s,'fr','French',type,n);s.units.fr[type]=(s.units.fr[type]||0)+n;
+  }
+  s.frenchAward.status='placed';
+  s.record.push({title:'French liberation reinforcements',detail:spent?spent+' of 12 IPCs placed in France.':'France declined its one-time reinforcements.',frenchUnits:{...draft}});
+  resolveUnopposed(s);
 }
 function damageAt(s,id,power){
   s.shipDamage??={};const area=s.shipDamage[id]??={};return area[power]??={};

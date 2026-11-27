@@ -1,3 +1,4 @@
+import {homeCapitals,occupyTerritory,settleCapitalPayments} from './occupation.js';
 import {politicalPowers,atWarWith} from './politics.js';
 import {combatMovement} from './movement.js';
 import {places,exercises,stats,aircraft,ships,mobileTypes,samePower,strengthOf} from './rules.js';
@@ -52,7 +53,10 @@ export function nextPlaytestTurn(match){
   if(match.phase!=='income'||match.combat?.game.phase!=='incomeCollected')throw Error('Collect income before handing over the turn.');
   const power=nextPower(match.power);
   const review={power:match.power,round:match.round,record:match.combat.game.record};
-  return {...match,power,round:match.round+Number(power===turnOrder[0]),phase:'briefing',
+  const next={...match};
+  delete next.turnCapitalPayments;
+  if(match.combat.game.frenchAward?.status==='placed')next.frenchLiberationAwarded=true;
+  return {...next,power,round:match.round+Number(power===turnOrder[0]),phase:'briefing',
     turnReviews:[...(match.turnReviews||[]),review],combat:null,combatStart:null,combatStartPactBroken:!!match.mongolianPactBroken};
 }
 export function openingAddress(match,seat){
@@ -72,8 +76,7 @@ const pacificOriginals=new Set(['UK_Pacific','Japanese','Chinese','ANZAC','Mongo
 const otherPacificLand=new Set(['French Indo China','New Hebrides','Celebes','Java','Dutch New Guinea','Sumatra',
   'Sakha','Evenkiyskiy','Yenisey','Soviet Far East','Amur','Yakut S.S.R.','Timguska','Siberia','Kazakhstan','Buryatia',
   'Philippines','Line Islands','Guam','Wake Island','Johnston Island','Hawaiian Islands','Midway']);
-export const capitals={Germans:'Germany',Russians:'Russia',Japanese:'Japan',Americans:'Eastern United States',
-  British:'United Kingdom',UK_Pacific:'India',Italians:'Southern Italy',ANZAC:'New South Wales',French:'France'};
+export const capitals=homeCapitals;
 
 function preparePurchaseSites(match,setup){
   match.diplomacy??=structuredClone(setup.diplomacy);
@@ -363,7 +366,12 @@ export function prepareGlobalBoard(setup,atlas,match){
     British:'United Kingdom',Italians:'Southern Italy',ANZAC:'New South Wales',French:'France'}[match.power];
   const [x,y]=sectors[home].center;
   const camera={x,y,z:.7*projection.detailScale,surveyZoom:true};
-  const exercise={name:'Global 1940',attacker,power:match.power,camera,forces,shapes,cities,world:true,friendlyPowers,friends,enemies:[...enemies],projection,neighbors,neutralEntry,unmovedLand,movement,refreshBases,canalOpen,seaStop,openingDamage};
+  function captureWallet(name){
+    const pacific=pacificOriginals.has(setup.regions[name].original)||otherPacificLand.has(name);
+    return match.power==='British'&&pacific?'UK_Pacific':match.power;
+  }
+  const occupy=(game,id)=>occupyTerritory(game,id,places,ids,captureWallet,match.frenchLiberationAwarded);
+  const exercise={occupy,name:'Global 1940',attacker,power:match.power,camera,forces,shapes,cities,world:true,friendlyPowers,friends,enemies:[...enemies],projection,neighbors,neutralEntry,unmovedLand,movement,refreshBases,canalOpen,seaStop,openingDamage};
   exercises.global=exercise;
   let openingView;
   if(match.phase==='briefing'&&match.power!=='Germans'){
@@ -380,19 +388,27 @@ export function prepareGlobalBoard(setup,atlas,match){
   return {exercise,openingView,game:{version:1,exercise:'global',phase:'plan',mongolianPactBroken:!!match.mongolianPactBroken,power:match.power,units,owners,pieces,shipDamage,orders:[],battles:[],active:null,record:[]}};
 }
 export function saveGlobalPosition(match,game){
+  settleCapitalPayments(match,game);
   match.mongolianPactBroken=!!game.mongolianPactBroken;
   for(const [id,stacks] of Object.entries(game.pieces)){
     const area=match.board[places[id].name];
-    if(game.owners[id]===globalPowers[match.power]&&ownerNames[area.owner]!==game.owners[id]){
+    const assigned=game.controlChanges?.[id];
+    const legacyCapture=game.owners[id]===globalPowers[match.power]&&ownerNames[area.owner]!==game.owners[id];
+    if(assigned)area.owner=assigned;
+    else if(legacyCapture){
       const pacific=pacificOriginals.has(area.original)||otherPacificLand.has(places[id].name);
       area.owner=match.power==='British'&&pacific?'UK_Pacific':match.power;
-      if(area.facilityDamage?.factory_major&&stacks.some(([,unit,n])=>unit==='factory_minor'&&n)){
+    }else if(neutralKey(game.owners[id]))area.owner=neutralKey(game.owners[id]);
+    else if(game.owners[id]==='Soviet Union'&&places[id].original==='Mongolians')area.owner='Russians';
+    if((assigned||legacyCapture)&&area.facilityDamage){
+      if(area.facilityDamage.factory_major&&stacks.some(([,t,n])=>t==='factory_minor'&&n)){
         area.facilityDamage.factory_minor=Math.min(6,area.facilityDamage.factory_major);
         delete area.facilityDamage.factory_major;
       }
+      if(area.owner==='Chinese'&&area.original==='Chinese'){
+        delete area.facilityDamage.factory_minor;delete area.facilityDamage.factory_major;
+      }
     }
-    else if(neutralKey(game.owners[id]))area.owner=neutralKey(game.owners[id]);
-    else if(game.owners[id]==='Soviet Union'&&places[id].original==='Mongolians')area.owner='Russians';
     if(game.shipDamage?.[id])area.shipDamage=structuredClone(game.shipDamage[id]);
     area.units=stacks.filter(row=>row[2]>0).map(([p,t,n])=>[p,t==='inf'?'infantry':t==='tank'?'armour':t,n]);
   }

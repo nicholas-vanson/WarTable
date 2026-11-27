@@ -1,3 +1,4 @@
+import {reverseCapitalPayments} from './occupation.js';
 import {countryInSentence,usIncomeChoice,declarationTargets,declarationDetails} from './politics.js';
 import {incomeAmount,rollConvoys,collectIncome,confirmPoliticalChoice,restoreChineseStatement} from './income.js';
 import {beginMobilization,mobilizationPlan,placementOptions,finishMobilization,launchPlan,reviseLaunches} from './mobilize.js';
@@ -6,7 +7,7 @@ import {asPassages,orderPassages,samePassages} from './movement.js';
 import {ordersPanelKey,reducedMotion} from './preferences.js';
 import {neutralKey,strictKey,allianceOf,hostileNeutral} from './neutral-rules.js';
 import {globalKey,loadGlobalBoard,saveGlobalPosition,purchaseGroups,spendingEconomies,purchasePlan,eligibleShipRepairs,changePurchase,changeFacilityOrder,confirmPurchase,openingAddress,seasonForRound,nextPower,globalUnits,boardUnitType,isFacility,globalPowers,ownerNames,nationalArmies} from './global-game.js';
-import {places,stats,types,exercises,adjectives,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,mobileTypes,aircraft,targetsFor,movementFor,flightRecoveries,defendingRows,openingFireKind,rollOpening,casualtyLimits,retreatSites,rollAttack,rollDefense,casualties,retreat,theaterVictoryCities} from './rules.js';
+import {frenchReinforcements,frenchReinforcementCost,changeFrenchDraft,placeFrenchAward,places,stats,types,exercises,adjectives,newGame,count,describe,available,plan,commit,chooseBattle,currentBattle,mobileTypes,aircraft,targetsFor,movementFor,flightRecoveries,defendingRows,openingFireKind,rollOpening,casualtyLimits,retreatSites,rollAttack,rollDefense,casualties,retreat,theaterVictoryCities} from './rules.js';
 import {drawFormationNames} from './formation-names.js';
 import {atlas,styleFor} from './map.js';
 const $=id=>document.getElementById(id);
@@ -17,9 +18,6 @@ if(globalBoard)restoreChineseStatement(globalBoard.match);
 let lastGlobalSave=isGlobal?localStorage.getItem(globalKey):null;
 const key=isGlobal?globalKey:exerciseId==='west'?'wartable.western-front.v1':'wartable.exercise.'+exerciseId+'.v1';
 const exercise=exercises[exerciseId],{attacker,defender}=exercise;
-const panelPalette=styleFor(attacker);
-$('ordersPanel').style.setProperty('--nation-ink',panelPalette.ink);
-$('ordersPanel').style.setProperty('--nation-paper',panelPalette.paper);
 const exercisePlaces=Object.fromEntries(Object.keys(exercise.forces).map(id=>[id,places[id]]));
 const newLayoutSeed=()=>crypto.getRandomValues(new Uint32Array(1))[0];
 let layoutSeed=newLayoutSeed();
@@ -130,6 +128,7 @@ function selectTarget(id){
   addStackOrder(id);
 }
 function pick(id,type,origin,nation){
+  if(s.frenchAward?.status==='pending')return;
   if(!id){run(()=>{ui=freshUI();});return;}
   if(inBriefing()||inPurchase()||s.phase==='income'){
     run(()=>{
@@ -546,6 +545,8 @@ function savedRoundLosses(entry){
 function timeline(record=s.record,attacking=attacker){
   return record.map(e=>{
     const heading=esc(e.title);
+    if(e.frenchUnits)return '<div class="review-item"><strong>'+heading+'</strong><p>'+esc(e.detail)+'</p>'+
+      (Object.keys(e.frenchUnits).length?unitLine(e.frenchUnits,'France'):'')+'</div>';
     if(e.income)return '<div class="review-item"><strong>Income collected</strong>'+e.income.accounts.map(a=>
       '<h4>'+esc(treasuryName(a.wallet))+'</h4>'+incomeLedger(a,true)).join('')+'</div>';
     if(!e.dice)return '<div class="review-item"><strong>'+heading+'</strong><p>'+reviewDetail(e.detail,attacking,e.heldBy)+'</p></div>';
@@ -790,13 +791,24 @@ function mobilizePanel(){
   }else if(pending)html+='<p class="hint">'+(plan.required-plan.assigned)+(plan.required-plan.assigned===1?' unit still needs':' units still need')+' placement. You can remove queued placements to free a site.</p>';
   return html;
 }
-function orderRow({unit,name,caption,quantity,plus,facility='',operation='buy'}){
+function orderRow({unit,name,caption,quantity,plus,facility='',operation='buy',nation=attacker}){
   const change=(delta,disabled)=>btn(delta>0?'+':'−',operation,'order-step',
     'data-k="'+unit+'" data-id="'+esc(facility)+'" data-n="'+delta+'" aria-label="'+
     (delta>0?'Add ':'Remove ')+esc(name)+'" '+(disabled?'disabled':''));
-  return '<div class="order-line">'+unitCounter(boardUnitType(unit==='upgrade'?'factory_major':unit),undefined,attacker)+
+  return '<div class="order-line">'+unitCounter(boardUnitType(unit==='upgrade'?'factory_major':unit),undefined,nation)+
     '<span><strong>'+esc(name)+'</strong><small>'+esc(caption)+'</small></span>'+
     change(-1,!quantity)+'<output>'+quantity+'</output>'+change(1,!plus)+'</div>';
+}
+function frenchAwardPanel(){
+  const draft=s.frenchAward.draft,spent=frenchReinforcementCost(draft),left=12-spent;
+  const count=Object.values(draft).reduce((n,v)=>n+v,0);
+  $('action').innerHTML='<button id="placeFrenchAward" class="primary hold-to-confirm">'+
+    (count?'Hold to place '+count+' French unit'+(count===1?'':'s')+' in Paris':'Hold to decline reinforcements')+'</button>';
+  return title('Paris liberated','Player '+globalBoard.match.controllers.French+' controls France. Choose up to 12 IPCs of French units to place in France now.')+
+    '<div class="income-balance" aria-live="polite"><span>Reinforcements</span><b>'+spent+' of 12 IPCs selected</b></div>'+
+    frenchReinforcements.map(type=>orderRow({unit:type,name:stats[type].name,caption:stats[type].cost+' IPCs',quantity:draft[type]||0,
+      plus:stats[type].cost<=left,operation:'french-unit',nation:'France'})).join('')+
+    '<p class="hint">France receives this placement once per game. Any unused allowance expires.</p>';
 }
 function purchasePanel(){
   const match=globalBoard.match,wallet=ui.wallet||match.power,plan=purchasePlan(match,wallet);
@@ -850,13 +862,23 @@ function orderSummary(){
   }).join('');
 }
 
-let panelView;
+let panelView,panelNation,showingAward=false;
 function render(){
   stopHold();$('action').innerHTML='';
-  const briefing=inBriefing();
+  const briefing=inBriefing(),award=s.frenchAward?.status==='pending';
+  const nation=award?'France':attacker;
+  if(panelNation!==nation){
+    panelNation=nation;
+    const palette=styleFor(nation);
+    $('ordersPanel').style.setProperty('--nation-ink',palette.ink);
+    $('ordersPanel').style.setProperty('--nation-paper',palette.paper);
+  }
+  if(award&&!showingAward&&!$('openPanel').hidden)$('openPanel').click();
+  showingAward=award;
   $('exerciseBoard').classList.toggle('opening-briefing',briefing);
-  document.querySelector('.power-tab').textContent=briefing?'Turn briefing':attacker;
-  if(briefing){
+  document.querySelector('.power-tab').textContent=award?'France · Player '+globalBoard.match.controllers.French:briefing?'Turn briefing':attacker;
+  if(award)$('panel').innerHTML=frenchAwardPanel();
+  else if(briefing){
     const match=globalBoard.match;
     $('panel').innerHTML=ui.inspect?inspectionPanel('Back to briefing'):
       '<h2>'+seasonForRound(match.round)+'</h2><p class="briefing-round">Round '+match.round+' · '+attacker+(match.power==='Germans'?' moves first':' to move')+'</p>'+
@@ -864,7 +886,10 @@ function render(){
     $('action').innerHTML=btn('Begin '+attacker+'’s turn','begin-turn','primary');
   }else if(inPurchase())$('panel').innerHTML=purchasePanel();
   else if(s.phase==='plan')$('panel').innerHTML=planPanel();
-  else if(s.phase==='combat')$('panel').innerHTML=battlePanel();
+  else if(s.phase==='combat'){
+    const last=s.record.filter(e=>e.capital).at(-1);
+    $('panel').innerHTML=(!s.active&&last?'<div class="review-item"><strong>'+esc(last.title)+'</strong><p>'+esc(last.detail)+'</p></div>':'')+battlePanel();
+  }
   else if(s.phase==='noncombat')$('panel').innerHTML=noncombatPanel();
   else if(s.phase==='mobilize')$('panel').innerHTML=mobilizePanel();
   else if(s.phase==='income')$('panel').innerHTML=incomePanel();
@@ -873,12 +898,12 @@ function render(){
     $('action').innerHTML=isGlobal?btn('Begin noncombat move','begin-noncombat','primary'):btn('Start another exercise','reset');
   }
   updateBattleForces();
-  const nextView=[briefing,inPurchase(),ui.buyGroup,ui.wallet,ui.reserve,ui.site,ui.destination,ui.inspect,s.phase,s.active,currentBattle(s)?.step,ui.from,ui.to,ui.stack,ui.flight,ui.cross,ui.routeTo,ui.twoSpace,...(ui.passageSteps||[])].join('|');
+  const nextView=[award,briefing,inPurchase(),ui.buyGroup,ui.wallet,ui.reserve,ui.site,ui.destination,ui.inspect,s.phase,s.active,currentBattle(s)?.step,ui.from,ui.to,ui.stack,ui.flight,ui.cross,ui.routeTo,ui.twoSpace,...(ui.passageSteps||[])].join('|');
   if(panelView!==nextView)document.querySelector('.panel-scroll').scrollTop=0;
   panelView=nextView;
   $('notice').textContent=message;
   $('mapNotice').textContent=message;
-  $('openPanel').textContent=briefing?'Open briefing':'Open orders';
+  $('openPanel').textContent=award?'French reinforcements':briefing?'Open briefing':'Open orders';
   const nc=s.phase==='noncombat';
   if(nc)$('map').setAttribute('aria-label','Noncombat move. Select an unused unit and a highlighted destination.');
   if(s.phase==='mobilize'){
@@ -890,7 +915,8 @@ function render(){
     }
     draw(reserves().game,ui.destination||ui.inspect,null,null,layoutSeed,null,false,choices);
   }else draw(nc?redeployment():s,ui.inspect||ui.from,ui.routeTo||ui.to,ui.stack||ui.inspectedType,layoutSeed,ui.stack?null:ui.inspectedNation,briefing||inPurchase(),ui.stack?(nc?[...noncombatRoutes(redeployment(),selectedNoncombatOrder()).keys()]:moveChoices()):null);
-  if($('collectIncome'))bindHold($('collectIncome'),()=>advanceEconomy('collect'));
+  if(award)bindHold($('placeFrenchAward'),()=>run(()=>{placeFrenchAward(s);ui=freshUI();}));
+  else if($('collectIncome'))bindHold($('collectIncome'),()=>advanceEconomy('collect'));
   else if($('finishMobilization'))bindHold($('finishMobilization'),()=>advanceEconomy('mobilize'));
   else if($('finishNoncombat'))bindHold($('finishNoncombat'),()=>run(()=>{s=beginMobilization(s);ui=freshUI();}));
   else if(inPurchase())bindHold($('confirmOrder'),()=>run(()=>{
@@ -954,6 +980,7 @@ document.addEventListener('click',e=>{
   if(act==='roll-convoys'){advanceEconomy('roll');return;}
   run(()=>{
     switch(act){
+      case 'french-unit':changeFrenchDraft(s,k,Number(n));break;
       case 'begin-turn':
         if(inBriefing()){
           globalBoard.match.phase='purchase';ui=freshUI();
@@ -1044,13 +1071,14 @@ document.addEventListener('click',e=>{
         endPlayback();
         if(isGlobal){
           const procurement=s.record.filter(entry=>entry.title==='Purchase & Repair'||entry.declaration);
+          reverseCapitalPayments(globalBoard.match);
           globalBoard.match.board=structuredClone(globalBoard.match.combatStart);s=structuredClone(globalBoard.game);s.record=procurement;
         }
         else s=newGame(exerciseId);
         nameFormations();layoutSeed=newLayoutSeed();ui=freshUI();$('dialog').close();$('map').setAttribute('aria-label',combatMapLabel);$('recenter').click();break;
     }
   });
-  if(e.detail===0&&['buy','facility-order','wallet'].includes(act)){
+  if(e.detail===0&&['buy','facility-order','wallet','french-unit'].includes(act)){
     const rowButtons=[...$('panel').querySelectorAll('button[data-act]')].filter(button=>
       button.dataset.act===act&&button.dataset.id===id&&button.dataset.k===k&&!button.disabled);
     (rowButtons.find(button=>button.dataset.n===n)||rowButtons[0])?.focus({preventScroll:true});
@@ -1063,7 +1091,7 @@ $('map').setAttribute('aria-label',inBriefing()?'Opening board. Pan or pinch the
 $('controlKey').innerHTML=(isGlobal?[attacker]:[attacker,defender]).map(n=>'<i data-nation="'+n+'"></i>'+n).join(' ');
 $('closeDialog').onclick=()=>$('dialog').close();
 $('journal').onclick=()=>{
-  const current=['review','noncombat','mobilize','income'].includes(s.phase)?timeline()||'<p>No combat was recorded.</p>':timeline(s.record.filter(e=>e.declaration))+'<p>The current combat review opens after all battles are resolved.</p>';
+  const current=['review','noncombat','mobilize','income'].includes(s.phase)?timeline()||'<p>No combat was recorded.</p>':timeline(s.record.filter(e=>e.declaration||e.capital||e.frenchUnits))+'<p>The current combat review opens after all battles are resolved.</p>';
   const previous=(globalBoard?.match.turnReviews||[]).slice().reverse().map(turn=>{
     const nation=globalPowers[turn.power];
     return '<details class="review-item review-round"><summary>'+seasonForRound(turn.round)+' · '+nation+'</summary>'+

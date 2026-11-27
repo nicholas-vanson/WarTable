@@ -527,7 +527,7 @@ function homeStacks(game,id,exercise,offsets){
     const primary=exercise.world?own&&(mobileTypes.includes(type)||game.phase==='noncombat'&&type==='aaGun'):types.includes(type);
     const free=primary&&own&&game.phase==='plan'?units[type]:n;
     if(!free)continue;
-    const spot=game.redeploySeats?.[id]?.get(power+'/'+type);
+    const spot=game.redeploySeats?.[id]?.get?.(power+'/'+type);
     const at=spot?formationPoint(id,spot):primary&&formations[id].home[type]?seat(id,'home',type,offsets):
       formationPoint(id,formations[id].slots.get(power+'/'+type)||formations[id].home[type]||position(id));
     stacks.push({type,country,primary,free,at});
@@ -1206,12 +1206,12 @@ export async function atlas(onPick,onView,initial,exercise) {
     }
     const tacticalZoom=view.z;
     const compact=tacticalZoom<.66;
-    const nextRouteKey=[layoutSeed,game.phase,JSON.stringify(placing?game.placements:redeploy?game.moves:game.orders),JSON.stringify(game.battles)].join('|');
+    const nextRouteKey=[layoutSeed,game.phase,game.frenchAward?.status,JSON.stringify(placing?game.placements:redeploy?game.moves:game.orders),JSON.stringify(game.battles)].join('|');
     if(routeKey!==nextRouteKey){
       const nextStarts=new Map(),now=performance.now(),period=exercise.projection?.width;
       const byTarget=new Map();
       let orders=placing?[]:game.orders;
-      if(redeploy||placing){
+      if(redeploy||placing||game.frenchAward?.status==='placed'){
         // Give newly arrived types a garrison seat, including in previously empty spaces.
         game.redeploySeats={};
         for(const [id,rows] of Object.entries(game.pieces)){
