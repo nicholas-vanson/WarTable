@@ -259,6 +259,8 @@ export function prepareGlobalBoard(setup,atlas,match){
   const enemies=new Set(relations.filter(([a,b,rel])=>rel==='War'&&(a===match.power||b===match.power)).map(([a,b])=>a===match.power?b:a));
   if(enemies.has('British'))enemies.add('UK_Pacific');
   const friendlyPowers={},friends={};
+  const holdScrambles=match.holdScrambles??={};
+  const hostileTo=(power,other)=>atWarWith(match,power==='UK_Pacific'?'British':power,other==='UK_Pacific'?'British':other);
   for(const p of [...Object.keys(globalPowers),'UK_Pacific']){
     const canonical=p==='UK_Pacific'?'British':p;
     const side=new Set([canonical,...relations.filter(([a,b,r])=>r==='Allied'&&(a===canonical||b===canonical)).map(([a,b])=>a===canonical?b:a)]);
@@ -273,7 +275,7 @@ export function prepareGlobalBoard(setup,atlas,match){
     const region=setup.regions[name],owner=match.board[name].owner;
     return enemies.has(owner)||neutralOwners[owner]&&canEnterNeutral(match.power,enemies,region)&&hostileNeutral(match.power,owner);
   }
-  const spaces={},openingDamage={},embarked={};
+  const spaces={},openingDamage={},embarked={},defensiveBases=[];
   function canalOpen(from,to,type){
     const gate=[parseInt(places[from].name),parseInt(places[to].name)].sort((a,b)=>a-b).join('-');
     return type==='submarine'&&gate==='91-92'||!gates[gate]?.some(coast=>!allies.has(match.board[coast].owner));
@@ -310,11 +312,14 @@ export function prepareGlobalBoard(setup,atlas,match){
       parseInt(name)===102&&type!=='transport';
   }
   function refreshBases(board){
+    defensiveBases.length=0;
     const base=(name,type)=>allies.has(board[name].owner)&&hasFacility(board[name],type)&&(board[name].facilityDamage?.[type]||0)<3;
     for(const [name,r] of Object.entries(setup.regions)){
       const space=spaces[ids[name]];
       if(r.water)openingDamage[ids[name]]=structuredClone(board[name].shipDamage||{});
       space.airBase=!r.water&&base(name,'airfield');
+      if(!r.water&&hasFacility(board[name],'airfield')&&
+        (board[name].facilityDamage?.airfield||0)<3&&r.links.some(link=>setup.regions[link].water))defensiveBases.push(ids[name]);
       space.navalBase=r.water&&r.links.some(link=>base(link,'harbour'));
     }
   }
@@ -352,7 +357,7 @@ export function prepareGlobalBoard(setup,atlas,match){
     place.targets=[...new Set(Object.values(place.unitTargets).flat())];
     // Arrival formations are keyed by the final edge, even if no stack started there.
     place.movementEdges=neighbors[id].filter(to=>spaces[to].allowed&&
-      (spaces[to].attackLand||spaces[to].enemyFleet||spaces[id].water&&spaces[to].water||spaces[id].blitz&&spaces[to].friendly));
+      (spaces[to].attackLand||spaces[to].water||spaces[id].blitz&&spaces[to].friendly));
   }
   const cities=[
     ['London','United Kingdom',-.12,51.51,'United Kingdom'],['Paris','France',2.35,48.86,'France'],
@@ -372,7 +377,7 @@ export function prepareGlobalBoard(setup,atlas,match){
     return match.power==='British'&&pacific?'UK_Pacific':match.power;
   }
   const occupy=(game,id)=>occupyTerritory(game,id,places,ids,captureWallet,match.frenchLiberationAwarded);
-  const exercise={occupy,name:'Global 1940',attacker,power:match.power,camera,forces,shapes,cities,world:true,friendlyPowers,friends,enemies:[...enemies],projection,neighbors,neutralEntry,unmovedLand,movement,refreshBases,canalOpen,seaStop,openingDamage};
+  const exercise={occupy,name:'Global 1940',attacker,power:match.power,camera,forces,shapes,cities,world:true,friendlyPowers,friends,enemies:[...enemies],projection,neighbors,neutralEntry,unmovedLand,movement,defensiveBases,holdScrambles,hostileTo,refreshBases,canalOpen,seaStop,openingDamage};
   exercises.global=exercise;
   let openingView;
   if(match.phase==='briefing'&&match.power!=='Germans'){
@@ -434,6 +439,7 @@ export async function loadGlobalBoard(){
     match.combatStart[name]??={owner:region.owner,units:[]};
   }
   preparePurchaseSites(match,setup);
+  match.holdScrambles??={};
   const board=prepareGlobalBoard(setup,sectors,{...match,board:match.combatStart,mongolianPactBroken:match.combatStartPactBroken});
   const savedGame=match.combat?.game;
   if(savedGame?.refreshPoliticalForces){
