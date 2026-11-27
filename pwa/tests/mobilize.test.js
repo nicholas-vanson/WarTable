@@ -29,9 +29,9 @@ test('paid orders preview and reload independently of the board, share productio
   plan=mobilizationPlan(match,s);assert.equal(plan.slots[berlin],0);assert.equal(plan.game.placementMarks[berlin].inf,2);
   assert.deepEqual(match.board,starting.board);
   const next=finishMobilization(JSON.parse(JSON.stringify(match)),JSON.parse(JSON.stringify(s)));
-  assert.equal(next.power,'Russians');assert.equal(next.board.Germany.units.find(r=>r[1]==='infantry')[2],13);
+  assert.equal(next.power,'Germans');assert.equal(next.phase,'income');assert.equal(next.board.Germany.units.find(r=>r[1]==='infantry')[2],13);
   assert.equal(next.mobilization.Germans,undefined);assert.equal(next.treasury.Germans,starting.treasury.Germans);
-  assert.throws(()=>finishMobilization(next,s));assert(next.turnReviews.at(-1).record.some(r=>r.title==='113 Sea Zone'&&r.detail.includes('Germany')));
+  assert.throws(()=>finishMobilization(next,s));assert(next.combat.game.record.some(r=>r.title==='113 Sea Zone'&&r.detail.includes('Germany')));
 });
 test('new facilities do not consume slots or produce, upgrades take effect next turn, new captures cannot build',()=>{
   const {s,match}=turn('Germans',m=>{m.board.Germany.units.find(r=>r[1]==='factory_major')[1]='factory_minor';},m=>changeFacilityOrder(m,'Germans','Germany','upgrade',1));

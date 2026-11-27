@@ -51,7 +51,7 @@ export function nextPower(power){
   return turnOrder[(turnOrder.indexOf(power)+1)%turnOrder.length];
 }
 export function nextPlaytestTurn(match){
-  if(match.phase!=='mobilize'||match.combat?.game.phase!=='mobilized')throw Error('Complete mobilization before handing over the turn.');
+  if(match.phase!=='income'||match.combat?.game.phase!=='incomeCollected')throw Error('Collect income before handing over the turn.');
   const power=nextPower(match.power);
   const review={power:match.power,round:match.round,record:match.combat.game.record};
   return {...match,power,round:match.round+Number(power===turnOrder[0]),phase:'briefing',
@@ -74,7 +74,7 @@ const pacificOriginals=new Set(['UK_Pacific','Japanese','Chinese','ANZAC','Mongo
 const otherPacificLand=new Set(['French Indo China','New Hebrides','Celebes','Java','Dutch New Guinea','Sumatra',
   'Sakha','Evenkiyskiy','Yenisey','Soviet Far East','Amur','Yakut S.S.R.','Timguska','Siberia','Kazakhstan','Buryatia',
   'Philippines','Line Islands','Guam','Wake Island','Johnston Island','Hawaiian Islands','Midway']);
-const capitals={Germans:'Germany',Russians:'Russia',Japanese:'Japan',Americans:'Eastern United States',
+export const capitals={Germans:'Germany',Russians:'Russia',Japanese:'Japan',Americans:'Eastern United States',
   British:'United Kingdom',UK_Pacific:'India',Italians:'Southern Italy',ANZAC:'New South Wales',French:'France'};
 
 function preparePurchaseSites(match,setup){
@@ -107,11 +107,12 @@ export function facilitySite(area,unit,wallet){
 export function purchaseTotal(draft){
   return Object.entries(draft).reduce((sum,[unit,n])=>sum+n*globalUnits[unit][1],0);
 }
+export const burmaRoadOpen=board=>['India','Burma','Yunnan','Szechwan'].every(name=>['British','UK_Pacific','Chinese','Americans','ANZAC','French','Russians'].includes(board[name]?.owner));
 export function purchasePlan(match,wallet=match.power){
   if(!spendingEconomies(match).includes(wallet))throw Error('Choose an economy of the active power.');
   const orders=(wallet===match.power?match.draft:match.pacificDraft)||{};
   const allowed=purchaseCapitalAvailable(match,wallet);
-  const roadOpen=['India','Burma','Yunnan','Szechwan'].every(name=>['British','UK_Pacific','Chinese','Americans','ANZAC','French','Russians'].includes(match.board[name]?.owner));
+  const roadOpen=burmaRoadOpen(match.board);
   const repairs=[],upgrades=[],sites={factory_minor:0,factory_major:0,airfield:0,harbour:0};
   let capacity=0,coastalCapacity=0,cost=purchaseTotal(orders),combatCount=0,seaCount=0;
   for(const [name,area] of Object.entries(match.board)){
@@ -207,7 +208,7 @@ export function eligibleShipRepairs(match){
   }
   return eligible;
 }
-function purchaseCapitalAvailable(match,wallet){
+export function purchaseCapitalAvailable(match,wallet){
   return wallet==='Chinese'||match.board[capitals[wallet]]?.owner===wallet;
 }
 export function confirmPurchase(match){

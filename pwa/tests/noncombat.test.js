@@ -1,3 +1,4 @@
+import {collectIncome} from '../income.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -30,10 +31,10 @@ test('unused ground forces reinforce a new capture, aircraft need an original fr
   const finished=completeNoncombat(game);
   match.phase='noncombatMove';match.combat={game};assert.throws(()=>nextPlaytestTurn(match));
   saveGlobalPosition(match,finished);match.combat.game=finished;
-  assert.throws(()=>nextPlaytestTurn(match),/mobilization/);
+  assert.throws(()=>nextPlaytestTurn(match),/income/);
   match.combatStart=structuredClone(match.board);match.phase='mobilize';
   match.combat.game=beginMobilization(game);
-  const next=finishMobilization(match,match.combat.game);assert.equal(next.power,'Russians');assert.equal(next.phase,'briefing');
+  const next=collectIncome(finishMobilization(match,match.combat.game));assert.equal(next.power,'Russians');assert.equal(next.phase,'briefing');
   assert.equal(next.board.France.units.find(([p,t])=>p==='Germans'&&t==='infantry')[2],4);
   assert(next.turnReviews[0].record.some(r=>r.title==='Holland Belgium → France'));
 });

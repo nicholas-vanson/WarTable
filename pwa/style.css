@@ -375,3 +375,23 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
 
 .roll-unit .die.miss{background:var(--combat-paper);border-color:var(--combat-ink);color:var(--combat-ink)}
 #ordersPanel #action [data-act="defend"]{background:var(--combat-ink);color:#fff;border-color:var(--combat-ink)}
+
+.income-ledger{font-variant-numeric:tabular-nums}
+.income-total,.income-balance,.ledger-line,.convoy-group{display:flex;align-items:baseline;justify-content:space-between;gap:.8rem}
+.income-total{margin:.25rem 0 .45rem;padding:.35rem 0 .5rem;border-bottom:2px solid var(--nation-ink)}
+.income-total>span,.income-balance>span{font-weight:bold}
+.income-total strong{font-family:Georgia,serif;font-size:1.8rem;line-height:1}
+.income-total small{font:600 .78rem system-ui,sans-serif}
+.ledger-section{border-bottom:1px solid #a7a590}
+.ledger-section>summary,.income-unearned>summary{cursor:pointer;padding:.52rem 0;font-weight:600}
+.ledger-section>summary b{float:right;font-variant-numeric:tabular-nums}
+.ledger-section[open]>summary{color:#354934}
+.ledger-line,.convoy-group{padding:.28rem 0;border-top:1px dotted #b6b19d;font-size:.88rem}
+.ledger-line small,.convoy-group small{display:block;font-size:.78rem;line-height:1.4;color:#545749}
+.ledger-line b{white-space:nowrap}
+.income-unearned>summary{font-size:.84rem;font-weight:normal}
+.income-balance{padding:.6rem 0;font-size:.9rem}
+.income-closed{padding:.45rem .6rem;border-left:3px solid #875735}
+.convoy-dice{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.18rem}
+.convoy-dice b{border:1px solid #807660;border-radius:3px;min-width:1.3em;text-align:center}
+.convoy-dice .hit{background:#e6c7ad;color:#633423}.convoy-dice .miss{color:#615f55}
