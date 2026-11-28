@@ -47,6 +47,7 @@ const inResearch=()=>globalBoard?.match.phase==='research';
 const finished=()=>globalBoard?.match.phase==='victory';
 const inPurchase=()=>globalBoard?.match.phase==='purchase';
 const inBriefing=()=>globalBoard?.match.phase==='briefing';
+const roomSettingsKey=roomCode?'wartable.lan.settings.'+roomCode:'';
 const roomReportKey=roomCode?'wartable.lan.war-status.'+roomCode:'';
 const roomViewKey=roomCode?'wartable.lan.view.'+roomCode+'.'+globalBoard.match.round+'.'+s.power:'';
 if(roomCode)try{view=JSON.parse(sessionStorage.getItem(roomViewKey))||null;}catch{}
@@ -1224,7 +1225,10 @@ function applyRoom(packet,own=false,after){
     JSON.stringify(previous.technology)!==JSON.stringify(m.technology);
   roomState=packet;
   if(newBoard){
-    if($('dialog').open&&$('warReport'))try{sessionStorage.setItem(roomReportKey,JSON.stringify(warReportView()));}catch{}
+    try{
+      if($('menuDialog').open&&!$('settingsWindow').hidden)sessionStorage.setItem(roomSettingsKey,'open');
+      else if($('dialog').open&&$('warReport'))sessionStorage.setItem(roomReportKey,JSON.stringify(warReportView()));
+    }catch{}
     location.reload();return;
   }
   endPlayback();
@@ -1755,7 +1759,7 @@ function refreshWarReport(){
   $('warReport').innerHTML=currentWarChart();
   restoreReportView(lastView);
 }
-$('warStatus').onclick=()=>showDialog('War status','<section id="warReport" aria-label="Allies and Axis comparison">'+currentWarChart()+'</section>');
+$('warStatus').onclick=()=>showDialog('War Status','<section id="warReport" aria-label="Allies and Axis comparison">'+currentWarChart()+'</section>');
 $('journal').onclick=()=>{
   const current=finished()?'<h3>'+esc(globalBoard.match.victory.side==='Axis'?'Axis victory':'Allied victory')+' · Round '+globalBoard.match.victory.round+'</h3>':['review','noncombat','mobilize','income'].includes(s.phase)?timeline()||'<p>No combat was recorded.</p>':timeline(s.record.filter(e=>e.research||e.declaration||e.capital||e.frenchUnits||e.scramblePower||e.raid))+'<p>The current combat review opens after all battles are resolved.</p>';
   const previous=(globalBoard?.match.turnReviews||[]).slice().reverse().map(turn=>{
@@ -1767,7 +1771,7 @@ $('journal').onclick=()=>{
 };
 function fieldGuideCopy(){
   const navigation='<p>Pan with one finger. '+(isGlobal?'The global map wraps east and west. ':'')+
-    'Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Tap Orders in the center of the bottom bar to show or hide the sheet. Drag its grip to resize it.</p>';
+    'Pinch or use the magnifying glasses to zoom. The crosshair centers the active front. The framed map shows the whole theater. Tap Orders in the center of the bottom bar to show or hide the sheet. Drag its grip to resize it.</p>';
   const terrain='<p>★ marks a capital victory city. ◆ marks another victory city. Both count as one.</p>'+
     '<p>National colors fade inward from the border. Across neutral territories, single grey lines mark strict neutrals, paired lines mark pro-Allied neutrals and dashed lines mark pro-Axis neutrals. Grey stippling marks impassable terrain.</p>'+
     '<p>Tap a territory to inspect it in violet, then tap again to clear it. Dashed borders separate sea zones. Tap water to see adjacent zone numbers.</p>';
@@ -1887,6 +1891,9 @@ if(roomCode){
   try{
     const report=sessionStorage.getItem(roomReportKey);
     if(report){sessionStorage.removeItem(roomReportKey);$('warStatus').click();restoreReportView(JSON.parse(report));}
+    else if(sessionStorage.getItem(roomSettingsKey)){
+      sessionStorage.removeItem(roomSettingsKey);$('boardSettings').focus();$('boardSettings').click();
+    }
   }catch{}
   setInterval(refreshRoom,1200);document.addEventListener('visibilitychange',refreshRoom);window.addEventListener('online',refreshRoom);}
 try{draw=await atlas(pick,v=>{view=v;save();},view,exercise);render();save();}catch{message='The map could not load. Reopen the playtest while online to finish the download.';render();}
