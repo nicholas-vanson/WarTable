@@ -10,6 +10,51 @@ let registrationPromise;
 if('serviceWorker' in navigator){
   registrationPromise=navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).catch(()=>{document.getElementById('storage').textContent='Offline install unavailable';});
 }
+const el=id=>document.getElementById(id);
+const dialog=el('menuDialog');
+const windows={setupWindow:'New local game',settingsWindow:'Settings',guideWindow:'Field guide',aboutWindow:'About WarTable',licenseWindow:'License & credits'};
+function openWindow(id){
+  for(const name of Object.keys(windows))el(name).hidden=name!==id;
+  el('menuDialogTitle').textContent=windows[id];
+  el('menuError').hidden=true;
+  dialog.showModal();
+}
+function showError(message){
+  el('menuError').textContent=message;el('menuError').hidden=false;
+}
+el('menuClose').onclick=()=>dialog.close();
+function openSettings(){
+  openWindow('settingsWindow');
+  try{
+    const settings=readMapPreferences();
+    for(const select of el('settingsWindow').querySelectorAll('[data-map-setting]')){
+      select.value=settings[select.dataset.mapSetting];
+    }
+    el('menuMotion').value=localStorage.getItem(motionKey)==='reduce'?'reduce':'system';
+    el('menuOrders').value=JSON.parse(localStorage.getItem(ordersPanelKey))?.hidden?'hidden':'shown';
+  }catch{showError('Device settings could not be read.');}
+}
+el('boardSettings').onclick=openSettings;
+el('menuSettings').onclick=openSettings;
+el('exerciseSettings').onclick=openSettings;
+el('menuMotion').onchange=event=>{
+  try{localStorage.setItem(motionKey,event.target.value);}
+  catch{showError('The motion setting could not be saved on this device.');}
+};
+for(const select of el('settingsWindow').querySelectorAll('[data-map-setting]')){
+  select.onchange=()=>{
+    try{saveMapPreference(select.dataset.mapSetting,select.value);}
+    catch{select.value=readMapPreferences()[select.dataset.mapSetting];showError('The map setting could not be saved.');}
+  };
+}
+el('menuOrders').onchange=event=>{
+  try{
+    const prefs=JSON.parse(localStorage.getItem(ordersPanelKey))||{};
+    prefs.hidden=event.target.value==='hidden';
+    localStorage.setItem(ordersPanelKey,JSON.stringify(prefs));
+  }catch{showError('The panel setting could not be saved on this device.');}
+};
+
 if(/^room\/[A-F0-9]{10}$/.test(route)||route==='global'||route.startsWith('exercise/')&&Object.hasOwn(exercises,route.slice('exercise/'.length))){
   launcher.hidden=true;
   document.getElementById('exerciseHeader').hidden=false;
@@ -18,21 +63,8 @@ if(/^room\/[A-F0-9]{10}$/.test(route)||route==='global'||route.startsWith('exerc
   try{await import('./app.js');}
   catch(error){document.getElementById('notice').textContent='Could not open this board. '+error.message;document.getElementById('exerciseMenu').onclick=()=>{location.hash=route.startsWith('room/')?'multiplayer':'';};}
 }else{
-  const el=id=>document.getElementById(id);
-  const dialog=el('menuDialog');
   const version=document.querySelector('meta[name="application-version"]').content;
   for(const label of document.querySelectorAll('[data-version]'))label.textContent=version;
-  const windows={setupWindow:'New local game',settingsWindow:'Settings',guideWindow:'Field guide',aboutWindow:'About WarTable',licenseWindow:'License & credits'};
-  function openWindow(id){
-    for(const name of Object.keys(windows))el(name).hidden=name!==id;
-    el('menuDialogTitle').textContent=windows[id];
-    el('menuError').hidden=true;
-    dialog.showModal();
-  }
-  function showError(message){
-    el('menuError').textContent=message;el('menuError').hidden=false;
-  }
-  el('menuClose').onclick=()=>dialog.close();
   el('cancelGame').onclick=()=>dialog.close();
   el('menuGuide').onclick=()=>openWindow('guideWindow');
   el('menuLicense').onclick=()=>openWindow('licenseWindow');
@@ -98,36 +130,6 @@ if(/^room\/[A-F0-9]{10}$/.test(route)||route==='global'||route.startsWith('exerc
   }else{
     updateStatus.textContent='For this downloaded edition, open a newly downloaded copy to update.';
   }
-  function openSettings(){
-    openWindow('settingsWindow');
-    try{
-      const settings=readMapPreferences();
-      for(const select of el('settingsWindow').querySelectorAll('[data-map-setting]')){
-        select.value=settings[select.dataset.mapSetting];
-      }
-      el('menuMotion').value=localStorage.getItem(motionKey)==='reduce'?'reduce':'system';
-      el('menuOrders').value=JSON.parse(localStorage.getItem(ordersPanelKey))?.hidden?'hidden':'shown';
-    }catch{showError('Device settings could not be read.');}
-  }
-  el('menuSettings').onclick=openSettings;
-  el('exerciseSettings').onclick=openSettings;
-  el('menuMotion').onchange=event=>{
-    try{localStorage.setItem(motionKey,event.target.value);}
-    catch{showError('The motion setting could not be saved on this device.');}
-  };
-  for(const select of el('settingsWindow').querySelectorAll('[data-map-setting]')){
-    select.onchange=()=>{
-      try{saveMapPreference(select.dataset.mapSetting,select.value);}
-      catch{select.value=readMapPreferences()[select.dataset.mapSetting];showError('The map setting could not be saved.');}
-    };
-  }
-  el('menuOrders').onchange=event=>{
-    try{
-      const prefs=JSON.parse(localStorage.getItem(ordersPanelKey))||{};
-      prefs.hidden=event.target.value==='hidden';
-      localStorage.setItem(ordersPanelKey,JSON.stringify(prefs));
-    }catch{showError('The panel setting could not be saved on this device.');}
-  };
   if(route==='exercises'){
     el('modeChoices').hidden=true;el('exerciseChoices').hidden=false;
     for(const [id,front] of Object.entries(exercises)){

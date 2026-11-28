@@ -6,6 +6,7 @@ export function reducedMotion(){
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
+export const mapPreferencesChanged='wartable-map-preferences';
 const mapPrefsKey='wartable.map-preferences.v1';
 const mapOptions={
   terrain:['auto','overview'],labels:['auto','hidden'],side:['right','left'],
@@ -21,4 +22,5 @@ export function readMapPreferences(){
 export function saveMapPreference(key,value){
   if(!Object.hasOwn(mapOptions,key)||!mapOptions[key].includes(value))throw Error('Unknown map preference');
   localStorage.setItem(mapPrefsKey,JSON.stringify({...readMapPreferences(),[key]:value}));
+  window.dispatchEvent(new Event(mapPreferencesChanged));
 }

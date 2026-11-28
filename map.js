@@ -2,7 +2,7 @@ import {scrambleRows} from './scramble.js';
 import {departures} from './assault.js';
 import {nearbyGroups,frontGrid,approachGap,meanPoint,pointGap} from './front-layout.js';
 import {orderPassages,entrySpace} from './movement.js';
-import {reducedMotion,readMapPreferences} from './preferences.js';
+import {reducedMotion,readMapPreferences,mapPreferencesChanged} from './preferences.js';
 import {neutralKey} from './neutral-rules.js';
 import {ownerNames,globalUnits,isFacility} from './global-game.js';
 import {exercises,places,types,stats,available,mobileTypes,aircraft,ships,samePower,theaterVictoryCities} from './rules.js';
@@ -992,8 +992,8 @@ function terrainSheets(layout,extent){
   const bleedX=width*layout.bleed/layout.tileWidth,bleedY=height*layout.bleed/layout.tileHeight;
   const mounted=new Map();
   let previous='';
-  return (view,vw,vh,scale)=>{
-    const close=scale*window.devicePixelRatio>.54;
+  return (view,vw,vh,scale,enabled)=>{
+    const close=enabled&&scale*window.devicePixelRatio>.54;
     const x0=Math.floor((view.x-vw/2)/width),y0=Math.max(0,Math.floor((view.y-vh/2)/height));
     const x1=Math.min(x0+layout.columns-1,Math.floor((view.x+vw/2)/width)),y1=Math.min(layout.rows-1,Math.floor((view.y+vh/2)/height));
     const key=close?[x0,y0,x1,y1].join(','):'overview';
@@ -1021,8 +1021,6 @@ function terrainSheets(layout,extent){
   };
 }
 export async function atlas(onPick,onView,initial,exercise) {
-  const prefs=readMapPreferences();
-  document.querySelector('.navbox').dataset.side=prefs.side;
   const map=document.querySelector('#map'), forces=document.querySelector('#forces'), regions=document.querySelector('#regions'),routes=document.querySelector('#routes');
   const western=await (await fetch('./assets/territories.json')).json();
   const other=await (await fetch('./assets/fronts.json')).json();
@@ -1042,11 +1040,14 @@ export async function atlas(onPick,onView,initial,exercise) {
   }
   const extent=exercise.world?{left:0,top:0,width:exercise.projection.width,height:exercise.projection.height}:{left:0,top:0,width:2006,height:1716};
   const showWorldCopies=exercise.world?wrapWorld(map,extent):null;
-  const drawSheets=exercise.world&&prefs.terrain==='auto'?terrainSheets(await (await fetch('./assets/world-terrain.json')).json(),extent):null;
+  const drawSheets=exercise.world?terrainSheets(await (await fetch('./assets/world-terrain.json')).json(),extent):null;
   const detailScale=exercise.projection?.detailScale||1;
   // Counters and route ink share the printed map scale. The SVG camera zooms the whole formation.
   const tokenScale=detailScale;
   const washes=await (await fetch('./assets/control-washes.json')).json();
+  let prefs=readMapPreferences();
+  const controls=document.querySelector('.navbox');
+  controls.dataset.side=prefs.side;
   const bands=buildControlBands(map,shapes,regions,exercise.world?exercise.shapes:null,exercise.world?washes.world:washes.exercise);
   const zones=buildSeaZones(map,chart);
   if(exercise.world)worldSeats(exercise,bands,zones);
@@ -1130,7 +1131,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     view.x=exercise.world?modulo(view.x,extent.width):extent.left+(vw>=extent.width?extent.width/2:bound(view.x-extent.left,vw/2,extent.width-vw/2));
     view.y=extent.top+(vh>=extent.height?extent.height/2:bound(view.y-extent.top,vh/2,extent.height-vh/2));
     showWorldCopies?.(view.x-vw/2,view.x+vw/2);
-    drawSheets?.(view,vw,vh,scale);
+    drawSheets?.(view,vw,vh,scale,prefs.terrain==='auto');
     document.getElementById('zoomIn').disabled=view.z>=maxZoom;
     map.setAttribute('viewBox',[view.x-vw/2,view.y-vh/2,vw,vh].join(' '));
     document.querySelector('#scale').textContent=Math.round(view.z*100)+'%';
@@ -1552,7 +1553,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     event.preventDefault();
     onPick(stack.dataset.place,stack.dataset.unit,stack.dataset.origin,stack.dataset.nation);
     const panel=document.getElementById('panel');
-    const next=document.getElementById('ordersPanel').hidden?document.getElementById('openPanel'):
+    const next=document.getElementById('ordersPanel').hidden?document.getElementById('ordersButton'):
       panel.querySelector('button:not(:disabled)')||forces.querySelector('[role="button"]');
     next?.focus();
   }
@@ -1578,10 +1579,15 @@ export async function atlas(onPick,onView,initial,exercise) {
     onView({...view});
   },{passive:false});
   function button(id,fn){document.getElementById(id).onclick=()=>{fn();render();onView({...view});};}
-  const zoomStep={fine:1.15,standard:1.38,large:1.65}[prefs.zoom];
-  button('zoomIn',()=>zoom(zoomStep));button('zoomOut',()=>zoom(1/zoomStep));
+  const zoomSteps={fine:1.15,standard:1.38,large:1.65};
+  button('zoomIn',()=>zoom(zoomSteps[prefs.zoom]));button('zoomOut',()=>zoom(1/zoomSteps[prefs.zoom]));
   button('recenter',()=>{view={...exercise.camera};});
   button('overview',()=>{const m=metrics();view={x:extent.left+extent.width/2,y:extent.top+extent.height/2,z:Math.min(m.w/extent.width,m.h/extent.height)/m.base};});
+  window.addEventListener(mapPreferencesChanged,()=>{
+    prefs=readMapPreferences();
+    controls.dataset.side=prefs.side;
+    render();
+  });
   new ResizeObserver(render).observe(map);
   return (s,id,to,type,seed,nation,briefing=false,choices=null)=>{
     if(surveying!==briefing)lastScale=0;

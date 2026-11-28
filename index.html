@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="application-version" content="0.1.98">
+<meta name="application-version" content="0.1.99">
 <meta name="theme-color" content="#202c27"><meta name="description" content="WarTable · Global 1940 Second Edition and local playtest exercises.">
 <title>WarTable · Global 1940</title>
 <link rel="icon" href="./assets/icon-192.png"><link rel="manifest" href="./manifest.webmanifest">
@@ -107,11 +107,11 @@
         <label class="setting-row"><strong>Zoom button steps</strong><select data-map-setting="zoom"><option value="standard">Standard</option><option value="fine">Fine</option><option value="large">Large</option></select></label>
         <label class="setting-row"><strong>Mouse wheel</strong><select data-map-setting="wheel"><option value="zoom">Zoom</option><option value="pan">Pan</option></select></label>
       </fieldset>
-      <p class="dialog-note">Settings apply to games and exercises on this device. Open or hide orders during play for the current board visit.</p>
+      <p class="dialog-note">Map settings take effect immediately on this device. The Orders panel preference applies the next time you open a board.</p>
     </section>
     <section id="guideWindow" class="guide-copy" hidden>
       <h3>Turn briefings</h3><p>Each power begins with a briefing. With Research &amp; Development enabled, eligible powers can spend 5 IPCs per die before purchasing units. Open Victory and technology in the briefing or Guide to see city counts and advances. The calendar advances one season when France finishes the round. After combat, redeploy unused forces, mobilize purchases, and collect income before handing the board to the next power.</p>
-      <h3>Read the staff map</h3><p>Drag to pan. Pinch or use + and − to zoom. Tap a territory or sea zone to inspect it. Tap it again to deselect. Land arrows are brick red, air arrows are blue, and sea arrows are ochre. Nearby routes in the same category can share an arrowhead.</p>
+      <h3>Read the staff map</h3><p>Drag to pan. Pinch or use the magnifying glasses to zoom. Tap a territory or sea zone to inspect it. Tap it again to deselect. Land arrows are brick red, air arrows are blue, and sea arrows are ochre. Nearby routes in the same category can share an arrowhead.</p>
       <h3>Purchase and repair</h3><p>Order units with IPCs and use Repairs to remove facility damage. Hold to pay or pass. Purchases wait in the mobilization zone. The UK spends from its Europe and Pacific treasuries separately.</p>
       <h3>Plan and resolve combat</h3><p>Before giving combat orders, choose Declare war to review eligible opponents. Hold the named declaration to make it permanent. Select a unit counter and a highlighted destination. On the global map, tanks can move two territories. Choose the territory they pass through when prompted. Revise your orders, then hold to commit. Choose the battle order and resolve the dice in the orders panel.</p>
       <h3>Bombing raids</h3><p>Select a bomber during Combat Move and choose Facility raid. Pick a territory and facility. Fighters can escort a queued raid. Before other battles, assign interceptors, resolve the air battle, then roll facility fire and damage. Each damage point costs 1 IPC to repair.</p>
@@ -133,7 +133,8 @@
     <p id="menuError" role="alert" hidden></p>
   </div>
 </dialog>
-<header id="exerciseHeader" hidden><div class="brand"><img class="mark" src="./assets/wartable-mark.svg" alt=""> WarTable</div><span class="divider"></span><h1 class="theater">Western Front</h1><span class="local" id="storage">Local playtest</span></header>
+<header id="exerciseHeader" hidden><div class="brand"><img class="mark" src="./assets/wartable-mark.svg" alt=""> WarTable</div><span class="divider"></span><h1 class="theater">Western Front</h1><span class="local" id="storage">Local playtest</span>
+<button type="button" id="boardSettings" aria-haspopup="dialog" aria-controls="menuDialog"><svg class="menu-icon" aria-hidden="true"><use href="#m-settings"/></svg>Settings</button></header>
 <main id="exerciseBoard" hidden>
 <section class="board" aria-label="European staff map">
 <svg id="map" role="group" aria-label="Pan or pinch the map. Select a German force and a French destination." tabindex="0">
@@ -223,7 +224,20 @@
 <image id="detailPlate" display="none" href="./assets/staff-map.svg" width="2006" height="1716" pointer-events="none"/>
 </g></g><g id="seaZones"></g><g id="controlBands" pointer-events="none"></g><g id="regions"></g><g id="labels" pointer-events="none"></g><g id="routes" pointer-events="none"></g><g id="fronts" pointer-events="none" aria-hidden="true"></g><g id="forces"></g><g id="selection" pointer-events="none"></g>
 </svg>
-<div class="navbox"><button id="zoomIn" aria-label="Zoom in">+</button><button id="zoomOut" aria-label="Zoom out">−</button><button id="recenter" aria-label="Center on the active front">⌖</button><button id="overview" aria-label="Show entire theater">⤢</button></div>
+<div class="navbox" role="group" aria-label="Map controls">
+  <button id="zoomIn" type="button" aria-label="Zoom in" title="Zoom in">
+    <svg class="menu-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 5.5 5.5M7 10h6m-3-3v6"/></svg>
+  </button>
+  <button id="zoomOut" type="button" aria-label="Zoom out" title="Zoom out">
+    <svg class="menu-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 5.5 5.5M7 10h6"/></svg>
+  </button>
+  <button id="recenter" type="button" aria-label="Center on the active front" title="Center on the active front">
+    <svg class="menu-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></svg>
+  </button>
+  <button id="overview" type="button" aria-label="Show entire theater" title="Show entire theater">
+    <svg class="menu-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M7 8l3-1.5 4 2L17 7v9l-3 1.5-4-2L7 17zm3-1.5v9m4-7v9"/></svg>
+  </button>
+</div>
 <div class="map-foot"><span class="north">↑ N</span><span id="scale"></span><span id="controlKey"><i class="ink-de"></i>Germany <i class="ink-fr"></i>France</span><span id="mapIntel" role="status"></span><span id="coordinates"></span></div>
 </section>
 <div id="mapNotice" role="status"></div>
@@ -244,7 +258,7 @@
       </button>
       <button id="warStatus" type="button" aria-haspopup="dialog">
         <svg class="menu-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18M5 17v-6h3v6zm6 0V4h3v13zm6 0V8h3v9z"/></svg>
-        War status
+        War Status
       </button>
     </div>
     <button id="ordersButton" type="button" aria-controls="ordersPanel" aria-expanded="true">
