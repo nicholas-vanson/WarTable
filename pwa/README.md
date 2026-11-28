@@ -41,6 +41,8 @@ Tap **Orders** in the center of the bottom bar to hide or reopen the panel. The 
 
 In **Guide → Objectives**, expand a geographic objective and choose **Show on map**. Solid green outlines meet the location condition and dashed rust outlines mark unmet conditions. Use Locate to find an individual territory or sea zone. Back to Guide restores the board camera and pending orders.
 
+The turn briefing has one action, **Begin turn**. Open **Guide → Technology** to review advances for all powers or a selected power and read both development charts.
+
 Research opens with **Save for purchases** selected. Hold to skip at no cost, or choose **Fund research**, set the dice, and review the IPC cost, remaining treasury and chance of at least one six before holding to roll.
 
 The border band follows the current controller of each of the four playable territories. Germany uses olive hatching and France uses blue hatching in the opposite direction. Tap a territory to read the controller in the map footer. A capture updates the band when the battle resolves.
