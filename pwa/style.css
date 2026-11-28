@@ -33,7 +33,6 @@ main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) clamp(
   font:600 13px/1.1 system-ui,sans-serif;
 }
 #boardNav .menu-icon{width:20px;height:20px;flex:none}
-#exerciseMenu{justify-self:start}
 .board-nav-references{display:flex;justify-content:space-evenly}
 #boardNav #ordersButton{
   width:100%;border:1px solid #d1b781;background:#ead7ad;color:#263829;
@@ -48,7 +47,6 @@ main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) clamp(
 @media(max-width:650px){
   .board-nav-references button{flex:1}
   #boardNav .board-nav-references button{flex-direction:column;gap:2px;padding-inline:1px;font-size:11px}
-  #boardNav #exerciseMenu{padding-inline:clamp(6px,3vw,18px)}
 }
 @media(max-width:650px) and (orientation:portrait){
   .orders-caret{transform:rotate(-45deg)}
@@ -489,3 +487,44 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
 .guide-rule{border-bottom:1px solid #c3c0aa}
 .guide-rule>summary{padding:12px 1px;cursor:pointer;font-size:14px;font-weight:650}
 .guide-rule>summary small{float:right;color:#4a5b41;font:700 11px/1.6 var(--typewriter)}
+
+#dialog:has(#warReport){width:min(490px,calc(100vw - 20px));max-height:calc(100dvh - 28px)}
+#dialogBody:has(#warReport){padding:14px clamp(14px,4vw,24px) 18px}
+#warReport{--allied-ink:#2e6673;--axis-ink:#984f3b;--report-rule:#bdbba4}
+.war-context,.war-legend,.war-goals li{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.war-context{flex-wrap:wrap;font:600 11px/1.4 var(--typewriter);color:#57604e}
+.war-legend{padding:11px 0 9px;border-bottom:3px double #929780}
+.war-legend strong{display:flex;align-items:center;gap:8px;font:700 23px/1.1 Georgia,serif;color:var(--allied-ink)}
+.war-legend strong:last-child{flex-direction:row-reverse;color:var(--axis-ink)}
+.war-legend strong::before{content:'';width:20px;height:10px;background:currentColor}
+.war-legend strong:last-child::before,.war-track{background:repeating-linear-gradient(125deg,#fff1df33 0 1px,transparent 1px 4px),var(--axis-ink)}
+.war-metric{border-bottom:1px solid var(--report-rule)}
+.war-metric>summary,.war-metric:not(details){display:block;list-style:none;padding:11px 0 9px}
+.war-metric>summary{cursor:pointer}
+.war-metric>summary::-webkit-details-marker{display:none}
+.war-metric>summary:focus-visible{outline:2px solid #a05a31;outline-offset:2px}
+.war-reading{display:grid;grid-template-columns:1fr auto 1fr;align-items:baseline;gap:5px;font:650 16px Georgia,serif;text-align:center}
+.war-reading b{color:var(--allied-ink);text-align:left;font:700 24px/1.1 Georgia,serif;font-variant-numeric:tabular-nums}
+.war-reading b:last-child{color:var(--axis-ink);text-align:right}
+.war-reading i{display:inline-block;width:6px;height:6px;margin:0 2px 3px 3px;border:solid #5e6757;border-width:0 1.5px 1.5px 0;transform:rotate(45deg)}
+.war-metric[open] .war-reading i{transform:rotate(225deg);margin-bottom:0}
+.war-track{display:flex;width:100%;height:8px;margin:6px 0 4px;overflow:hidden;border-radius:1px}
+.war-track:empty{background:#ceccba}
+.war-track span{height:100%;background:var(--allied-ink)}
+.war-track.split span{border-right:2px solid #f5efdf}
+.war-metric small{display:block;text-align:center;font-size:11px;color:#535d4f}
+.war-detail{padding:3px 10px 7px;margin-bottom:8px;background:#eae6d4}
+#dialogBody .war-detail p,#dialogBody .war-footnote{font-size:12px;line-height:1.45;color:#4f594c;margin:7px 0 0}
+.war-breakdown{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.war-breakdown th,.war-breakdown td{padding:3px 0;font-size:13px}
+.war-breakdown thead th,.war-cities strong{font:700 11px var(--typewriter);text-transform:uppercase}
+.war-breakdown tr>*:first-child,.war-cities>div:first-child strong{color:var(--allied-ink);text-align:left}
+.war-breakdown tr>*:last-child,.war-cities>div:last-child strong{color:var(--axis-ink);text-align:right}
+.war-breakdown tbody tr+tr{border-top:1px solid #cfccb8}
+.war-breakdown tbody th{font-weight:500}
+.war-breakdown td{font-weight:700}
+.war-goals{list-style:none;padding:0;margin:3px 0}
+.war-goals li{flex-wrap:wrap;font-size:13px;padding:3px 0}.war-goals small{width:100%;text-align:left}
+.war-cities{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px}
+#dialogBody .war-cities p{margin:3px 0}
+@media(max-width:360px){.board-nav-inner{grid-template-columns:minmax(0,1fr) 98px minmax(0,1fr)}}

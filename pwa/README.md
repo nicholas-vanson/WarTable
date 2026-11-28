@@ -37,7 +37,7 @@ Planned attacks group by destination, with an editable order for each origin. Th
 
 The atlas marks victory cities that are power capitals with an ochre star, and the other victory cities with a green diamond. Each counts as one victory city. See pages 6 and 34 of the [Europe 1940 Second Edition rulebook](https://www.axisandallies.org/files/rules/Axis-Allies-Europe-1940-Second-Edition.pdf).
 
-Tap **Orders** in the center of the bottom bar to hide or reopen the panel. The same bar holds Menu, Review, and Guide. Drag the grip on the panel’s map-facing edge to resize it. The panel remembers its portrait height and landscape width separately.
+Tap **Orders** in the center of the bottom bar to hide or reopen the panel. The same bar holds Menu, War status, Review, and Guide. War status compares the two sides’ victory cities, income, and forces in the current position. Drag the grip on the panel’s map-facing edge to resize it. The panel remembers its portrait height and landscape width separately.
 
 The border band follows the current controller of each of the four playable territories. Germany uses olive hatching and France uses blue hatching in the opposite direction. Tap a territory to read the controller in the map footer. A capture updates the band when the battle resolves.
 
