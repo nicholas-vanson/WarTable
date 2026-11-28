@@ -466,16 +466,15 @@ main.panel-closed{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(
 .lan-seats strong{padding:.45rem .7rem;border:1px solid #aaa186}.lan-pane input:not([type=checkbox]){display:block;width:min(100%,29rem);padding:.55rem;margin:.35rem 0;font:inherit}.lan-code-input,#lanCode{font-family:monospace;letter-spacing:.09em;text-transform:uppercase}
 #lanNotice{margin-top:.8rem}.lan-status{font-size:.85rem;margin:.2rem 0 .55rem;padding:.4rem .55rem;background:var(--sheet);border-left:3px solid var(--nation-ink)}
 
-.briefing-guides{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 8px}
 #dialog:has(#guideTabs){width:min(480px,calc(100vw - 20px));height:min(690px,87dvh);max-height:calc(100dvh - 20px)}
 #dialogBody:has(#guideTabs){padding:0;scrollbar-gutter:stable}
-#guideTabs{display:grid;grid-template-columns:repeat(3,1fr);position:sticky;top:0;z-index:1;background:#e8e4d2;border-bottom:1px solid #939780}
+#guideTabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));position:sticky;top:0;z-index:1;background:#e8e4d2;border-bottom:1px solid #939780}
 #guideTabs button{color:#454e40;background:transparent;border:0;border-bottom:3px solid transparent;padding:11px 4px 8px;min-height:44px;font:700 14px Georgia,serif}
 #guideTabs button[aria-selected="true"]{background:#f5efdd;border-color:#536448;color:#25382c}
 #guideContent{padding:16px clamp(14px,4vw,22px) 24px}
 #guideContext:not([hidden]){display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:3px 11px;margin-bottom:15px}
 #guideContext label,.guide-wallet{font:700 11px/1.4 var(--typewriter);letter-spacing:.06em;text-transform:uppercase}
-#guidePower{background:#fbf6e6;border:1px solid #8d907c;border-left:4px solid var(--guide-ink);padding:7px 8px;min-height:42px;border-radius:2px;font-weight:650}
+#guideContext select{background:#fbf6e6;border:1px solid #8d907c;border-left:4px solid var(--guide-ink);padding:7px 8px;min-height:42px;border-radius:2px;font-weight:650}
 #guideTurn{grid-column:2;color:#5b6151;font-size:12px}
 .guide-total{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-block:1px solid #8e947e}
 #guidePage h3{font-size:23px;margin:0}

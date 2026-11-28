@@ -48,6 +48,7 @@ const inResearch=()=>globalBoard?.match.phase==='research';
 const finished=()=>globalBoard?.match.phase==='victory';
 const inPurchase=()=>globalBoard?.match.phase==='purchase';
 const inBriefing=()=>globalBoard?.match.phase==='briefing';
+const roomGuideKey=roomCode?'wartable.lan.guide.'+roomCode:'';
 const roomObjectiveKey=roomCode?'wartable.lan.objective.'+roomCode:'';
 const roomSettingsKey=roomCode?'wartable.lan.settings.'+roomCode:'';
 const roomReportKey=roomCode?'wartable.lan.war-status.'+roomCode:'';
@@ -978,13 +979,14 @@ function incomeLedger(account,rolled){
       '<p class="hint">'+(account.wallet==='Chinese'?'China is exempt from convoy disruption.':account.open?'No eligible convoy raids this turn.':'Convoys are suspended while the capital is occupied.')+'</p>')+
     '<div class="income-balance"><span>Treasury</span><b>'+account.before+(pending?' IPCs before collection':' → '+(account.before+amount)+' IPCs')+'</b></div></section>';
 }
-function chartList(match,chart,index,choose=false){
-  const known=id=>hasTech(match,match.power,id);
+function chartList(match,power,chart,index,choose=false){
+  const known=id=>hasTech(match,power,id);
   const remaining=chart.filter(([id])=>!known(id)).length;
   const rows=chart.map(([id,name,detail],i)=>ledgerLine((i+1)+' · '+name,known(id)?'Owned':'',detail)).join('');
   const name=index?'Naval and air':'Land and industry';
-  return '<div class="research-chart"><details class="ledger-section"><summary><span>Chart '+(index+1)+' · '+name+'</span><small>'+remaining+
-    ' available</small></summary>'+rows+'</details>'+(choose?btn(remaining?'Roll on '+name.toLowerCase()+' chart':'All advances developed','discover',
+  const count=power&&power!=='Chinese'?remaining+' available':chart.length+' advances';
+  return '<div class="research-chart"><details class="ledger-section"><summary><span>Chart '+(index+1)+' · '+name+'</span><small>'+count+
+    '</small></summary>'+rows+'</details>'+(choose?btn(remaining?'Roll on '+name.toLowerCase()+' chart':'All advances developed','discover',
       'secondary','data-id="'+index+'" '+(remaining?'':'disabled')):'')+'</div>';
 }
 function researchBudget(match){
@@ -1001,9 +1003,6 @@ function researchChoice(mode,name,detail,icon,selected){
   return '<button type="button" class="research-choice" data-act="research-mode" data-id="'+mode+'" aria-pressed="'+selected+'">'+
     '<svg viewBox="0 0 24 24" class="menu-icon" aria-hidden="true">'+icon+'</svg><span><strong>'+name+'</strong><small>'+detail+
     '</small></span><i aria-hidden="true"></i></button>';
-}
-function skipResearchButton(primary){
-  return '<button id="skipResearch" class="'+(primary?'primary':'secondary')+' hold-to-confirm">Hold to skip research</button>';
 }
 function researchPanel(){
   const match=globalBoard.match,r=match.researchRoll;
@@ -1025,7 +1024,7 @@ function researchPanel(){
         (available-b.cost)+' IPCs</strong><small>Left to spend</small></div><div><strong>'+(odds>=99.95?'&gt;99.9':odds.toFixed(1))+
         '%</strong><small>Breakthrough chance</small></div></div>';
       $('action').innerHTML='<button id="fundResearch" class="primary hold-to-confirm">Hold to spend '+b.cost+' IPCs and roll</button>';
-    }else $('action').innerHTML=skipResearchButton(true);
+    }else $('action').innerHTML='<button id="skipResearch" class="primary hold-to-confirm">Hold to skip research</button>';
   }else{
     const found=breakthroughs.flat().find(([id])=>id===r.advance);
     html+='<section class="research-result"><h3>'+(found?esc(found[1]):r.step==='chart'?'Breakthrough':'No breakthrough')+'</h3>'+
@@ -1036,7 +1035,7 @@ function researchPanel(){
     html+='</section>';
     if(r.step==='done')$('action').innerHTML=btn('Continue to Purchase & Repair','research-finish','primary');
   }
-  return html+block('Development charts')+breakthroughs.map((c,i)=>chartList(match,c,i,r?.step==='chart')).join('');
+  return html+block('Development charts')+breakthroughs.map((c,i)=>chartList(match,match.power,c,i,r?.step==='chart')).join('');
 }
 function victoryTracker(match){
   return victoryStatus(match).map(goal=>{
@@ -1055,13 +1054,19 @@ function victoryPanel(){
     ledgerLine('Deciding cities',v.cities.length,v.cities.join(', '))+ledgerLine('Home capitals held',v.capitals.length,v.capitals.join(', '))+
     (ui.inspect?inspectionPanel('Back to victory'):'');
 }
-function objectiveDialog(){
-  const m=globalBoard.match;
-  const owned=Object.entries(m.technology||{}).filter(([,ids])=>ids.length).map(([p,ids])=>
-    '<h4>'+esc(globalPowers[p])+'</h4>'+ids.map(id=>breakthroughs.flat().find(t=>t[0]===id)).filter(Boolean).map(([,n,d])=>ledgerLine(n,'',d)).join('')).join('');
-  showDialog('Victory and technology','<p>The Axis needs 8 European cities or 6 Pacific cities. The Allies need Berlin, Rome and Tokyo. Keep the required cities until the capturing power’s next turn and hold at least one home capital at that point.</p>'+
-    victoryTracker(m)+'<h3>Developed technology</h3>'+(owned||'<p>No breakthroughs recorded.</p>')+
-    (m.researchEnabled===false?'<p>Research is disabled for this game.</p>':breakthroughs.map((c,i)=>chartList(m,c,i)).join('')));
+function technologyReference(match,power){
+  const advances=breakthroughs.flat();
+  const powers=power?[power]:Object.keys(globalPowers);
+  const summaries=powers.map(id=>{
+    const developed=advances.filter(([tech])=>hasTech(match,id,tech));
+    if(!developed.length)return '';
+    return '<h4 class="guide-wallet">'+esc(globalPowers[id])+'</h4>'+
+      developed.map(([,name,effect])=>ledgerLine(name,'',effect)).join('');
+  }).join('');
+  let html='<h3>Developed technology</h3>'+(summaries||'<p>No breakthroughs recorded.</p>');
+  if(match.researchEnabled===false)return html+'<p class="guide-note">Research is disabled for this game.</p>';
+  if(power==='Chinese')html+='<p class="guide-note">China does not conduct research.</p>';
+  return html+'<h3>Development charts</h3>'+breakthroughs.map((chart,i)=>chartList(match,power,chart,i)).join('');
 }
 function supportChoice(kind){
   const bases=Object.keys(exercise.movement.spaces).filter(id=>exercise.movement.spaces[id].airBase&&(kind!=='paratroopers'||dropRoom(s,id)>0))
@@ -1255,6 +1260,7 @@ function applyRoom(packet,own=false,after){
         const {power,wallet,label}=objectiveView;sessionStorage.setItem(roomObjectiveKey,JSON.stringify({power,wallet,label}));
       }else if($('menuDialog').open&&!$('settingsWindow').hidden)sessionStorage.setItem(roomSettingsKey,'open');
       else if($('dialog').open&&$('warReport'))sessionStorage.setItem(roomReportKey,JSON.stringify(warReportView()));
+      else if($('dialog').open&&$('guideTabs'))sessionStorage.setItem(roomGuideKey,JSON.stringify(guideView()));
     }catch{}
     location.reload();return;
   }
@@ -1268,7 +1274,7 @@ function applyRoom(packet,own=false,after){
   if(!own)ui=freshUI();
   if(after)after();
   render();
-  if($('dialog').open&&$('guideTabs'))refreshFieldGuide();
+  if($('dialog').open&&$('guideTabs'))restoreGuideView(guideView());
   if(objectiveView)updateObjectiveMap();
   if($('dialog').open&&$('warReport'))refreshWarReport();
 }
@@ -1370,9 +1376,8 @@ function render(){
     const match=globalBoard.match;
     $('panel').innerHTML=ui.inspect?inspectionPanel('Back to briefing'):
       '<h2>'+seasonForRound(match.round)+'</h2><p class="briefing-round">Round '+match.round+' · '+attacker+(match.power==='Germans'?' moves first':' to move')+'</p>'+
-      '<p class="briefing-address">'+esc(openingAddress(match,match.controllers[match.power]))+' Survey the board, then begin your turn when you’re ready.</p><div class="briefing-guides">'+btn('National objectives &amp; politics','power-reference')+btn('Victory and technology','objective-status')+'</div>'+
-      Object.entries(match.victoryHolds||{}).map(([key,h])=>'<p class="hint">'+globalPowers[h.power]+' can clinch '+({europe:'Europe',pacific:'the Pacific',capitals:'the Allied capital objective'}[key])+' at the start of its turn in round '+(h.round+1)+'.</p>').join('')+
-      (canResearch(match)?skipResearchButton(false):'');
+      '<p class="briefing-address">'+esc(openingAddress(match,match.controllers[match.power]))+' Survey the board, then begin your turn when you’re ready.</p>'+
+      Object.entries(match.victoryHolds||{}).map(([key,h])=>'<p class="hint">'+globalPowers[h.power]+' can clinch '+({europe:'Europe',pacific:'the Pacific',capitals:'the Allied capital objective'}[key])+' at the start of its turn in round '+(h.round+1)+'.</p>').join('');
     $('action').innerHTML=btn('Begin '+attacker+'’s turn','begin-turn','primary');
   }else if(inPurchase())$('panel').innerHTML=purchasePanel();
   else if(s.phase==='plan')$('panel').innerHTML=planPanel();
@@ -1413,15 +1418,15 @@ function render(){
     status.textContent=!roomOnline?'Host disconnected · Reconnecting…':roomBusy?'Saving to host…':d.side?(can?'Your decision':'Waiting for '+d.side)+' · '+d.label:'Final board';
     $('panel').prepend(status);
     if(!can){
-      for(const el of document.querySelectorAll('#panel button:not([data-act="objective-status"]):not([data-act="power-reference"]),#panel select,#panel input,#action button:not([data-act="final-review"])'))el.disabled=true;
+      for(const el of document.querySelectorAll('#panel button,#panel select,#panel input,#action button:not([data-act="final-review"])'))el.disabled=true;
       return;
     }
   }
   if(award)bindHold($('placeFrenchAward'),()=>roomSend('french-place')||run(()=>{placeFrenchAward(s);ui=freshUI();}));
   else if($('skipResearch'))bindHold($('skipResearch'),()=>{
-    if(roomSend(briefing?'skip-research':'research-finish'))return;
+    if(roomSend('research-finish'))return;
     run(()=>{
-      if(briefing)globalBoard.match.phase='purchase';else finishResearch(globalBoard.match,s);
+      finishResearch(globalBoard.match,s);
       ui=freshUI();$('map').setAttribute('aria-label','Purchase and repair. Select a territory or force to inspect.');
     });
   });
@@ -1442,14 +1447,15 @@ function render(){
   }));
   else bindHold($('hold'),()=>roomSend('commit')||run(()=>{commit(s);ui=freshUI();}));
 }
-const guideTabs={objectives:'Objectives',politics:'Politics',rules:'How to play'};
+const guideTabs={objectives:'Objectives',politics:'Politics',technology:'Technology',rules:'How to play'};
 function openFieldGuide(){
   const tabs=Object.entries(guideTabs).map(([id,name])=>'<button type="button" role="tab" id="guide-'+id+
     '" data-section="'+id+'" aria-controls="guideContent">'+name+'</button>').join('');
   const options=Object.entries(globalPowers).map(([id,name])=>'<option value="'+id+'">'+esc(name)+'</option>').join('');
   showDialog('Field guide','<div id="guideTabs" role="tablist" aria-label="Field guide sections">'+tabs+
     '</div><div id="guideContent" role="tabpanel" tabindex="0"><div id="guideContext"><label for="guidePower">Power</label>'+
-    '<select id="guidePower">'+options+'</select><small id="guideTurn"></small></div><div id="guidePage"></div></div>');
+    '<select id="guidePower">'+options+'</select><select id="guideTechPower" hidden><option value="">All powers</option>'+options+
+    '</select><small id="guideTurn"></small></div><div id="guidePage"></div></div>');
   $('guidePower').value=globalBoard.match.power;
   switchGuideTab('objectives');
 }
@@ -1461,30 +1467,39 @@ function switchGuideTab(section){
     tab.setAttribute('aria-selected',String(selected));
     tab.tabIndex=selected?0:-1;
   }
+  const technology=section==='technology';
   $('guideContext').hidden=section==='rules';
+  $('guidePower').hidden=technology;
+  $('guideTechPower').hidden=!technology;
+  $('guideContext').querySelector('label').htmlFor=technology?'guideTechPower':'guidePower';
   updateGuidePage(section);
   $('dialogBody').scrollTop=0;
 }
 function updateGuidePage(section){
-  const match=globalBoard.match,power=$('guidePower').value;
+  const match=globalBoard.match,power=$(section==='technology'?'guideTechPower':'guidePower').value;
   $('guideTurn').textContent='Round '+match.round+' · '+(finished()?'Game over':globalPowers[match.power]+' to move');
-  $('guideContent').style.setProperty('--guide-ink',styleFor(globalPowers[power]).ink);
+  $('guideContent').style.setProperty('--guide-ink',power?styleFor(globalPowers[power]).ink:'#41543d');
   $('guidePage').innerHTML=section==='objectives'?objectivesReference(match,power):
-    section==='politics'?politicsReference(match,power):fieldGuideCopy();
+    section==='politics'?politicsReference(match,power):section==='technology'?technologyReference(match,power):fieldGuideCopy();
 }
-function refreshFieldGuide(){
-  const section=$('guideTabs').querySelector('[aria-selected="true"]').dataset.section;
-  const summaryKey=el=>el&&(el.querySelector('strong')?.textContent||el.firstChild.textContent);
-  const open=new Set([...$('guidePage').querySelectorAll('details[open]>summary')].map(summaryKey));
-  const focused=summaryKey(document.activeElement.closest('summary'));
-  const scroll=$('dialogBody').scrollTop;
-  updateGuidePage(section);
+function guideSummaryKey(el){
+  return el&&(el.querySelector('strong')?.textContent||el.firstChild.textContent);
+}
+function guideView(){
+  return {section:$('guideTabs').querySelector('[aria-selected="true"]').dataset.section,
+    power:$('guidePower').value,techPower:$('guideTechPower').value,
+    open:[...$('guidePage').querySelectorAll('details[open]>summary')].map(guideSummaryKey),
+    focused:guideSummaryKey(document.activeElement.closest('summary')),scroll:$('dialogBody').scrollTop};
+}
+function restoreGuideView(state){
+  $('guidePower').value=state.power;$('guideTechPower').value=state.techPower;
+  switchGuideTab(state.section);
   for(const d of $('guidePage').querySelectorAll('details')){
-    const summary=d.querySelector('summary');
-    d.open=open.has(summaryKey(summary));
-    if(focused===summaryKey(summary))summary.focus({preventScroll:true});
+    const summary=d.querySelector('summary'),key=guideSummaryKey(summary);
+    d.open=state.open.includes(key);
+    if(state.focused===key)summary.focus({preventScroll:true});
   }
-  $('dialogBody').scrollTop=scroll;
+  $('dialogBody').scrollTop=state.scroll;
 }
 function updateObjectiveMap(){
   const {power,wallet,label,controller}=objectiveView;
@@ -1533,7 +1548,7 @@ $('objectiveAtlas').addEventListener('close',()=>{
   trigger?.focus({preventScroll:true});
 });
 $('dialogBody').addEventListener('change',e=>{
-  if(e.target.id==='guidePower')updateGuidePage($('guideTabs').querySelector('[aria-selected="true"]').dataset.section);
+  if(e.target.matches('#guidePower,#guideTechPower'))updateGuidePage($('guideTabs').querySelector('[aria-selected="true"]').dataset.section);
 });
 $('dialogBody').addEventListener('click',e=>{
   const tab=e.target.closest('#guideTabs [role="tab"]');
@@ -1599,8 +1614,6 @@ document.addEventListener('change',event=>{
 document.addEventListener('click',e=>{
   const b=e.target.closest('button[data-act]');if(!b)return;
   const {act,id,k,n}=b.dataset;
-  if(act==='power-reference'){openFieldGuide();return;}
-  if(act==='objective-status'){objectiveDialog();return;}
   if(act==='final-review'){$('journal').click();return;}
   if(finished()&&act!=='clear')return;
   if(act==='discover'){advanceEconomy('discover',[Number(id)]);return;}
@@ -1882,9 +1895,11 @@ function fieldGuideCopy(){
   ];
   const phaseList=phases.filter(([id])=>id!=='research'||globalBoard.match.researchEnabled!==false).map(([id,label,copy])=>
     '<details class="guide-rule"'+(id===phase?' open':'')+'><summary>'+label+(id===phase?' <small>Current phase</small>':'')+'</summary>'+copy+'</details>').join('');
-  const actions=btn('Victory and technology','objective-status')+(finished()?'':btn('Air defense orders','air-orders')+
+  const victoryRules='<details class="guide-rule"><summary>Victory conditions</summary><p>The Axis needs 8 European cities or 6 Pacific cities. The Allies need Berlin, Rome and Tokyo. Keep the required cities until the capturing power’s next turn and hold at least one home capital at that point.</p>'+
+    victoryTracker(globalBoard.match)+'</details>';
+  const actions=(finished()?'':btn('Air defense orders','air-orders')+
     btn(roomCode?'Room seats':'Local players','players'))+((roomCode||finished()||inResearch()||inBriefing()||inPurchase()||s.phase==='income')?'':btn('Restart combat','reset','danger'));
-  return '<h3>Turn sequence</h3>'+phaseList+'<h3>Map and counters</h3>'+navigation+terrain+symbols+
+  return '<h3>Turn sequence</h3>'+phaseList+victoryRules+'<h3>Map and counters</h3>'+navigation+terrain+symbols+
     '<p>'+(roomCode?'Your position saves on the Wi-Fi host.':'Your position saves on this device.')+
     ' On Android, use the browser menu to install WarTable when available.</p>'+actions+
     '<p>Inland China terrain data courtesy of Mapzen, the U.S. Geological Survey and NOAA. Rivers and lakes from Natural Earth.</p>';
@@ -1975,6 +1990,7 @@ setupOrdersPanel();
 render();
 if(roomCode){
   try{
+    const guide=sessionStorage.getItem(roomGuideKey);
     const report=sessionStorage.getItem(roomReportKey);
     const objective=sessionStorage.getItem(roomObjectiveKey);
     if(objective){
@@ -1986,7 +2002,8 @@ if(roomCode){
         const item=trigger.closest('details');if(item)item.open=true;
         queueMicrotask(()=>showObjectiveMap(trigger));
       }
-    }else if(report){sessionStorage.removeItem(roomReportKey);$('warStatus').click();restoreReportView(JSON.parse(report));}
+    }else if(guide){sessionStorage.removeItem(roomGuideKey);$('help').focus();openFieldGuide();restoreGuideView(JSON.parse(guide));}
+    else if(report){sessionStorage.removeItem(roomReportKey);$('warStatus').click();restoreReportView(JSON.parse(report));}
     else if(sessionStorage.getItem(roomSettingsKey)){
       sessionStorage.removeItem(roomSettingsKey);$('boardSettings').focus();$('boardSettings').click();
     }
