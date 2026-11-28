@@ -5,7 +5,29 @@ import {allianceOf} from './neutral-rules.js';
 
 export function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
-function objectiveEntry(row,open){
+function mapButton(row,wallet){
+  return row.sites?.length?'<button type="button" class="objective-map-button" data-objective="'+esc(row.label)+'" data-wallet="'+esc(wallet)+'">Show on map</button>':'';
+}
+function parisAward(match){
+  const award=match.combat?.game?.frenchAward?.status;
+  const status=award==='pending'?'Ready to place':award==='placed'||match.frenchLiberationAwarded?'Already awarded':'Available on first liberation';
+  return {label:'Liberation of Paris',status,condition:'The first time Paris is liberated, France may immediately place up to 12 IPCs of free land or air units in France.',
+    sites:[{name:'France',met:match.board.France.owner==='French'}]};
+}
+export function objectiveMapInfo(match,power,wallet,label){
+  if(power==='French'&&wallet==='French'&&label==='Liberation of Paris'){
+    const row=parisAward(match);
+    return {...row,bonus:'Up to 12 IPCs in units',legend:['French control','Outside French control']};
+  }
+  const a=nationalObjectiveAccounts(match,power).find(account=>account.wallet===wallet);
+  const row=a?.objectives.find(o=>o.label===label);
+  if(!row?.sites?.length)return null;
+  const forecast=a.open?row.earned:0;
+  const status=!a.open?'Treasury closed':row.warNeeded?'War requirement unmet':row.outstanding?.length?'Still needed · '+row.outstanding.join(' · '):'';
+  return {...row,status,projected:forecast,bonus:forecast+' IPCs projected',legend:['Condition met','Condition unmet']};
+}
+
+function objectiveEntry(row,open,wallet){
   const status=!open?'Treasury closed':row.earned?'Met':'Unmet';
   const amount=row.perTerritory?row.value+' IPCs each':row.value+' IPCs';
   const balance=open&&row.earned?'+'+row.earned+' IPCs':amount;
@@ -16,7 +38,7 @@ function objectiveEntry(row,open){
   return '<details class="guide-objective"><summary><span><strong>'+esc(row.label)+'</strong>'+
     '<small class="guide-state'+(open&&row.earned?' earned':'')+'">'+status+'</small></span>'+
     '<span class="guide-amount">'+balance+'</span></summary><div class="guide-condition"><p>'+
-    esc(row.condition)+'</p>'+progress+missing+outstanding+'</div></details>';
+    esc(row.condition)+'</p>'+progress+missing+outstanding+mapButton(row,wallet)+'</div></details>';
 }
 
 export function objectivesReference(match,power){
@@ -27,13 +49,12 @@ export function objectivesReference(match,power){
   for(const a of accounts){
     if(split)html+='<h4 class="guide-wallet">'+(a.wallet==='British'?'UK Europe':'UK Pacific')+' <span>+'+a.bonus+' IPCs</span></h4>';
     if(!a.open)html+='<p class="guide-note">Treasury closed. Recover the capital territory ('+esc(a.capital)+') to collect income here.</p>';
-    html+=a.objectives.map(row=>objectiveEntry(row,a.open)).join('');
+    html+=a.objectives.map(row=>objectiveEntry(row,a.open,a.wallet)).join('');
   }
   if(power==='French'){
-    const award=match.combat?.game?.frenchAward?.status;
-    const status=award==='pending'?'Ready to place':award==='placed'||match.frenchLiberationAwarded?'Already awarded':'Available on first liberation';
-    html+='<p>France has no recurring national objective income.</p><h4 class="guide-wallet">Liberation of Paris</h4>'+
-      '<p class="guide-progress">'+status+'</p><p>The first time Paris is liberated, France may immediately place up to 12 IPCs of free land or air units in France.</p>';
+    const row=parisAward(match);
+    html+='<p>France has no recurring national objective income.</p><h4 class="guide-wallet">'+row.label+'</h4>'+
+      '<p class="guide-progress">'+row.status+'</p><p>'+row.condition+'</p>'+mapButton(row,'French');
   }
   return html;
 }

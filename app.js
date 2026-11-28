@@ -2,7 +2,7 @@ import {lanRequest,lanSeats,lanToken} from './lan.js';
 import {lanDecision,lanSide} from './lan-game.js';
 import {breakthroughs,hasTech,canResearch,researchWallets,buyResearch,discover,finishResearch} from './research.js';
 import {researchRoutes,dropRoom,queueDrop,queueRocket,rocketsPending,fireRocket} from './research-moves.js';
-import {esc,objectivesReference,politicsReference} from './field-guide.js';
+import {esc,objectivesReference,objectiveMapInfo,politicsReference} from './field-guide.js';
 import {globalWarStatus,exerciseWarStatus,warStatusChart} from './war-status.js';
 import {victoryStatus} from './victory.js';
 import {raidTargets,facilityHits,damageLimit,raidFacilityNames,pendingRaids,currentRaid,chooseRaid,setInterceptorCount,confirmInterceptors,setRaidTarget,raidLossGroups,advanceRaid} from './raids.js';
@@ -31,6 +31,7 @@ const isGlobal=!!roomCode||location.hash==='#global';
 const exerciseId=isGlobal?'global':location.hash.slice('#exercise/'.length);
 const globalBoard=isGlobal?await loadGlobalBoard(roomState?.match):null;
 if(globalBoard)restoreChineseStatement(globalBoard.match);
+let mapReady,objectiveView=null;
 let lastGlobalSave=isGlobal&&!roomCode?localStorage.getItem(globalKey):null;
 const key=isGlobal?globalKey:exerciseId==='west'?'wartable.western-front.v1':'wartable.exercise.'+exerciseId+'.v1';
 const exercise=exercises[exerciseId],{attacker,defender}=exercise;
@@ -47,6 +48,7 @@ const inResearch=()=>globalBoard?.match.phase==='research';
 const finished=()=>globalBoard?.match.phase==='victory';
 const inPurchase=()=>globalBoard?.match.phase==='purchase';
 const inBriefing=()=>globalBoard?.match.phase==='briefing';
+const roomObjectiveKey=roomCode?'wartable.lan.objective.'+roomCode:'';
 const roomSettingsKey=roomCode?'wartable.lan.settings.'+roomCode:'';
 const roomReportKey=roomCode?'wartable.lan.war-status.'+roomCode:'';
 const roomViewKey=roomCode?'wartable.lan.view.'+roomCode+'.'+globalBoard.match.round+'.'+s.power:'';
@@ -267,8 +269,11 @@ function reviewDetail(detail,attacking=attacker,heldBy){
 const diePips=[[],[5],[1,9],[1,5,9],[1,3,7,9],[1,3,5,7,9],[1,3,4,6,7,9]];
 function dieFace(d,face,stage,nation){
   const label=nation+' '+stats[d.type].name+(d.rolls&&stage==='marked'?' ('+d.rolls.join(' and ')+', kept '+face+')':'')+(stage==='rolling'?' rolling':' rolled '+face+(stage==='marked'?', '+(d.hit?'hit':'miss'):''));
+  return diceTile(face,label,stage==='marked'&&d.hit,combatColors(nation));
+}
+function diceTile(face,label,hit,colors=''){
   const pips=diePips[face].map(pos=>'<i style="grid-area:'+Math.ceil(pos/3)+' / '+((pos-1)%3+1)+'"></i>').join('');
-  return '<span role="img" aria-label="'+esc(label)+'" title="'+esc(label)+'" '+combatColors(nation)+' class="die '+(stage==='marked'&&d.hit?'hit':'miss')+'">'+pips+'</span>';
+  return '<span role="img" aria-label="'+esc(label)+'" title="'+esc(label)+'" '+colors+' class="die '+(hit?'hit':'miss')+'">'+pips+'</span>';
 }
 function stepper(kind,values,limits,keys=types,min=0){
   return keys.map(k=>'<div class="stepper"><span>'+unitCounter(k,undefined,attacker)+'</span><button aria-label="Remove one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="-1" '+((values[k]||0)<=min?'disabled':'')+'>−</button><output>'+ (values[k]||0) +'</output><button aria-label="Add one '+stats[k].name+'" data-act="'+kind+'" data-k="'+k+'" data-n="1" '+((values[k]||0)>=(limits[k]||0)?'disabled':'')+'>+</button></div>').join('');
@@ -977,8 +982,10 @@ function chartList(match,chart,index,choose=false){
   const known=id=>hasTech(match,match.power,id);
   const remaining=chart.filter(([id])=>!known(id)).length;
   const rows=chart.map(([id,name,detail],i)=>ledgerLine((i+1)+' · '+name,known(id)?'Owned':'',detail)).join('');
-  return '<details class="ledger-section"><summary>Chart '+(index+1)+' · '+(index?'Naval and air':'Land and industry')+'</summary>'+rows+'</details>'+
-    (choose?btn(remaining?'Roll on chart '+(index+1):'Chart '+(index+1)+' complete','discover','secondary','data-id="'+index+'" '+(remaining?'':'disabled')):'');
+  const name=index?'Naval and air':'Land and industry';
+  return '<div class="research-chart"><details class="ledger-section"><summary><span>Chart '+(index+1)+' · '+name+'</span><small>'+remaining+
+    ' available</small></summary>'+rows+'</details>'+(choose?btn(remaining?'Roll on '+name.toLowerCase()+' chart':'All advances developed','discover',
+      'secondary','data-id="'+index+'" '+(remaining?'':'disabled')):'')+'</div>';
 }
 function researchBudget(match){
   const wallets=researchWallets(match),cash=w=>wallets.includes(w)?match.treasury[w]:0;
@@ -990,28 +997,46 @@ function researchBudget(match){
 function numberField(label,id,value,min,max){
   return '<label class="power-seat">'+esc(label)+'<input type="number" inputmode="numeric" id="'+id+'" min="'+min+'" max="'+max+'" step="1" value="'+value+'"></label>';
 }
+function researchChoice(mode,name,detail,icon,selected){
+  return '<button type="button" class="research-choice" data-act="research-mode" data-id="'+mode+'" aria-pressed="'+selected+'">'+
+    '<svg viewBox="0 0 24 24" class="menu-icon" aria-hidden="true">'+icon+'</svg><span><strong>'+name+'</strong><small>'+detail+
+    '</small></span><i aria-hidden="true"></i></button>';
+}
+function skipResearchButton(primary){
+  return '<button id="skipResearch" class="'+(primary?'primary':'secondary')+' hold-to-confirm">Hold to skip research</button>';
+}
 function researchPanel(){
   const match=globalBoard.match,r=match.researchRoll;
-  let html=title('Research & Development','Each die costs 5 IPCs. One or more sixes earn one breakthrough. You choose the chart after rolling.');
+  let html=title('Research & Development',r?'Research results for '+attacker+'.':'Choose how to use your treasury before purchasing units.');
   if(!r){
-    const b=researchBudget(match);
-    html+=b.wallets.map(w=>ledgerLine(treasuryName(w),match.treasury[w]+' IPCs')).join('')+
-      numberField('Research dice','researchDice',b.dice,1,b.max);
-    if(match.power==='British'){
-      if(b.minPacific!==b.maxPacific)html+=numberField('IPCs from UK Pacific','researchPacific',b.pacific,b.minPacific,b.maxPacific);
-      html+=ledgerLine('Funding',b.cost+' IPCs','UK Europe '+(b.cost-b.pacific)+' · UK Pacific '+b.pacific);
-    }
-    $('action').innerHTML='<button id="fundResearch" class="primary hold-to-confirm">Hold to spend '+b.cost+' IPCs and roll</button>';
-    html+=btn('Skip research and purchase units','research-finish');
+    const b=researchBudget(match),fund=b.max>0&&ui.researchMode==='fund';
+    const available=b.wallets.reduce((n,w)=>n+match.treasury[w],0);
+    html+='<div class="research-choices" role="group" aria-label="Research order">'+
+      researchChoice('save','Save for purchases','Keep all '+available+' IPCs.','<path d="M3 9 12 4l9 5H3Zm2 11h14M6 11v6m4-6v6m4-6v6m4-6v6"/>',!fund)+
+      (b.max?researchChoice('fund','Fund research','5 IPCs per die. A six earns a breakthrough.','<rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="8.5" cy="8.5" r="1"/><circle cx="15.5" cy="15.5" r="1"/><circle cx="12" cy="12" r="1"/>',fund):'')+'</div>';
+    if(fund){
+      html+=numberField('Research dice','researchDice',b.dice,1,b.max);
+      if(match.power==='British'){
+        if(b.minPacific!==b.maxPacific)html+=numberField('IPCs from UK Pacific','researchPacific',b.pacific,b.minPacific,b.maxPacific);
+        html+=ledgerLine('Funding',b.cost+' IPCs','UK Europe '+(b.cost-b.pacific)+' · UK Pacific '+b.pacific);
+      }
+      const odds=(1-(5/6)**b.dice)*100;
+      html+='<div class="research-estimate"><div><strong>'+b.cost+' IPCs</strong><small>Research cost</small></div><div><strong>'+
+        (available-b.cost)+' IPCs</strong><small>Left to spend</small></div><div><strong>'+(odds>=99.95?'&gt;99.9':odds.toFixed(1))+
+        '%</strong><small>Breakthrough chance</small></div></div>';
+      $('action').innerHTML='<button id="fundResearch" class="primary hold-to-confirm">Hold to spend '+b.cost+' IPCs and roll</button>';
+    }else $('action').innerHTML=skipResearchButton(true);
   }else{
-    html+=ledgerLine('Research rolls',r.rolls.join(' · '),Object.entries(r.paid).filter(([,n])=>n).map(([w,n])=>treasuryName(w)+' paid '+n+' IPCs').join(' · '));
-    if(r.advance){
-      const [,name,detail]=breakthroughs.flat().find(([id])=>id===r.advance);
-      html+=block('Breakthrough · Chart '+(r.chart+1)+' rolled '+r.breakthroughRolls.join(' → '))+'<h3>'+name+'</h3><p>'+detail+'</p>';
-    }else html+='<h3>'+(r.step==='chart'?'Breakthrough! Choose a chart':'No breakthrough this turn')+'</h3>';
+    const found=breakthroughs.flat().find(([id])=>id===r.advance);
+    html+='<section class="research-result"><h3>'+(found?esc(found[1]):r.step==='chart'?'Breakthrough':'No breakthrough')+'</h3>'+
+      '<div class="dice-row" role="group" aria-label="Research rolls">'+r.rolls.map(n=>diceTile(n,'Rolled '+n+(n===6?' · Breakthrough':''),n===6)).join('')+'</div><p>'+
+      Object.entries(r.paid).filter(([,n])=>n).map(([w,n])=>esc(treasuryName(w))+' paid '+n+' IPCs').join(' · ')+'.</p>';
+    if(found)html+='<p>Chart '+(r.chart+1)+' rolled '+r.breakthroughRolls.join(' → ')+'. '+esc(found[2])+'</p>';
+    else if(r.step==='chart')html+='<p>Choose a chart below and roll for one new advance.</p>';
+    html+='</section>';
     if(r.step==='done')$('action').innerHTML=btn('Continue to Purchase & Repair','research-finish','primary');
   }
-  return html+breakthroughs.map((c,i)=>chartList(match,c,i,r?.step==='chart')).join('');
+  return html+block('Development charts')+breakthroughs.map((c,i)=>chartList(match,c,i,r?.step==='chart')).join('');
 }
 function victoryTracker(match){
   return victoryStatus(match).map(goal=>{
@@ -1226,7 +1251,9 @@ function applyRoom(packet,own=false,after){
   roomState=packet;
   if(newBoard){
     try{
-      if($('menuDialog').open&&!$('settingsWindow').hidden)sessionStorage.setItem(roomSettingsKey,'open');
+      if(objectiveView){
+        const {power,wallet,label}=objectiveView;sessionStorage.setItem(roomObjectiveKey,JSON.stringify({power,wallet,label}));
+      }else if($('menuDialog').open&&!$('settingsWindow').hidden)sessionStorage.setItem(roomSettingsKey,'open');
       else if($('dialog').open&&$('warReport'))sessionStorage.setItem(roomReportKey,JSON.stringify(warReportView()));
     }catch{}
     location.reload();return;
@@ -1242,6 +1269,7 @@ function applyRoom(packet,own=false,after){
   if(after)after();
   render();
   if($('dialog').open&&$('guideTabs'))refreshFieldGuide();
+  if(objectiveView)updateObjectiveMap();
   if($('dialog').open&&$('warReport'))refreshWarReport();
 }
 async function refreshRoom(){
@@ -1277,7 +1305,7 @@ function roomButton(act,b){
   const {id,k,n}=b.dataset,qty=Number(n),index=Number(id),m=globalBoard.match;
   const keep=()=>{},clear=()=>{ui=freshUI();};
   switch(act){
-    case 'begin-turn':case 'skip-research':case 'research-finish':case 'begin-noncombat':case 'confirm-interceptors':
+    case 'begin-turn':case 'research-finish':case 'begin-noncombat':case 'confirm-interceptors':
     case 'roll':case 'defend':case 'opening-fire':return roomSend(act);
     case 'buy':return roomSend(act,{unit:k,delta:qty,wallet:ui.wallet||s.power},keep);
     case 'facility-order':return roomSend(act,{unit:k,site:id,delta:qty,wallet:ui.wallet||s.power},keep);
@@ -1344,7 +1372,7 @@ function render(){
       '<h2>'+seasonForRound(match.round)+'</h2><p class="briefing-round">Round '+match.round+' · '+attacker+(match.power==='Germans'?' moves first':' to move')+'</p>'+
       '<p class="briefing-address">'+esc(openingAddress(match,match.controllers[match.power]))+' Survey the board, then begin your turn when you’re ready.</p><div class="briefing-guides">'+btn('National objectives &amp; politics','power-reference')+btn('Victory and technology','objective-status')+'</div>'+
       Object.entries(match.victoryHolds||{}).map(([key,h])=>'<p class="hint">'+globalPowers[h.power]+' can clinch '+({europe:'Europe',pacific:'the Pacific',capitals:'the Allied capital objective'}[key])+' at the start of its turn in round '+(h.round+1)+'.</p>').join('')+
-      (canResearch(match)?btn('Skip research and purchase units','skip-research'):'');
+      (canResearch(match)?skipResearchButton(false):'');
     $('action').innerHTML=btn('Begin '+attacker+'’s turn','begin-turn','primary');
   }else if(inPurchase())$('panel').innerHTML=purchasePanel();
   else if(s.phase==='plan')$('panel').innerHTML=planPanel();
@@ -1390,6 +1418,13 @@ function render(){
     }
   }
   if(award)bindHold($('placeFrenchAward'),()=>roomSend('french-place')||run(()=>{placeFrenchAward(s);ui=freshUI();}));
+  else if($('skipResearch'))bindHold($('skipResearch'),()=>{
+    if(roomSend(briefing?'skip-research':'research-finish'))return;
+    run(()=>{
+      if(briefing)globalBoard.match.phase='purchase';else finishResearch(globalBoard.match,s);
+      ui=freshUI();$('map').setAttribute('aria-label','Purchase and repair. Select a territory or force to inspect.');
+    });
+  });
   else if($('fundResearch'))bindHold($('fundResearch'),()=>{const b=researchBudget(globalBoard.match);advanceEconomy('research-buy',[b.dice,b.pacific]);});
   else if($('collectIncome'))bindHold($('collectIncome'),()=>advanceEconomy('collect'));
   else if($('finishMobilization'))bindHold($('finishMobilization'),()=>advanceEconomy('mobilize'));
@@ -1451,12 +1486,60 @@ function refreshFieldGuide(){
   }
   $('dialogBody').scrollTop=scroll;
 }
+function updateObjectiveMap(){
+  const {power,wallet,label,controller}=objectiveView;
+  const row=objectiveMapInfo(globalBoard.match,power,wallet,label);
+  if(!row){$('objectiveAtlas').close();return;}
+  $('objectivePower').textContent=globalPowers[power]+(power==='British'?' · '+treasuryName(wallet):'');
+  $('objectiveTitle').textContent=label;$('objectiveBonus').textContent=row.bonus;
+  $('objectivePotential').textContent=!row.value?'One-time award':row.perTerritory?row.value+' IPCs per qualifying territory':row.projected===0?row.value+' IPCs possible':'';
+  $('objectiveCondition').textContent=row.condition;
+  $('objectiveStatus').textContent=row.status||'';
+  const count=row.sites.filter(site=>site.met).length;
+  $('objectiveMet').textContent=row.legend[0]+' · '+count;
+  $('objectiveUnmet').textContent=row.legend[1]+' · '+(row.sites.length-count);
+  const select=$('objectivePlace'),previous=select.value;
+  select.replaceChildren(new Option('All locations',''),...row.sites.map(site=>new Option(site.name+' · '+row.legend[site.met?0:1],site.name)));
+  select.value=previous||'';
+  controller.showObjective(row.sites);
+}
+async function showObjectiveMap(button){
+  const power=$('guidePower').value,{wallet,objective:label}=button.dataset;
+  let controller;
+  try{controller=await mapReady;}catch{
+    button.textContent='Map unavailable';return;
+  }
+  if(!controller||!button.isConnected||!$('dialog').open||objectiveView)return;
+  const board=document.querySelector('.board');
+  objectiveView={power,wallet,label,controller,mapLabel:$('map').getAttribute('aria-label')};
+  $('objectiveMapHost').append(board);
+  $('objectiveAtlas').showModal();
+  $('objectivePlace').replaceChildren();
+  $('recenter').setAttribute('aria-label','Fit objective locations');$('recenter').title='Fit objective locations';
+  $('map').setAttribute('aria-label',label+' objective map. Pan or zoom to explore.');
+  updateObjectiveMap();
+}
+$('objectivePlace').onchange=()=>objectiveView?.controller.fitObjective($('objectivePlace').value);
+$('objectiveBack').onclick=()=>$('objectiveAtlas').close();
+$('objectiveAtlas').addEventListener('close',()=>{
+  if(!objectiveView)return;
+  const {controller,wallet,label,mapLabel}=objectiveView;
+  objectiveView=null;
+  $('exerciseBoard').prepend(document.querySelector('.board'));
+  $('recenter').setAttribute('aria-label','Center on the active front');$('recenter').title='Center on the active front';
+  $('map').setAttribute('aria-label',mapLabel);
+  controller.closeObjective();render();
+  const trigger=[...$('dialogBody').querySelectorAll('[data-objective]')].find(b=>b.dataset.wallet===wallet&&b.dataset.objective===label);
+  trigger?.focus({preventScroll:true});
+});
 $('dialogBody').addEventListener('change',e=>{
   if(e.target.id==='guidePower')updateGuidePage($('guideTabs').querySelector('[aria-selected="true"]').dataset.section);
 });
 $('dialogBody').addEventListener('click',e=>{
   const tab=e.target.closest('#guideTabs [role="tab"]');
   if(tab)switchGuideTab(tab.dataset.section);
+  const mapButton=e.target.closest('[data-objective]');
+  if(mapButton)showObjectiveMap(mapButton);
 });
 $('dialogBody').addEventListener('keydown',e=>{
   if(!e.target.matches('#guideTabs [role="tab"]'))return;
@@ -1525,6 +1608,10 @@ document.addEventListener('click',e=>{
   if(roomCode){
     if((!roomCanAct()&&!['players','air-orders','save-air-orders','clear','war-cancel'].includes(act))||roomButton(act,b))return;
   }
+  if(act==='research-mode'){
+    run(()=>{ui.researchMode=id;});
+    $('panel').querySelector('.research-choice[aria-pressed="true"]')?.focus({preventScroll:true});return;
+  }
   if(act==='war-open'){chooseWarTargets();return;}
   if(act==='war-cancel'){stopHold();$('dialog').close();return;}
   if(act==='war-review'){reviewWarTargets();return;}
@@ -1542,10 +1629,9 @@ document.addEventListener('click',e=>{
       case 'remove-drop':s.orders=s.orders.filter((_,i)=>i!==ui.dropIndex);ui=freshUI();break;
       case 'remove-rocket':s.rocketOrders=s.rocketOrders.filter(o=>o.from!==id);break;
       case 'fire-rocket':fireRocket(s,id);message=s.record.findLast(e=>e.rocket).detail;break;
-      case 'skip-research':
       case 'begin-turn':
         if(inBriefing()){
-          globalBoard.match.phase=act==='begin-turn'&&canResearch(globalBoard.match)?'research':'purchase';ui=freshUI();
+          globalBoard.match.phase=canResearch(globalBoard.match)?'research':'purchase';ui=freshUI();
           $('map').setAttribute('aria-label','Purchase and repair. Select a territory or force to inspect.');
         }
         break;
@@ -1784,7 +1870,7 @@ function fieldGuideCopy(){
   const phase=globalBoard.match.phase;
   const phases=[
     ['briefing','Turn briefing','<p>Inspect the board and check your national objectives before beginning your turn. An opponent’s capital or a change in diplomacy can affect your next collection.</p>'],
-    ['research','Research and development','<p>When research is available, each die costs 5 IPCs. At least one 6 lets you choose a development chart and roll for one new technology. You may skip research and save your IPCs.</p>'],
+    ['research','Research and development','<p>When research is available, each die costs 5 IPCs. At least one 6 lets you choose a development chart and roll for one new technology. Save for purchases is selected first. Hold to skip, or select Fund research and confirm the cost to roll.</p>'],
     ['purchase','Purchase and repair','<p>Choose new units and repairs, then hold to pay. New units go to your reserves until mobilization. The United Kingdom spends from its Europe and Pacific treasuries separately.</p>'],
     ['combatMove','Combat move',planning+'<p>Issue any declaration of war before queuing orders. Amber marks eligible destinations. For a distant destination, choose the dashed teal passages along the route. Committing an attack on a strict neutral changes the alignment of other eligible strict neutrals.</p>'+
       '<p>Tanks and mechanized infantry move two spaces. Mechanized infantry needs a tank on the same route to blitz until it gains Improved Mechanized Infantry. Ships normally move two spaces, fighters and tactical bombers four, and strategic bombers six. An operational friendly base can add one space at departure. Aircraft must have enough range to land on eligible carriers or territory that was friendly at the start of the turn.</p>'],
@@ -1890,10 +1976,20 @@ render();
 if(roomCode){
   try{
     const report=sessionStorage.getItem(roomReportKey);
-    if(report){sessionStorage.removeItem(roomReportKey);$('warStatus').click();restoreReportView(JSON.parse(report));}
+    const objective=sessionStorage.getItem(roomObjectiveKey);
+    if(objective){
+      sessionStorage.removeItem(roomObjectiveKey);
+      const {power,wallet,label}=JSON.parse(objective);
+      openFieldGuide();$('guidePower').value=power;updateGuidePage('objectives');
+      const trigger=[...$('guidePage').querySelectorAll('[data-objective]')].find(b=>b.dataset.wallet===wallet&&b.dataset.objective===label);
+      if(trigger){
+        const item=trigger.closest('details');if(item)item.open=true;
+        queueMicrotask(()=>showObjectiveMap(trigger));
+      }
+    }else if(report){sessionStorage.removeItem(roomReportKey);$('warStatus').click();restoreReportView(JSON.parse(report));}
     else if(sessionStorage.getItem(roomSettingsKey)){
       sessionStorage.removeItem(roomSettingsKey);$('boardSettings').focus();$('boardSettings').click();
     }
   }catch{}
   setInterval(refreshRoom,1200);document.addEventListener('visibilitychange',refreshRoom);window.addEventListener('online',refreshRoom);}
-try{draw=await atlas(pick,v=>{view=v;save();},view,exercise);render();save();}catch{message='The map could not load. Reopen the playtest while online to finish the download.';render();}
+try{mapReady=atlas(pick,v=>{view=v;save();},view,exercise,name=>{$('objectivePlace').value=name;});draw=(await mapReady).draw;render();save();}catch{message='The map could not load. Reopen the playtest while online to finish the download.';render();}

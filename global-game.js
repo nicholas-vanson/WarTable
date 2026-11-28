@@ -117,7 +117,8 @@ export function unitPrice(match,unit){
 export function purchaseTotal(draft,match){
   return Object.entries(draft).reduce((sum,[unit,n])=>sum+n*unitPrice(match,unit),0);
 }
-export const burmaRoadGaps=board=>['India','Burma','Yunnan','Szechwan'].filter(name=>!['British','UK_Pacific','Chinese','Americans','ANZAC','French','Russians'].includes(board[name]?.owner));
+export const burmaRoadTerritories=['India','Burma','Yunnan','Szechwan'];
+export const burmaRoadGaps=board=>burmaRoadTerritories.filter(name=>!['British','UK_Pacific','Chinese','Americans','ANZAC','French','Russians'].includes(board[name]?.owner));
 export const burmaRoadOpen=board=>!burmaRoadGaps(board).length;
 export function purchasePlan(match,wallet=match.power){
   if(!spendingEconomies(match).includes(wallet))throw Error('Choose an economy of the active power.');

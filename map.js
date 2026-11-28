@@ -1020,7 +1020,7 @@ function terrainSheets(layout,extent){
     }
   };
 }
-export async function atlas(onPick,onView,initial,exercise) {
+export async function atlas(onPick,onView,initial,exercise,onObjectivePlace) {
   const map=document.querySelector('#map'), forces=document.querySelector('#forces'), regions=document.querySelector('#regions'),routes=document.querySelector('#routes');
   const western=await (await fetch('./assets/territories.json')).json();
   const other=await (await fetch('./assets/fronts.json')).json();
@@ -1116,6 +1116,78 @@ export async function atlas(onPick,onView,initial,exercise) {
   view.z=bound(view.z,minZoom,maxZoom);
   if(initial&&(migrate||initial.z!==view.z))onView({...view});
   const pointers=new Map();let gesture=null;
+  const objectiveLayer=map.querySelector('#objectiveInk'),objectiveAreas=new Map();
+  let boardView=null,located='';
+  function labelObjectiveAreas(scale,vw,vh){
+    const occupied=[];
+    const entries=[...objectiveAreas.entries()].sort(([a],[b])=>Number(b===located)-Number(a===located));
+    for(const [name,{x,y,caption}] of entries){
+      const dx=(x+sheetOffset(x,view.x,extent.width)-view.x)*scale,dy=(y-view.y)*scale;
+      const half=caption.textContent.length*3.7+5;
+      const show=Math.abs(dx)<=vw*scale/2&&Math.abs(dy)<=vh*scale/2&&
+        !occupied.some(([cx,cy,width])=>Math.abs(dy-cy)<16&&Math.abs(cx-dx)<width+half);
+      caption.style.display=show?'':'none';
+      if(show){
+        occupied.push([dx,dy,half]);
+        caption.setAttribute('transform','translate('+x+' '+y+') scale('+1/scale+')');
+      }
+    }
+  }
+  function fitObjective(name){
+    const areas=name?[objectiveAreas.get(name)].filter(Boolean):[...objectiveAreas.values()];
+    if(!areas.length)return;
+    located=name||'';onObjectivePlace(located);
+    // Cut the atlas in the largest empty gap so Pacific objectives fit across the wrap.
+    const period=extent.width,sorted=areas.map(a=>a.x).sort((a,b)=>a-b);
+    let start=sorted[0],gap=-1;
+    for(let i=0;i<sorted.length;i++){
+      const next=sorted[(i+1)%sorted.length],distance=(i===sorted.length-1?period:0)+next-sorted[i];
+      if(distance>gap){gap=distance;start=next;}
+    }
+    let left=Infinity,right=-Infinity,top=Infinity,bottom=-Infinity;
+    for(const a of areas){
+      const shift=a.x<start?period:0;
+      left=Math.min(left,a.left+shift);right=Math.max(right,a.right+shift);
+      top=Math.min(top,a.top);bottom=Math.max(bottom,a.bottom);
+    }
+    const m=metrics();
+    view={...view,x:(left+right)/2,y:(top+bottom)/2,
+      z:bound(.85*Math.min(m.w/Math.max(1,right-left),m.h/Math.max(1,bottom-top))/m.base,minZoom,maxZoom)};
+    render();
+  }
+  function showObjective(sites){
+    const first=!boardView;
+    if(first)boardView={...view};
+    objectiveAreas.clear();objectiveLayer.replaceChildren();
+    const byName=new Map(sites.map(site=>[site.name,site]));
+    for(const [id,shape] of Object.entries(exercise.shapes)){
+      const name=places[id].name,site=byName.get(name);
+      if(!site)continue;
+      const [x,y]=shape.center,group=node('g',{'data-objective-place':name,'data-place':id,'data-met':site.met});
+      const path=node('path',{d:shape.d,class:'objective-boundary','fill-rule':'evenodd','vector-effect':'non-scaling-stroke'});
+      // A dot keeps an island visible even when its printed boundary is smaller than a pixel.
+      const caption=node('text',{class:'objective-caption',y:-7,'text-anchor':'middle'},places[id].water?'SZ '+parseInt(name,10):name);
+      group.append(path,node('path',{d:'M'+x+' '+y+'h.01',class:'objective-pin','vector-effect':'non-scaling-stroke'}),caption);
+      objectiveLayer.append(group);
+      const box=path.getBBox();let left=box.x,right=left+box.width;
+      if(box.width>extent.width/2){
+        left=right=x;
+        for(const pair of shape.d.matchAll(/(-?[\d.]+),(-?[\d.]+)/g)){
+          const px=Number(pair[1]),wrapped=px+sheetOffset(px,x,extent.width);
+          left=Math.min(left,wrapped);right=Math.max(right,wrapped);
+        }
+      }
+      objectiveAreas.set(name,{x,y,caption,left,right,top:box.y,bottom:box.y+box.height});
+    }
+    if(first)fitObjective();else render();
+  }
+  function closeObjective(){
+    if(!boardView)return;
+    view=boardView;boardView=null;located='';objectiveAreas.clear();objectiveLayer.replaceChildren();
+    render();
+  }
+  function saveCamera(){if(!boardView)onView({...view});}
+
   function metrics(){
     const w=map.clientWidth||1,h=map.clientHeight||1;
     const base=Math.min(w/650,h/480)/detailScale;
@@ -1134,6 +1206,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     drawSheets?.(view,vw,vh,scale,prefs.terrain==='auto');
     document.getElementById('zoomIn').disabled=view.z>=maxZoom;
     map.setAttribute('viewBox',[view.x-vw/2,view.y-vh/2,vw,vh].join(' '));
+    if(boardView)labelObjectiveAreas(scale,vw,vh);
     document.querySelector('#scale').textContent=Math.round(view.z*100)+'%';
     let lon=view.x/34-13,lat=69-view.y/52;
     if(exercise.world){
@@ -1486,7 +1559,7 @@ export async function atlas(onPick,onView,initial,exercise) {
         // canonical counters and printed faces at the wrapped board point.
         point.x-=lap*extent.width;
         screenX-=lap*extent.width*screen.a;
-        for(const el of Array.from(forces.children).reverse()){
+        if(!boardView)for(const el of Array.from(forces.children).reverse()){
           const local=new DOMPoint(screenX,e.clientY).matrixTransform(el.getScreenCTM().inverse());
           const box=el.getBBox();
           if(local.x>=box.x&&local.x<=box.x+box.width&&local.y>=box.y&&local.y<=box.y+box.height){hit=el.dataset;break;}
@@ -1505,7 +1578,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     }
     // At wider zoom the printed faces shrink. Give taps in the surrounding territory
     // a 44 px target, resolving shared space to the nearest counter of that territory.
-    if(hit?.place&&!hit.sea&&!hit.unit&&hit.place!==selectedPlace()){
+    if(!boardView&&hit?.place&&!hit.sea&&!hit.unit&&hit.place!==selectedPlace()){
       let nearest=Infinity;
       for(const stack of forces.querySelectorAll('g[data-unit]')){
         if(stack.dataset.place!==hit.place)continue;
@@ -1536,7 +1609,10 @@ export async function atlas(onPick,onView,initial,exercise) {
     const type=gesture?.type,origin=gesture?.origin,nation=gesture?.nation;
     pointers.delete(e.pointerId);
     gesture=pointers.size?{...basis(),moved:true}:null;
-    if(tapped){
+    if(tapped&&boardView&&objectiveAreas.has(places[id]?.name)){
+      located=places[id].name;onObjectivePlace(located);render();
+    }
+    if(tapped&&!boardView){
       if(game.phase==='combat')inspectedPlace=id===selectedPlace()?null:id||null;
       if(!exercise.world){
         exerciseSea=sea&&sea!==exerciseSea?sea:null;
@@ -1545,11 +1621,11 @@ export async function atlas(onPick,onView,initial,exercise) {
       if(id)onPick(id,type,origin,nation);
       render();
     }
-    onView({...view});
+    saveCamera();
   }
   function activateStack(event){
     const stack=event.target.closest('[data-unit][role="button"]');
-    if(!stack)return;
+    if(!stack||boardView)return;
     event.preventDefault();
     onPick(stack.dataset.place,stack.dataset.unit,stack.dataset.origin,stack.dataset.nation);
     const panel=document.getElementById('panel');
@@ -1576,12 +1652,12 @@ export async function atlas(onPick,onView,initial,exercise) {
     }else{
       const p=coords(e);zoom(Math.exp(-bound(e.deltaY,-240,240)*.002),p.x,p.y);
     }
-    onView({...view});
+    saveCamera();
   },{passive:false});
-  function button(id,fn){document.getElementById(id).onclick=()=>{fn();render();onView({...view});};}
+  function button(id,fn){document.getElementById(id).onclick=()=>{fn();render();saveCamera();};}
   const zoomSteps={fine:1.15,standard:1.38,large:1.65};
   button('zoomIn',()=>zoom(zoomSteps[prefs.zoom]));button('zoomOut',()=>zoom(1/zoomSteps[prefs.zoom]));
-  button('recenter',()=>{view={...exercise.camera};});
+  button('recenter',()=>{if(boardView)fitObjective();else view={...exercise.camera};});
   button('overview',()=>{const m=metrics();view={x:extent.left+extent.width/2,y:extent.top+extent.height/2,z:Math.min(m.w/extent.width,m.h/extent.height)/m.base};});
   window.addEventListener(mapPreferencesChanged,()=>{
     prefs=readMapPreferences();
@@ -1589,7 +1665,7 @@ export async function atlas(onPick,onView,initial,exercise) {
     render();
   });
   new ResizeObserver(render).observe(map);
-  return (s,id,to,type,seed,nation,briefing=false,choices=null)=>{
+  function draw(s,id,to,type,seed,nation,briefing=false,choices=null){
     if(surveying!==briefing)lastScale=0;
     surveying=briefing;routeChoices=choices;
     if(seed!==layoutSeed){offsets=homeOffsets(seed);layoutSeed=seed;}
@@ -1597,5 +1673,6 @@ export async function atlas(onPick,onView,initial,exercise) {
       inspectedPlace=undefined;exerciseSea=null;lastBattle=s.active;
     }
     game=s;focus=id;target=to;selectedType=type;selectedNation=nation;render();
-  };
+  }
+  return {draw,showObjective,fitObjective,closeObjective};
 }
