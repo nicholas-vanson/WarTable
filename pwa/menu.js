@@ -14,6 +14,7 @@ if(/^room\/[A-F0-9]{10}$/.test(route)||route==='global'||route.startsWith('exerc
   launcher.hidden=true;
   document.getElementById('exerciseHeader').hidden=false;
   document.getElementById('exerciseBoard').hidden=false;
+  document.getElementById('boardNav').hidden=false;
   try{await import('./app.js');}
   catch(error){document.getElementById('notice').textContent='Could not open this board. '+error.message;document.getElementById('exerciseMenu').onclick=()=>{location.hash=route.startsWith('room/')?'multiplayer':'';};}
 }else{

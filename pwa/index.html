@@ -2,14 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="application-version" content="0.1.96">
+<meta name="application-version" content="0.1.97">
 <meta name="theme-color" content="#202c27"><meta name="description" content="WarTable · Global 1940 Second Edition and local playtest exercises.">
 <title>WarTable · Global 1940</title>
 <link rel="icon" href="./assets/icon-192.png"><link rel="manifest" href="./manifest.webmanifest">
 <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-<section id="launcher" class="launcher" aria-label="Main menu">
   <svg class="menu-symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <symbol id="m-settings" viewBox="0 0 24 24"><path d="m10 3-.5 2.2-2 .9-2.1-.7-2 3.3 1.7 1.6-.2 2.3L3.4 14l2 3.5 2.2-.6 1.9 1.2.6 2.3h3.8l.7-2.3 1.8-1.2 2.3.6 2-3.5-1.6-1.4-.2-2.3 1.7-1.6-2-3.3-2.2.7-2-.9L14 3z"/><circle cx="12" cy="11.8" r="3"/></symbol>
@@ -18,6 +17,7 @@
       <symbol id="m-arrow" viewBox="0 0 24 24"><path d="M4 12h15m-6-6 6 6-6 6"/></symbol>
     </defs>
   </svg>
+<section id="launcher" class="launcher" aria-label="Main menu">
   <div class="menu-width menu-content">
     <div id="modeChoices">
       <section class="campaign-card" aria-labelledby="campaignTitle">
@@ -133,7 +133,7 @@
     <p id="menuError" role="alert" hidden></p>
   </div>
 </dialog>
-<header id="exerciseHeader" hidden><div class="brand"><img class="mark" src="./assets/wartable-mark.svg" alt=""> WarTable</div><span class="divider"></span><h1 class="theater">Western Front</h1><div class="head-end"><span class="local" id="storage">Local playtest</span><button id="exerciseMenu" class="header-button" aria-label="Main menu">Menu</button><button id="journal" class="header-button">Review</button><button id="help" class="header-button" aria-label="Playtest guide">Guide</button></div></header>
+<header id="exerciseHeader" hidden><div class="brand"><img class="mark" src="./assets/wartable-mark.svg" alt=""> WarTable</div><span class="divider"></span><h1 class="theater">Western Front</h1><span class="local" id="storage">Local playtest</span></header>
 <main id="exerciseBoard" hidden>
 <section class="board" aria-label="European staff map">
 <svg id="map" role="group" aria-label="Pan or pinch the map. Select a German force and a French destination." tabindex="0">
@@ -227,15 +227,36 @@
 <div class="map-foot"><span class="north">↑ N</span><span id="scale"></span><span id="controlKey"><i class="ink-de"></i>Germany <i class="ink-fr"></i>France</span><span id="mapIntel" role="status"></span><span id="coordinates"></span></div>
 </section>
 <div id="mapNotice" role="status"></div>
-<button id="openPanel" aria-controls="ordersPanel" aria-expanded="false" hidden>Open orders</button>
-<aside id="ordersPanel" aria-label="Operations panel">
+<aside id="ordersPanel" aria-label="Orders" tabindex="-1">
 <div id="resizePanel" tabindex="0" role="separator" aria-controls="ordersPanel" aria-label="Resize orders panel" title="Drag to resize orders panel"></div>
-<div class="panelhead"><span class="power-tab">Germany</span><button id="hidePanel" aria-controls="ordersPanel" aria-expanded="true">Hide orders</button></div>
+<div class="panelhead"><span class="power-tab">Germany</span></div>
 <section id="battleForces" aria-label="Remaining forces"></section>
 <div class="panel-scroll"><div id="panel"></div></div>
 <div id="notice" role="status" aria-live="polite"></div><div id="action"></div>
 </aside>
 </main>
+<nav id="boardNav" aria-label="Board navigation" hidden>
+  <div class="board-nav-inner">
+    <button id="exerciseMenu" type="button" aria-label="Main menu">
+      <svg class="menu-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      Menu
+    </button>
+    <button id="ordersButton" type="button" aria-controls="ordersPanel" aria-expanded="true">
+      <svg class="menu-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5H5v16h14V5h-3M9 3h6v4H9zM8 12h8M8 16h6"/></svg>
+      Orders <span class="orders-caret" aria-hidden="true"></span>
+    </button>
+    <div class="board-nav-references">
+      <button id="journal" type="button" aria-haspopup="dialog">
+        <svg class="menu-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8a8.5 8.5 0 1 1-.4 7M4 3v5h5M12 7v5l3 2"/></svg>
+        Review
+      </button>
+      <button id="help" type="button" aria-label="Field guide" aria-haspopup="dialog">
+        <svg class="menu-icon" aria-hidden="true"><use href="#m-guide"/></svg>
+        Guide
+      </button>
+    </div>
+  </div>
+</nav>
 <dialog id="dialog" aria-labelledby="dialogTitle">
 <div class="dialog-head"><h2 id="dialogTitle"></h2><button id="closeDialog" aria-label="Close">×</button></div>
 <div id="dialogBody"></div>

@@ -1319,7 +1319,7 @@ function render(){
     $('ordersPanel').style.setProperty('--nation-ink',palette.ink);
     $('ordersPanel').style.setProperty('--nation-paper',palette.paper);
   }
-  if(award&&!showingAward&&!$('openPanel').hidden)$('openPanel').click();
+  if(award&&!showingAward&&$('ordersPanel').hidden)$('ordersButton').click();
   showingAward=award;
   $('exerciseBoard').classList.toggle('opening-briefing',briefing);
   document.querySelector('.power-tab').textContent=finished()?'Game over':award?'France · Player '+globalBoard.match.controllers.French:briefing?'Turn briefing':attacker;
@@ -1355,7 +1355,6 @@ function render(){
   panelView=nextView;
   $('notice').textContent=message;
   $('mapNotice').textContent=message;
-  $('openPanel').textContent=finished()?'View victory':inResearch()?'Open research':award?'French reinforcements':briefing?'Open briefing':'Open orders';
   const nc=s.phase==='noncombat';
   if(nc)$('map').setAttribute('aria-label','Noncombat move. Select an unused unit and a highlighted destination.');
   if(s.phase==='mobilize'){
@@ -1742,7 +1741,7 @@ $('journal').onclick=()=>{
 };
 function fieldGuideCopy(){
   const navigation='<p>Pan with one finger. '+(isGlobal?'The global map wraps east and west. ':'')+
-    'Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Drag the panel grip to resize the orders sheet, or tap Hide orders for the full map.</p>';
+    'Pinch or use + and − to zoom. ⌖ returns to the front. ⤢ shows the whole theater. Tap Orders in the center of the bottom bar to show or hide the sheet. Drag its grip to resize it.</p>';
   const terrain='<p>★ marks a capital victory city. ◆ marks another victory city. Both count as one.</p>'+
     '<p>National colors fade inward from the border. Across neutral territories, single grey lines mark strict neutrals, paired lines mark pro-Allied neutrals and dashed lines mark pro-Axis neutrals. Grey stippling marks impassable terrain.</p>'+
     '<p>Tap a territory to inspect it in violet, then tap again to clear it. Dashed borders separate sea zones. Tap water to see adjacent zone numbers.</p>';
@@ -1778,7 +1777,7 @@ $('help').onclick=()=>isGlobal?openFieldGuide():showDialog('Field guide',fieldGu
 // Store the two panel dimensions separately so rotating the phone restores the last fit.
 function setupOrdersPanel(){
   const main=document.querySelector('main'),sheet=$('ordersPanel'),grip=$('resizePanel');
-  const open=$('openPanel'),hide=$('hidePanel'),stacked=matchMedia('(max-width:650px) and (orientation:portrait)');
+  const button=$('ordersButton'),stacked=matchMedia('(max-width:650px) and (orientation:portrait)');
   // Visibility is local to this board visit. Only Settings changes the opening preference.
   const sizeKey='wartable.orders-panel-size.v1';
   let collapsed=false,sizes={};
@@ -1801,8 +1800,8 @@ function setupOrdersPanel(){
     return {axis,extent,min,max,coordinate:vertical?'clientY':'clientX'};
   }
   function apply(){
-    sheet.hidden=collapsed;open.hidden=!collapsed;main.classList.toggle('panel-closed',collapsed);
-    hide.setAttribute('aria-expanded',String(!collapsed));
+    sheet.hidden=collapsed;main.classList.toggle('panel-closed',collapsed);
+    button.setAttribute('aria-expanded',String(!collapsed));
     main.style.gridTemplateColumns='';main.style.gridTemplateRows='';
     if(collapsed)return;
     const {axis,extent,min,max}=dimensions();
@@ -1816,11 +1815,17 @@ function setupOrdersPanel(){
     const actual=Math.round(sheet.getBoundingClientRect()[axis]);
     grip.setAttribute('aria-valuenow',actual);grip.setAttribute('aria-valuetext',actual+' pixels '+(axis==='height'?'high':'wide'));
   }
-  function toggle(hidden){
-    stopHold();collapsed=hidden;
-    apply();(collapsed?open:hide).focus({preventScroll:true});
+  function toggle(){
+    stopHold();collapsed=!collapsed;
+    apply();
+    (collapsed?button:sheet).focus({preventScroll:true});
   }
-  hide.onclick=()=>toggle(true);open.onclick=()=>toggle(false);
+  button.onclick=toggle;
+  sheet.addEventListener('keydown',event=>{
+    if(event.key==='Escape'&&!event.defaultPrevented&&!event.target.matches('select,input,textarea')){
+      event.preventDefault();toggle();
+    }
+  });
   function sizeTo(pixels){
     const {axis,extent,min,max}=dimensions();
     sizes[axis]=Math.max(min,Math.min(max,pixels))/extent;apply();
