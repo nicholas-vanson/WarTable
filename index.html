@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="application-version" content="0.1.97">
+<meta name="application-version" content="0.1.98">
 <meta name="theme-color" content="#202c27"><meta name="description" content="WarTable · Global 1940 Second Edition and local playtest exercises.">
 <title>WarTable · Global 1940</title>
 <link rel="icon" href="./assets/icon-192.png"><link rel="manifest" href="./manifest.webmanifest">
@@ -237,10 +237,16 @@
 </main>
 <nav id="boardNav" aria-label="Board navigation" hidden>
   <div class="board-nav-inner">
-    <button id="exerciseMenu" type="button" aria-label="Main menu">
-      <svg class="menu-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
-      Menu
-    </button>
+    <div class="board-nav-references">
+      <button id="exerciseMenu" type="button" aria-label="Main menu">
+        <svg class="menu-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        Menu
+      </button>
+      <button id="warStatus" type="button" aria-haspopup="dialog">
+        <svg class="menu-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18M5 17v-6h3v6zm6 0V4h3v13zm6 0V8h3v9z"/></svg>
+        War status
+      </button>
+    </div>
     <button id="ordersButton" type="button" aria-controls="ordersPanel" aria-expanded="true">
       <svg class="menu-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5H5v16h14V5h-3M9 3h6v4H9zM8 12h8M8 16h6"/></svg>
       Orders <span class="orders-caret" aria-hidden="true"></span>

@@ -10,7 +10,7 @@ export const globalCities=[
   ];
 const pacificCities=new Set(['San Francisco','Honolulu','Tokyo','Shanghai','Hong Kong','Manila','Calcutta','Sydney']);
 const axisCapitals=['Berlin','Rome','Tokyo'],alliedCapitals=['London','Paris','Moscow','Washington'];
-function victorySide(p){
+export function victorySide(p){
   if(['Germans','Italians','Japanese'].includes(p))return 'Axis';
   if(p==='UK_Pacific'||p==='Dutch'||Object.hasOwn(politicalPowers,p))return 'Allies';
   return null;

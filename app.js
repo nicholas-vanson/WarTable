@@ -3,6 +3,7 @@ import {lanDecision,lanSide} from './lan-game.js';
 import {breakthroughs,hasTech,canResearch,researchWallets,buyResearch,discover,finishResearch} from './research.js';
 import {researchRoutes,dropRoom,queueDrop,queueRocket,rocketsPending,fireRocket} from './research-moves.js';
 import {esc,objectivesReference,politicsReference} from './field-guide.js';
+import {globalWarStatus,exerciseWarStatus,warStatusChart} from './war-status.js';
 import {victoryStatus} from './victory.js';
 import {raidTargets,facilityHits,damageLimit,raidFacilityNames,pendingRaids,currentRaid,chooseRaid,setInterceptorCount,confirmInterceptors,setRaidTarget,raidLossGroups,advanceRaid} from './raids.js';
 import {scramblePlan,scrambleRows} from './scramble.js';
@@ -46,6 +47,7 @@ const inResearch=()=>globalBoard?.match.phase==='research';
 const finished=()=>globalBoard?.match.phase==='victory';
 const inPurchase=()=>globalBoard?.match.phase==='purchase';
 const inBriefing=()=>globalBoard?.match.phase==='briefing';
+const roomReportKey=roomCode?'wartable.lan.war-status.'+roomCode:'';
 const roomViewKey=roomCode?'wartable.lan.view.'+roomCode+'.'+globalBoard.match.round+'.'+s.power:'';
 if(roomCode)try{view=JSON.parse(sessionStorage.getItem(roomViewKey))||null;}catch{}
 view??=globalBoard?.openingView??null;
@@ -1221,7 +1223,10 @@ function applyRoom(packet,own=false,after){
     previous.phase==='purchase'&&m.phase!=='purchase'||JSON.stringify(previous.diplomacy)!==JSON.stringify(m.diplomacy)||
     JSON.stringify(previous.technology)!==JSON.stringify(m.technology);
   roomState=packet;
-  if(newBoard){location.reload();return;}
+  if(newBoard){
+    if($('dialog').open&&$('warReport'))try{sessionStorage.setItem(roomReportKey,JSON.stringify(warReportView()));}catch{}
+    location.reload();return;
+  }
   endPlayback();
   for(const power of Object.keys(globalPowers)){
     if(m.holdScrambles?.[power])exercise.holdScrambles[power]=true;else delete exercise.holdScrambles[power];
@@ -1233,6 +1238,7 @@ function applyRoom(packet,own=false,after){
   if(after)after();
   render();
   if($('dialog').open&&$('guideTabs'))refreshFieldGuide();
+  if($('dialog').open&&$('warReport'))refreshWarReport();
 }
 async function refreshRoom(){
   if(roomBusy||roomPolling||document.hidden)return;
@@ -1730,6 +1736,26 @@ const combatMapLabel='Pan or pinch the map. Select a unit from '+attacker+' and 
 $('map').setAttribute('aria-label',inBriefing()?'Opening board. Pan or pinch the map and select a territory or force to inspect.':inPurchase()?'Purchase and repair. Select a territory or force to inspect.':combatMapLabel);
 $('controlKey').innerHTML=(isGlobal?[attacker]:[attacker,defender]).map(n=>'<i data-nation="'+n+'"></i>'+n).join(' ');
 $('closeDialog').onclick=()=>$('dialog').close();
+function currentWarChart(){
+  return warStatusChart(isGlobal?globalWarStatus(globalBoard.match):exerciseWarStatus(s));
+}
+function warReportView(){
+  return {scroll:$('dialogBody').scrollTop,expanded:[...$('warReport').querySelectorAll('details[open]')].map(row=>row.dataset.metric),
+    focused:document.activeElement.closest('[data-metric]')?.dataset.metric};
+}
+function restoreReportView(viewState){
+  for(const row of $('warReport').querySelectorAll('details')){
+    row.open=viewState.expanded.includes(row.dataset.metric);
+    if(row.dataset.metric===viewState.focused)row.querySelector('summary').focus({preventScroll:true});
+  }
+  $('dialogBody').scrollTop=viewState.scroll;
+}
+function refreshWarReport(){
+  const lastView=warReportView();
+  $('warReport').innerHTML=currentWarChart();
+  restoreReportView(lastView);
+}
+$('warStatus').onclick=()=>showDialog('War status','<section id="warReport" aria-label="Allies and Axis comparison">'+currentWarChart()+'</section>');
 $('journal').onclick=()=>{
   const current=finished()?'<h3>'+esc(globalBoard.match.victory.side==='Axis'?'Axis victory':'Allied victory')+' · Round '+globalBoard.match.victory.round+'</h3>':['review','noncombat','mobilize','income'].includes(s.phase)?timeline()||'<p>No combat was recorded.</p>':timeline(s.record.filter(e=>e.research||e.declaration||e.capital||e.frenchUnits||e.scramblePower||e.raid))+'<p>The current combat review opens after all battles are resolved.</p>';
   const previous=(globalBoard?.match.turnReviews||[]).slice().reverse().map(turn=>{
@@ -1857,5 +1883,10 @@ function setupOrdersPanel(){
 }
 setupOrdersPanel();
 render();
-if(roomCode){setInterval(refreshRoom,1200);document.addEventListener('visibilitychange',refreshRoom);window.addEventListener('online',refreshRoom);}
+if(roomCode){
+  try{
+    const report=sessionStorage.getItem(roomReportKey);
+    if(report){sessionStorage.removeItem(roomReportKey);$('warStatus').click();restoreReportView(JSON.parse(report));}
+  }catch{}
+  setInterval(refreshRoom,1200);document.addEventListener('visibilitychange',refreshRoom);window.addEventListener('online',refreshRoom);}
 try{draw=await atlas(pick,v=>{view=v;save();},view,exercise);render();save();}catch{message='The map could not load. Reopen the playtest while online to finish the download.';render();}
