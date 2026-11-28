@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="application-version" content="0.1.99">
+<meta name="application-version" content="0.1.100">
 <meta name="theme-color" content="#202c27"><meta name="description" content="WarTable · Global 1940 Second Edition and local playtest exercises.">
 <title>WarTable · Global 1940</title>
 <link rel="icon" href="./assets/icon-192.png"><link rel="manifest" href="./manifest.webmanifest">
@@ -110,7 +110,7 @@
       <p class="dialog-note">Map settings take effect immediately on this device. The Orders panel preference applies the next time you open a board.</p>
     </section>
     <section id="guideWindow" class="guide-copy" hidden>
-      <h3>Turn briefings</h3><p>Each power begins with a briefing. With Research &amp; Development enabled, eligible powers can spend 5 IPCs per die before purchasing units. Open Victory and technology in the briefing or Guide to see city counts and advances. The calendar advances one season when France finishes the round. After combat, redeploy unused forces, mobilize purchases, and collect income before handing the board to the next power.</p>
+      <h3>Turn briefings</h3><p>Each power begins with a briefing. With Research &amp; Development enabled, eligible powers can hold to skip or choose Fund research and spend 5 IPCs per die before purchasing units. Open Victory and technology in the briefing or Guide to see city counts and advances. The calendar advances one season when France finishes the round. After combat, redeploy unused forces, mobilize purchases, and collect income before handing the board to the next power.</p>
       <h3>Read the staff map</h3><p>Drag to pan. Pinch or use the magnifying glasses to zoom. Tap a territory or sea zone to inspect it. Tap it again to deselect. Land arrows are brick red, air arrows are blue, and sea arrows are ochre. Nearby routes in the same category can share an arrowhead.</p>
       <h3>Purchase and repair</h3><p>Order units with IPCs and use Repairs to remove facility damage. Hold to pay or pass. Purchases wait in the mobilization zone. The UK spends from its Europe and Pacific treasuries separately.</p>
       <h3>Plan and resolve combat</h3><p>Before giving combat orders, choose Declare war to review eligible opponents. Hold the named declaration to make it permanent. Select a unit counter and a highlighted destination. On the global map, tanks can move two territories. Choose the territory they pass through when prompted. Revise your orders, then hold to commit. Choose the battle order and resolve the dice in the orders panel.</p>
@@ -222,7 +222,7 @@
 <image id="worldEngraving" data-src="./assets/world-engraving.svg" x="0" y="0" width="16000" height="7294.4" preserveAspectRatio="none" pointer-events="none"/>
 <g id="europeX"><g id="europeY"><image href="./assets/staff-overview.webp" width="2006" height="1716" pointer-events="none"/>
 <image id="detailPlate" display="none" href="./assets/staff-map.svg" width="2006" height="1716" pointer-events="none"/>
-</g></g><g id="seaZones"></g><g id="controlBands" pointer-events="none"></g><g id="regions"></g><g id="labels" pointer-events="none"></g><g id="routes" pointer-events="none"></g><g id="fronts" pointer-events="none" aria-hidden="true"></g><g id="forces"></g><g id="selection" pointer-events="none"></g>
+</g></g><g id="seaZones"></g><g id="controlBands" pointer-events="none"></g><g id="regions"></g><g id="objectiveInk" pointer-events="none" aria-hidden="true"></g><g id="labels" pointer-events="none"></g><g id="routes" pointer-events="none"></g><g id="fronts" pointer-events="none" aria-hidden="true"></g><g id="forces"></g><g id="selection" pointer-events="none"></g>
 </svg>
 <div class="navbox" role="group" aria-label="Map controls">
   <button id="zoomIn" type="button" aria-label="Zoom in" title="Zoom in">
@@ -249,6 +249,19 @@
 <div id="notice" role="status" aria-live="polite"></div><div id="action"></div>
 </aside>
 </main>
+<dialog id="objectiveAtlas" aria-labelledby="objectiveTitle">
+  <div class="objective-atlas-head">
+    <div><small id="objectivePower"></small><h2 id="objectiveTitle"></h2></div>
+    <button type="button" id="objectiveBack">Back to Guide</button>
+  </div>
+  <div id="objectiveMapHost"></div>
+  <div class="objective-map-key">
+    <div class="objective-map-balance"><strong id="objectiveBonus"></strong><span id="objectivePotential"></span></div>
+    <p id="objectiveCondition"></p><p id="objectiveStatus"></p>
+    <div class="objective-locations"><label for="objectivePlace">Locate</label><select id="objectivePlace"></select></div>
+    <div class="objective-swatches"><span class="met"></span><b id="objectiveMet"></b><span class="unmet"></span><b id="objectiveUnmet"></b></div>
+  </div>
+</dialog>
 <nav id="boardNav" aria-label="Board navigation" hidden>
   <div class="board-nav-inner">
     <div class="board-nav-references">

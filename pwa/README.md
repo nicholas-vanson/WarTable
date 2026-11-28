@@ -39,6 +39,10 @@ The atlas marks victory cities that are power capitals with an ochre star, and t
 
 Tap **Orders** in the center of the bottom bar to hide or reopen the panel. The same bar holds Menu, War Status, Review, and Guide. War Status compares the two sides’ victory cities, income, and forces in the current position. Open **Settings** in the board header to change map and control preferences during play. Drag the grip on the panel’s map-facing edge to resize it. The panel remembers its portrait height and landscape width separately.
 
+In **Guide → Objectives**, expand a geographic objective and choose **Show on map**. Solid green outlines meet the location condition and dashed rust outlines mark unmet conditions. Use Locate to find an individual territory or sea zone. Back to Guide restores the board camera and pending orders.
+
+Research opens with **Save for purchases** selected. Hold to skip at no cost, or choose **Fund research**, set the dice, and review the IPC cost, remaining treasury and chance of at least one six before holding to roll.
+
 The border band follows the current controller of each of the four playable territories. Germany uses olive hatching and France uses blue hatching in the opposite direction. Tap a territory to read the controller in the map footer. A capture updates the band when the battle resolves.
 
 Home counters get slightly different positions near each territory’s center in each new exercise. Their arrangement is saved with the local match. Selecting a counter draws a short selection-orange pencil loop. Red pencil arrows start broad at the departing stack and taper to a small point at the incoming counter. Larger stacks leave wider strokes, and long routes have short breaks in the drawing. A new planned arrow draws from its origin and shows a faint broken highlight. Committing the orders darkens the pencil. A red pencil front with ticks facing the attackers extends as units join each origin’s attack and stays on the map until it is canceled or resolved. The combat model pools losses by unit type. When two origins contribute that type, the map distributes its surviving icons proportionally between those approaches.

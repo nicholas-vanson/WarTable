@@ -3,7 +3,7 @@
 import {die} from './rules.js';
 import {hasTech} from './research.js';
 import {declareWar,usIncomeChoice,rememberPoliticalCaptures} from './politics.js';
-import {capitals,purchaseCapitalAvailable,spendingEconomies,purchaseGroups,burmaRoadGaps,nextPlaytestTurn} from './global-game.js';
+import {capitals,purchaseCapitalAvailable,spendingEconomies,purchaseGroups,burmaRoadTerritories,nextPlaytestTurn} from './global-game.js';
 const convoyZones=[1,6,10,19,20,26,35,36,37,39,41,42,43,44,54,62,63,70,71,72,80,82,85,89,93,97,98,99,101,105,106,109,119,125];
 const axisPowers=['Germans','Italians','Japanese'];
 const alliedPowers=['British','UK_Pacific','ANZAC','French','Chinese','Americans','Russians'];
@@ -35,19 +35,27 @@ function incomeObjectives(match,wallet,forGuide=false){
   }
   function checked(label,value,condition,checks){
     add(label,value,checks.every(([,met])=>met),condition);
-    if(forGuide)rows.at(-1).outstanding=checks.filter(([,met])=>!met).map(([need])=>need);
+    if(forGuide){
+      const row=rows.at(-1);
+      row.outstanding=checks.filter(([,met])=>!met).map(([need])=>need);
+      const sites=new Map();
+      for(const [,met,name] of checks)if(name)sites.set(name,met&&sites.get(name)!==false);
+      row.sites=Array.from(sites,([name,met])=>({name,met}));
+    }
   }
   function group(label,value,active,names,controls,condition,required=names.length){
     const missing=names.filter(n=>!controls(n));
     const held=names.length-missing.length;
     add(label,value,active&&held>=required,condition+(active&&missing.length&&required===names.length?' Still needed: '+missing.join(', ')+'.':''));
-    if(forGuide)Object.assign(rows.at(-1),{condition,progress:held+' of '+names.length+' held',missing,warNeeded:!active});
+    if(forGuide)Object.assign(rows.at(-1),{condition,progress:held+' of '+names.length+' held',missing,warNeeded:!active,
+      sites:names.map(name=>({name,met:!missing.includes(name)}))});
   }
   function each(label,value,active,names,controls,condition){
     const held=names.filter(controls);
     rows.push({label,value,earned:active?value*held.length:0,condition:condition+
       (held.length?' Qualifying territories: '+held.join(', ')+'.':'')});
-    if(forGuide)Object.assign(rows.at(-1),{perTerritory:true,progress:held.length+' of '+names.length+' held',warNeeded:!active});
+    if(forGuide)Object.assign(rows.at(-1),{perTerritory:true,progress:held.length+' of '+names.length+' held',warNeeded:!active,
+      sites:names.map(name=>({name,met:held.includes(name)}))});
   }
   const oil=['Iraq','Persia','Northwest Persia'];
   switch(wallet){
@@ -55,29 +63,34 @@ function incomeObjectives(match,wallet,forGuide=false){
       const west=war('British')&&war('French');
       add('Soviet trade',5,!war('Russians'),'Germany and the Soviet Union are at peace.');
       checked('Swedish iron ore',5,'At war with Britain and France. Germany holds Denmark and Norway, and Sweden remains outside Allied control or alignment.',
-        [['War with Britain and France',west],['German control of Denmark',own('Denmark')],['German control of Norway',own('Norway')],
-          ['Sweden outside Allied control or alignment',!allied('Sweden')&&!['Neutral_Allies','Joined_Allies'].includes(board.Sweden.owner)]]);
+        [['War with Britain and France',west],['German control of Denmark',own('Denmark'),'Denmark'],['German control of Norway',own('Norway'),'Norway'],
+          ['Sweden outside Allied control or alignment',!allied('Sweden')&&!['Neutral_Allies','Joined_Allies'].includes(board.Sweden.owner),'Sweden']]);
       each('Soviet cities',5,war('Russians'),['Novgorod','Volgograd','Russia'],own,'At war with the Soviet Union. Earn 5 IPCs per German-held city territory.');
-      add('Caucasus oil',5,war('Russians')&&axis('Caucasus'),'At war with the Soviet Union and the Axis holds Caucasus.');
-      add('Gateway to Egypt',5,west&&axis('Egypt')&&landAt('Egypt'),'At war with Britain and France, with German land units in Axis-held Egypt.');
+      group('Caucasus oil',5,war('Russians'),['Caucasus'],axis,'At war with the Soviet Union and the Axis holds Caucasus.');
+      checked('Gateway to Egypt',5,'At war with Britain and France, with German land units in Axis-held Egypt.',
+        [['War with Britain and France',west],['Axis holds Egypt',axis('Egypt'),'Egypt'],['German land units in Egypt',landAt('Egypt'),'Egypt']]);
       each('Middle East oil',2,west,oil,own,'At war with Britain and France. Earn 2 IPCs each for holding Iraq, Persia or Northwest Persia.');
       break;
     }
     case 'Russians':{
-      const guests=original('Russians').some(n=>present(n,(p)=>p!=='Russians'&&alliedPowers.includes(p)));
+      const sovietSoil=original('Russians');
+      const clear=name=>!present(name,p=>p!=='Russians'&&alliedPowers.includes(p));
       const blocked=present('125 Sea Zone',(p,t)=>axisPowers.includes(p)&&warships.includes(t));
       checked('Arctic lend-lease',5,'At war in Europe, with Soviet control of Archangel, no Axis warships in sea zone 125 and no other Allied units on original Soviet soil.',
-        [['War with Germany or Italy',europe],['Soviet control of Archangel',own('Archangel')],['Sea zone 125 clear of Axis warships',!blocked],['Original Soviet soil clear of other Allied units',!guests]]);
+        [['War with Germany or Italy',europe],['Soviet control of Archangel',own('Archangel'),'Archangel'],['Sea zone 125 clear of Axis warships',!blocked,'125 Sea Zone'],
+          ...sovietSoil.map(n=>[n+' clear of other Allied units',clear(n),n])]);
       const targets=Object.keys(board).filter(n=>['Germans','Italians','Neutral_Axis'].includes(board[n].original));
       each('Soviet territorial gains',3,europe,targets,own,'At war in Europe. Earn 3 IPCs for each originally German, Italian or pro-Axis territory under Soviet control.');
       add('First capture of Berlin',10,europe&&own('Germany')&&!match.berlinBonusPaid,
         match.berlinBonusPaid?'Paid on an earlier turn.':'One-time award for Soviet control of Germany while at war in Europe.','berlin');
+      if(forGuide)rows.at(-1).sites=[{name:'Germany',met:own('Germany')}];
       break;
     }
     case 'Japanese':{
       const west=['Americans','British','ANZAC','French'].some(war);
-      add('American trade',10,!war('Americans')&&!attackedIndochina(match)&&!match.japanUnprovokedWesternWar,
-        'At peace with the United States, with no Japanese attack on French Indo China or unprovoked Japanese declaration against Britain or ANZAC.');
+      checked('American trade',10,'At peace with the United States, with no Japanese attack on French Indo China or unprovoked Japanese declaration against Britain or ANZAC.',
+        [['Peace with the United States',!war('Americans')],['No Japanese attack on French Indo China',!attackedIndochina(match),'French Indo China'],
+          ['No unprovoked declaration against Britain or ANZAC',!match.japanUnprovokedWesternWar]]);
       group('Pacific island perimeter',5,west,['Guam','Midway','Wake Island','Gilbert Islands','Solomon Islands'],axis,'At war with the Western Allies. The Axis holds all five perimeter islands.');
       each('Allied power centers',5,west,['India','New South Wales','Hawaiian Islands','Western United States'],axis,'At war with the Western Allies. Earn 5 IPCs each for Axis control of Calcutta, Sydney, Honolulu or San Francisco.');
       group('East Indies resources',5,west,['Sumatra','Java','Borneo','Celebes'],axis,'At war with the Western Allies. The Axis holds all four resource islands.');
@@ -87,13 +100,12 @@ function incomeObjectives(match,wallet,forGuide=false){
       group('Continental United States',10,atWar,['Eastern United States','Central United States','Western United States'],own,'At war and in control of all three mainland U.S. territories.');
       group('Pacific territories',5,atWar,['Alaska','Aleutian Islands','Hawaiian Islands','Johnston Island','Line Islands'],own,'At war and in control of Alaska and all four outlying island groups.');
       group('American defense treaties',5,atWar,['Mexico','Southeast Mexico','Central America','West Indies'],own,'At war and in control of Mexico, Southeast Mexico, Central America and the West Indies.');
-      add('Philippines',5,atWar&&own('Philippines'),'At war and in control of the Philippines.');
-      add('Allied cooperation in France',5,atWar&&landAt('France'),'At war with at least one U.S. land unit in France.');
+      group('Philippines',5,atWar,['Philippines'],own,'At war and in control of the Philippines.');
+      checked('Allied cooperation in France',5,'At war with at least one U.S. land unit in France.',
+        [['United States at war',atWar],['U.S. land units in France',landAt('France'),'France']]);
       break;
     case 'Chinese':{
-      const missing=burmaRoadGaps(board);
-      add('Burma Road',6,atWar&&!missing.length,'China is at war and the Allies hold India, Burma, Yunnan and Szechwan.');
-      if(forGuide)Object.assign(rows.at(-1),{progress:(4-missing.length)+' of 4 held',missing,warNeeded:!atWar});
+      group('Burma Road',6,atWar,burmaRoadTerritories,allied,'China is at war and the Allies hold India, Burma, Yunnan and Szechwan.');
       break;
     }
     case 'British':
@@ -104,8 +116,9 @@ function incomeObjectives(match,wallet,forGuide=false){
       break;
     case 'Italians':{
       const med=Array.from({length:8},(_,i)=>(92+i)+' Sea Zone');
-      const enemySurface=med.some(n=>present(n,(p,t)=>alliedPowers.includes(p)&&['carrier','battleship','cruiser','destroyer'].includes(t)));
-      add('Mediterranean sea lanes',5,atWar&&!enemySurface,'At war with no Allied surface warships in sea zones 92–99.');
+      const clear=n=>!present(n,(p,t)=>alliedPowers.includes(p)&&['carrier','battleship','cruiser','destroyer'].includes(t));
+      checked('Mediterranean sea lanes',5,'At war with no Allied surface warships in sea zones 92–99.',
+        [['Italy at war',atWar],...med.map(name=>['Sea zone '+parseInt(name,10)+' clear of Allied surface warships',clear(name),name])]);
       const ports=['Gibraltar','Southern France','Greece','Egypt'];
       group('Mediterranean strongholds',5,atWar,ports,axis,'At war. The Axis holds at least three of Gibraltar, Southern France, Greece and Egypt.',3);
       group('North Africa',5,atWar,['Morocco','Algeria','Tunisia','Libya','Tobruk','Alexandria'],axis,'At war and the Axis holds all six North African territories.');
@@ -113,7 +126,8 @@ function incomeObjectives(match,wallet,forGuide=false){
       break;
     }
     case 'ANZAC':
-      add('Defense of Malaya',5,war('Japanese')&&allied('Malaya')&&original('ANZAC').every(own),'At war with Japan. The Allies hold Malaya and ANZAC holds all of its original territories.');
+      group('Defense of Malaya',5,war('Japanese'),['Malaya',...original('ANZAC')],n=>n==='Malaya'?allied(n):own(n),
+        'At war with Japan. The Allies hold Malaya and ANZAC holds all of its original territories.');
       group('South Pacific perimeter',5,war('Japanese'),['Dutch New Guinea','New Guinea','New Britain','Solomon Islands'],allied,'At war with Japan. Allied powers hold all four islands.');
       break;
   }

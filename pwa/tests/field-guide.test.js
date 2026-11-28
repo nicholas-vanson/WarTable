@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {startGlobalPlaytest,globalPowers} from '../global-game.js';
 import {nationalObjectiveAccounts,openIncome} from '../income.js';
-import {objectivesReference,politicsReference} from '../field-guide.js';
+import {objectivesReference,objectiveMapInfo,politicsReference} from '../field-guide.js';
 import {declareWar} from '../politics.js';
 
 const setup=JSON.parse(readFileSync(new URL('../assets/global-setup.json',import.meta.url)));
@@ -61,4 +61,37 @@ test('declaration guidance follows the real turn, existing orders, linked powers
   assert.match(politicsReference(m,'Americans'),/round 3 U.S. decision is open/);
   assert.match(politicsReference(m,'Americans'),/May declare on Germany/);
   m.incomeReport={stayedAtPeace:true};assert.doesNotMatch(politicsReference(m,'Americans'),/May declare on/);
+});
+
+test('objective maps identify the qualifying places independently of political and income gates',()=>{
+  const m=opening();
+  const info=(power,label,wallet=power)=>objectiveMapInfo(m,power,wallet,label);
+  const status=row=>Object.fromEntries(row.sites.map(({name,met})=>[name,met]));
+  assert.equal(info('Germans','Soviet trade'),null);
+  for(const power of Object.keys(globalPowers))for(const a of nationalObjectiveAccounts(m,power)){
+    for(const o of a.objectives){
+      if(o.label==='Soviet trade')continue;
+      const row=info(power,o.label,a.wallet);
+      assert.ok(row.sites.length,o.label);
+      assert.equal(row.sites.length,new Set(row.sites.map(site=>site.name)).size);
+      for(const site of row.sites){assert.ok(m.board[site.name],site.name);assert.equal(typeof site.met,'boolean');}
+    }
+  }
+  m.board.Norway.owner='British';
+  assert.deepEqual(status(info('Germans','Swedish iron ore')),{Denmark:true,Norway:false,Sweden:true});
+  assert.equal(info('Germans','Swedish iron ore').bonus,'0 IPCs projected');
+  assert.deepEqual(status(info('British','Far East trade','UK_Pacific')),{Kwangtung:true,Malaya:true});
+  assert.equal(info('British','Far East trade','UK_Pacific').bonus,'0 IPCs projected');
+  m.board['125 Sea Zone'].units=[['Germans','destroyer',1]];
+  m.board.Archangel.units.push(['British','infantry',1]);
+  const arctic=status(info('Russians','Arctic lend-lease'));
+  assert.equal(arctic.Archangel,false);assert.equal(arctic['125 Sea Zone'],false);
+  m.board.Archangel.units.pop();assert.equal(status(info('Russians','Arctic lend-lease')).Archangel,true);
+  m.board['93 Sea Zone'].units=[['British','submarine',1]];
+  assert.equal(status(info('Italians','Mediterranean sea lanes'))['93 Sea Zone'],true);
+  m.board['93 Sea Zone'].units.push(['British','cruiser',1]);
+  assert.equal(status(info('Italians','Mediterranean sea lanes'))['93 Sea Zone'],false);
+  m.board.France.owner='Germans';
+  assert.equal(status(info('French','Liberation of Paris')).France,false);
+  assert.equal(info('French','Liberation of Paris').bonus,'Up to 12 IPCs in units');
 });
